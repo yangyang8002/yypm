@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>yypm</title>
+<style>
+:root{--bg:#08080c;--panel:rgba(20,20,28,.72);--panel2:rgba(30,30,40,.8);--border:rgba(255,255,255,.08);
+--txt:#ececf1;--sub:#9b9bad;--muted:#646472;--accent:#4f8cff;--accent2:#7c5cff;--ok:#27c97f;--warn:#f5a623;--err:#ff5c5c}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;min-height:100vh;padding:24px 16px 48px;line-height:1.5;background-image:radial-gradient(circle at 50% -10%,#23233a 0%,var(--bg) 55%)}
+h1{font-size:26px;font-weight:800;letter-spacing:-.5px;background:linear-gradient(135deg,#fff 0%,#9a9ab0 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:2px}
+.sub{color:var(--muted);font-size:12.5px;margin-bottom:22px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:18px;padding:18px;margin-bottom:16px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 8px 28px rgba(0,0,0,.28)}
+.card h2{font-size:12px;color:var(--sub);font-weight:700;margin-bottom:14px;text-transform:uppercase;letter-spacing:.6px}
+.row{display:flex;align-items:center;justify-content:space-between;font-size:14px;padding:6px 0}
+.row .k{color:var(--sub)}
+.row .v{font-family:ui-monospace,SFMono-Regular,monospace;font-size:12.5px;word-break:break-all;text-align:right;max-width:62%;color:var(--txt)}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:7px;vertical-align:middle}
+.dot.on{background:var(--ok);box-shadow:0 0 10px var(--ok);animation:pulse 2s infinite}
+.dot.off{background:var(--muted)}
+.dot.warn{background:var(--warn);box-shadow:0 0 10px var(--warn)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+.pill{display:inline-block;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700}
+.pill.ok{background:rgba(39,201,127,.15);color:var(--ok)}
+.pill.err{background:rgba(255,92,92,.15);color:var(--err)}
+.pill.warn{background:rgba(245,166,35,.15);color:var(--warn)}
+.switch-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0}
+.switch-row .lab{font-size:15px}
+.switch-row .hint{font-size:11.5px;color:var(--muted);margin-top:2px}
+.switch{position:relative;width:54px;height:31px;background:var(--panel2);border:1px solid var(--border);border-radius:16px;cursor:pointer;transition:.25s;flex-shrink:0}
+.switch.on{background:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent}
+.switch::after{content:'';position:absolute;top:2px;left:2px;width:25px;height:25px;background:#fff;border-radius:50%;transition:.25s;box-shadow:0 2px 6px rgba(0,0,0,.4)}
+.switch.on::after{left:27px}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;border:none;border-radius:14px;font-size:15px;font-weight:700;color:#fff;background:linear-gradient(135deg,var(--accent),var(--accent2));cursor:pointer;transition:.15s;margin-top:10px;box-shadow:0 4px 16px rgba(79,140,255,.28)}
+.btn:active{transform:scale(.98)}
+.btn.ghost{background:var(--panel2);border:1px solid var(--border);color:var(--txt);box-shadow:none}
+.btn:disabled{opacity:.5;pointer-events:none}
+.update-strip{display:none;align-items:center;gap:10px;background:linear-gradient(135deg,rgba(79,140,255,.16),rgba(124,92,255,.16));border:1px solid rgba(79,140,255,.35);border-radius:14px;padding:12px 14px;margin-bottom:16px;font-size:13.5px}
+.update-strip.show{display:flex}
+.update-strip .grow{flex:1}
+.update-strip .vlink{color:var(--accent);font-weight:700;text-decoration:none}
+.output{background:#060609;border:1px solid var(--border);border-radius:14px;padding:13px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:12px;height:190px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;color:var(--sub)}
+.output .ok{color:var(--ok)}.output .err{color:var(--err)}.output .info{color:var(--accent)}
+.overlay{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:99;transition:opacity .3s}
+.overlay.hide{opacity:0;pointer-events:none}
+.spin{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:rot .8s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+.chip{display:inline-block;font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:1px 8px;margin-left:6px}
+</style>
+</head>
+<body>
+<div class="overlay" id="overlay"><div class="spin"></div></div>
+
+<h1>yypm</h1>
+<div class="sub">Keybox 管理 · TEESimulator 挂载 <span class="chip" id="verChip">v-</span></div>
+
+<div class="update-strip" id="updateStrip">
+  <span>⬆</span>
+  <div class="grow">发现新版本 <b id="upVer"></b>（当前 <span id="upCur"></span>）</div>
+  <a class="vlink" href="javascript:void(0)" onclick="confirmUpdate()">更新</a>
+</div>
+
+<div class="card">
+  <h2>Keybox 状态</h2>
+  <div class="row"><span class="k">挂载状态</span><span class="v" id="kbMount">-</span></div>
+  <div class="row"><span class="k"><span id="kbDot" class="dot off"></span>文件大小</span><span class="v" id="kbSize">-</span></div>
+  <div class="row"><span class="k">SHA256</span><span class="v" id="kbSha">-</span></div>
+  <div class="row"><span class="k">更新时间</span><span class="v" id="kbTime">-</span></div>
+  <div class="row"><span class="k">TEESimulator</span><span class="v" id="teeState">-</span></div>
+</div>
+
+<div class="card">
+  <h2>自动获取</h2>
+  <div class="switch-row">
+    <div><div class="lab">定时自动获取 keybox</div><div class="hint">关闭后仅保留手动获取</div></div>
+    <div class="switch" id="autoSwitch"></div>
+  </div>
+  <button class="btn ghost" id="btnUpdate"><span>⟳</span> 检查更新</button>
+</div>
+
+<div class="card">
+  <h2>隐藏与伪装</h2>
+  <div class="row"><span class="k"><span id="blDot" class="dot off"></span>隐藏 BL</span><span class="v" id="blState">-</span></div>
+  <div class="switch-row">
+    <div><div class="lab">自动隐藏 BL</div><div class="hint">伪造 bootloader 锁定状态</div></div>
+    <div class="switch" id="autoBlSwitch"></div>
+  </div>
+  <button class="btn ghost" id="btnBl"><span>🛡</span> 手动隐藏 BL</button>
+  <div class="row" style="margin-top:12px"><span class="k"><span id="dbgDot" class="dot off"></span>关闭调试</span><span class="v" id="dbgState">-</span></div>
+  <div class="switch-row">
+    <div><div class="lab">自动关闭调试</div><div class="hint">伪装为 release 版本</div></div>
+    <div class="switch" id="autoDebugSwitch"></div>
+  </div>
+  <button class="btn ghost" id="btnDebug"><span>🔒</span> 手动关闭调试</button>
+</div>
+
+<div class="card">
+  <h2>操作</h2>
+  <button class="btn" id="btnFetch"><span>⬇</span> 手动获取并挂载 keybox</button>
+  <button class="btn ghost" id="btnMount"><span>🔗</span> 挂载到 TEESimulator</button>
+</div>
+
+<div class="card">
+  <h2>日志</h2>
+  <div class="output" id="output"></div>
+</div>
+
+<script>
+var MODDIR='/data/adb/modules/yypm';
+var sh=function(c){return "su -c '"+c+"'"};
+var out=document.getElementById('output');
+var overlay=document.getElementById('overlay');
+
+function log(line,cls){var d=document.createElement('div');if(cls)d.className=cls;d.textContent=line;out.appendChild(d);out.scrollTop=out.scrollHeight;}
+function exec(cmd){return new Promise(function(res){var cb='cb_'+Date.now()+'_'+Math.random().toString(36).slice(2);window[cb]=function(errno,stdout,stderr){delete window[cb];res({errno:errno,stdout:stdout||'',stderr:stderr||''});};try{ksu.exec(cmd,'{}',cb);}catch(e){delete window[cb];res({errno:-1,stdout:'',stderr:e.message});}});}
+function parseKv(t){var m={};(t||'').split('\n').forEach(function(l){var i=l.indexOf('=');if(i>0)m[l.slice(0,i).trim()]=l.slice(i+1).trim();});return m;}
+
+async function readVersion(){
+  try{var r=await exec(sh('sed -n "s/^version=//p" '+MODDIR+'/module.prop'));var v=(r.stdout||'').trim();if(v)document.getElementById('verChip').textContent='v'+v;}catch(e){}
+}
+
+async function refresh(){
+  var s;try{s=parseKv((await exec(sh(MODDIR+'/webui.sh status'))).stdout);}catch(e){return;}
+  var mounted=(s.KEYBOX_MOUNTED==='1');
+  document.getElementById('kbDot').className='dot '+(mounted?'on':'off');
+  document.getElementById('kbMount').textContent=mounted?'已挂载':'未挂载';
+  document.getElementById('kbSize').textContent=(s.KEYBOX_SIZE||'0')+' 字节';
+  var sha=s.KEYBOX_SHA256||'';document.getElementById('kbSha').textContent=sha?sha.slice(0,16)+'…':'-';
+  document.getElementById('kbTime').textContent=s.KEYBOX_UPDATED||'-';
+  var tee=document.getElementById('teeState');
+  tee.innerHTML=(s.TEESIMULATOR_INSTALLED==='1')?'<span class="pill ok">已安装</span>':'<span class="pill warn">未安装</span>';
+  document.getElementById('autoSwitch').classList.toggle('on',s.AUTO_FETCH==='on');
+  var blHidden=(s.BL_HIDDEN==='1');
+  document.getElementById('blDot').className='dot '+(blHidden?'on':'off');
+  document.getElementById('blState').textContent=blHidden?'已隐藏':'未隐藏';
+  document.getElementById('autoBlSwitch').classList.toggle('on',s.AUTO_BL==='on');
+  var dbgClosed=(s.DEBUG_CLOSED==='1');
+  document.getElementById('dbgDot').className='dot '+(dbgClosed?'on':'off');
+  document.getElementById('dbgState').textContent=dbgClosed?'已关闭':'未关闭';
+  document.getElementById('autoDebugSwitch').classList.toggle('on',s.AUTO_DEBUG==='on');
+}
+
+async function toggleBl(){
+  var on=!document.getElementById('autoBlSwitch').classList.contains('on');
+  try{await exec(sh(MODDIR+'/webui.sh auto-bl '+(on?'on':'off')));}catch(e){}
+  await refresh();
+  log('自动隐藏 BL 已'+(on?'开启':'关闭'),'info');
+}
+
+async function toggleDebug(){
+  var on=!document.getElementById('autoDebugSwitch').classList.contains('on');
+  try{await exec(sh(MODDIR+'/webui.sh auto-debug '+(on?'on':'off')));}catch(e){}
+  await refresh();
+  log('自动关闭调试已'+(on?'开启':'关闭'),'info');
+}
+
+async function manualBl(){
+  log('手动隐藏 BL...','info');
+  try{var r=await exec(sh(MODDIR+'/webui.sh bl'));(r.stdout||'').split('\n').forEach(function(l){if(!l.trim())return;if(l.indexOf('FAIL')>=0)log(l,'err');else if(l.indexOf('OK')>=0)log(l,'ok');else log(l);});}
+  catch(e){log('异常: '+e.message,'err');}
+  await refresh();
+}
+
+async function manualDebug(){
+  log('手动关闭调试...','info');
+  try{var r=await exec(sh(MODDIR+'/webui.sh debug'));(r.stdout||'').split('\n').forEach(function(l){if(!l.trim())return;if(l.indexOf('FAIL')>=0)log(l,'err');else if(l.indexOf('OK')>=0)log(l,'ok');else log(l);});}
+  catch(e){log('异常: '+e.message,'err');}
+  await refresh();
+}
+
+async function checkUpdate(){
+  log('检查更新...','info');
+  try{var r=await exec(sh(MODDIR+'/webui.sh update'));var s=parseKv(r.stdout);
+    if(s.UPDATE==='AVAILABLE'){
+      document.getElementById('upVer').textContent='v'+s.REMOTE_VERSION;
+      document.getElementById('upCur').textContent='v'+s.LOCAL_VERSION;
+      document.getElementById('updateStrip').classList.add('show');
+      log('发现新版本 v'+s.REMOTE_VERSION,'ok');
+    }else if(s.UPDATE==='NONE'){
+      document.getElementById('updateStrip').classList.remove('show');
+      log('已是最新版本 v'+s.LOCAL_VERSION,'ok');
+    }else{log('检查更新失败','err');}
+  }catch(e){log('检查更新异常: '+e.message,'err');}
+}
+
+async function confirmUpdate(){
+  log('下载新版本模块...','info');
+  try{var r=await exec(sh(MODDIR+'/webui.sh update'));var s=parseKv(r.stdout);
+    var url=s.DOWNLOAD_URL;
+    if(!url){log('无下载地址或已是最新','info');return;}
+    var dl=await exec(sh('curl -fsSL "'+url+'" -o /data/adb/yypm/update.zip && echo OK'));
+    if((dl.stdout||'').indexOf('OK')>=0){log('已下载到 /data/adb/yypm/update.zip，请用 KernelSU 管理器安装','info');}else{log('下载失败','err');}
+  }catch(e){log('异常: '+e.message,'err');}
+}
+
+async function toggleAuto(){
+  var on=!document.getElementById('autoSwitch').classList.contains('on');
+  try{await exec(sh(MODDIR+'/webui.sh auto '+(on?'on':'off')));}catch(e){}
+  await refresh();
+  log('自动获取已'+(on?'开启':'关闭'),'info');
+}
+
+async function manualFetch(){
+  var b=document.getElementById('btnFetch');b.disabled=true;b.innerHTML='<span>◌</span> 获取中...';
+  log('开始手动获取 keybox...','info');
+  try{var r=await exec(sh(MODDIR+'/webui.sh fetch'));(r.stdout||'').split('\n').forEach(function(l){if(!l.trim())return;if(l.indexOf('FAIL')>=0)log(l,'err');else if(l.indexOf('OK')>=0||l.indexOf('✓')>=0)log(l,'ok');else log(l);});}
+  catch(e){log('异常: '+e.message,'err');}
+  b.disabled=false;b.innerHTML='<span>⬇</span> 手动获取并挂载 keybox';
+  await refresh();
+}
+
+async function manualMount(){
+  log('挂载到 TEESimulator...','info');
+  try{var r=await exec(sh(MODDIR+'/webui.sh mount'));(r.stdout||'').split('\n').forEach(function(l){if(!l.trim())return;if(l.indexOf('FAIL')>=0)log(l,'err');else log(l,'ok');});}
+  catch(e){log('异常: '+e.message,'err');}
+  await refresh();
+}
+
+document.getElementById('autoSwitch').onclick=toggleAuto;
+document.getElementById('btnFetch').onclick=manualFetch;
+document.getElementById('btnMount').onclick=manualMount;
+document.getElementById('btnUpdate').onclick=checkUpdate;
+document.getElementById('autoBlSwitch').onclick=toggleBl;
+document.getElementById('autoDebugSwitch').onclick=toggleDebug;
+document.getElementById('btnBl').onclick=manualBl;
+document.getElementById('btnDebug').onclick=manualDebug;
+
+(async function(){await readVersion();await refresh();checkUpdate();setTimeout(function(){overlay.classList.add('hide');},400);})();
+</script>
+</body>
+</html>
