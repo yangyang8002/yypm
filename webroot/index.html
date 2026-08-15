@@ -106,14 +106,15 @@ h1{font-size:26px;font-weight:800;letter-spacing:-.5px;background:linear-gradien
   <div class="output" id="output"></div>
 </div>
 
-<script>
+<script type="module">
+import { exec } from 'kernelsu';
 var MODDIR='/data/adb/modules/yypm';
-var sh=function(c){return "su -c '"+c+"'"};
+var sh=function(c){return c;};
 var out=document.getElementById('output');
 var overlay=document.getElementById('overlay');
 
 function log(line,cls){var d=document.createElement('div');if(cls)d.className=cls;d.textContent=line;out.appendChild(d);out.scrollTop=out.scrollHeight;}
-function exec(cmd){return new Promise(function(res){var cb='cb_'+Date.now()+'_'+Math.random().toString(36).slice(2);window[cb]=function(errno,stdout,stderr){delete window[cb];res({errno:errno,stdout:stdout||'',stderr:stderr||''});};try{ksu.exec(cmd,'{}',cb);}catch(e){delete window[cb];res({errno:-1,stdout:'',stderr:e.message});}});}
+
 function parseKv(t){var m={};(t||'').split('\n').forEach(function(l){var i=l.indexOf('=');if(i>0)m[l.slice(0,i).trim()]=l.slice(i+1).trim();});return m;}
 
 async function readVersion(){
