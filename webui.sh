@@ -175,6 +175,102 @@ case "${1:-status}" in
         echo "正在自动安装 ..."
         install_self
         ;;
+    install-all)
+        # 一键安装：把检查到的可更新附属模块批量交给 ksud（重启后生效）
+        install_all_packages
+        ;;
+    log)
+        # 显示日志尾部（默认 120 行）
+        N="${2:-120}"
+        case "$N" in ''|*[!0-9]*) N=120 ;; esac
+        [ "$N" -gt 500 ] 2>/dev/null && N=500
+        if [ -f "$LOG" ]; then
+            echo "LOG_LINES=$(wc -l < "$LOG" 2>/dev/null | tr -d ' ')"
+            echo "LOG_SIZE=$(wc -c < "$LOG" 2>/dev/null | tr -d ' ')"
+            echo "---LOG-BEGIN---"
+            tail -n "$N" "$LOG"
+            echo "---LOG-END---"
+        else
+            echo "LOG_LINES=0"
+            echo "LOG_SIZE=0"
+            echo "---LOG-BEGIN---"
+            echo "(暂无日志)"
+            echo "---LOG-END---"
+        fi
+        ;;
+    log-clear)
+        : > "$LOG" 2>/dev/null
+        log "[·] 日志已由 WebUI 清空"
+        echo "LOG_CLEAR=OK"
+        ;;
+    cfg-export)
+        # 导出配置：把 config.prop 里的键值对直接输出，WebUI 可复制保存
+        echo "---CFG-BEGIN---"
+        if [ -f "$CONFIG" ]; then
+            grep -v '^[[:space:]]*$' "$CONFIG" 2>/dev/null | grep -v '^#'
+        fi
+        echo "---CFG-END---"
+        ;;
+    cfg-import)
+        # 导入配置：参数是 base64 编码的键值文本（避免引号/空格被 shell 吃掉）
+        [ -n "${2:-}" ] || { echo "CFG_IMPORT=FAIL(无内容)"; exit 1; }
+        mkdir -p "$DATA_DIR" 2>/dev/null
+        if ! echo "$2" | base64 -d > "$TMP/cfg_in.txt" 2>/dev/null || [ ! -s "$TMP/cfg_in.txt" ]; then
+            echo "CFG_IMPORT=FAIL(base64 解码失败)"
+            exit 1
+        fi
+        # 只接受白名单键，值里不放换行，避免写坏配置文件
+        : > "$TMP/cfg_clean.txt"
+        while IFS= read -r line; do
+            local k=${line%%=*} v=${line#*=}
+            case "$k" in
+                auto_fetch|auto_bl|auto_debug|check_interval|pubkey_use)
+                    [ "$line" = "$k" ] && continue      # 没有 = 的裸键跳过
+                    printf '%s=%s\n' "$k" "$v" >> "$TMP/cfg_clean.txt"
+                    ;;
+            esac
+        done < "$TMP/cfg_in.txt"
+        if [ ! -s "$TMP/cfg_clean.txt" ]; then
+            echo "CFG_IMPORT=FAIL(没有可导入的配置项)"
+            exit 1
+        fi
+        cp -f "$TMP/cfg_clean.txt" "$CONFIG"
+        chmod 600 "$CONFIG" 2>/dev/null
+        log "[✓] 配置已从 WebUI 导入（$(wc -l < "$TMP/cfg_clean.txt" | tr -d ' ') 项）"
+        echo "CFG_IMPORT=OK"
+        echo "CFG_ITEMS=$(wc -l < "$TMP/cfg_clean.txt" 2>/dev/null | tr -d ' ')"
+        echo "---CFG-BEGIN---"
+        grep -v '^[[:space:]]*$' "$CONFIG" 2>/dev/null
+        echo "---CFG-END---"
+        ;;
+    set-interval)
+        # 设置检查间隔（秒）
+        H="${2:-}"
+        case "$H" in
+            1) S=3600 ;;
+            6) S=21600 ;;
+            12) S=43200 ;;
+            24) S=86400 ;;
+            *) echo "用法: set-interval 1|6|12|24（小时）"; exit 1 ;;
+        esac
+        cfg_set check_interval "$S"
+        log "[·] 检查间隔已设为 ${H} 小时"
+        echo "CHECK_INTERVAL=$S"
+        echo "CHECK_INTERVAL_H=$H"
+        ;;
+    health)
+        echo "正在检测下载源连通性 ..."
+        health_check | while IFS='|' read -r n c ms; do
+            echo "HEALTH|$n|$c|$ms"
+        done
+        echo "HEALTH_DONE=1"
+        ;;
+    pubkey)
+        echo "PUBKEY_FP=$(pubkey_fp)"
+        echo "PUBKEY_EXPECT=$(expect_pubkey_fp)"
+        echo "PUBKEY_INTACT=$(pubkey_intact)"
+        echo "PUBKEY_ACTIVE=$(basename "$(active_pubkey)")"
+        ;;
     status|*)
         echo_status
         ;;

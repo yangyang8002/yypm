@@ -15,12 +15,57 @@ KEYBOX_CACHE="$DATA_DIR/keybox.xml"
 PUBKEY="$MODDIR/pubkey.b64"
 VERIFY_TOOL="$MODDIR/verify_tool"
 TMP="$DATA_DIR/tmp"
-UPDATE_INTERVAL=21600
+UPDATE_INTERVAL_DEFAULT=21600
 LOG="$DATA_DIR/yypm.log"
+RETRY_STATE="$DATA_DIR/retry.state"
 
 # 下载重试（开机时网络往往尚未就绪，单次失败会白等一个周期）
 NET_RETRY=3
 NET_RETRY_DELAY=20
+
+# 失败后的短期重试退避（秒）：失败后不再干等一个完整周期
+RETRY_STEPS="300 1800 7200 21600"
+
+# 当前生效的检查间隔（可用 WebUI 配置，1h/6h/12h/24h）
+get_interval() {
+    local v=$(cfg_get check_interval "$UPDATE_INTERVAL_DEFAULT")
+    case "$v" in
+        ''|*[!0-9]*) v="$UPDATE_INTERVAL_DEFAULT" ;;
+    esac
+    [ "$v" -lt 600 ] 2>/dev/null && v=600
+    echo "$v"
+}
+
+# 失败计数与"下次提前重试"时间戳
+retry_fails() { sed -n 's/^fails=//p' "$RETRY_STATE" 2>/dev/null | head -1; }
+retry_next()  { sed -n 's/^next=//p'  "$RETRY_STATE" 2>/dev/null | head -1; }
+
+retry_note_fail() {
+    local n=$(( $(retry_fails) + 1 ))
+    [ "$n" -gt 99 ] 2>/dev/null && n=99
+    local d=0 i=1
+    for s in $RETRY_STEPS; do
+        d=$s
+        [ "$i" -ge "$n" ] && break
+        i=$((i + 1))
+    done
+    mkdir -p "$DATA_DIR" 2>/dev/null
+    { echo "fails=$n"; echo "next=$(( $(date +%s) + d ))"; } > "$RETRY_STATE" 2>/dev/null
+    log "[!] 本轮失败第 ${n} 次，$(($d / 60)) 分钟后提前重试"
+}
+
+retry_note_ok() {
+    [ -f "$RETRY_STATE" ] && rm -f "$RETRY_STATE" 2>/dev/null
+    return 0
+}
+
+# 距下次提前重试还有多少秒（无需重试时输出空）
+retry_due_in() {
+    local n=$(retry_next)
+    [ -n "$n" ] || return 0
+    local now=$(date +%s)
+    echo $(( n - now ))
+}
 
 log() { echo "[$(date '+%m-%d %H:%M:%S')] $*" >> "$LOG"; }
 
@@ -124,32 +169,63 @@ close_debug() {
     return 0
 }
 
-# ---- 获取并挂载 keybox（下载 -> 校验 -> 验签 -> 写 tricky_store）----
+# ---- 获取并挂载 keybox（manifest -> 判断有无变化 -> 校验 -> 验签 -> 写 tricky_store）----
+# 省流量：manifest 里已带 keybox 的 sha256，先比 sha256；本地缓存已是同一份就
+# 跳过下载（12.6KB -> 0），签名仍会重验一遍（成本低且更安全）。
 fetch_keybox() {
     mkdir -p "$TMP"
     log "[·] 拉取 manifest"
-    download_retry "$BASE_URL?action=manifest" "$TMP/manifest.json" || { log "[✗] manifest 下载失败（已重试 $NET_RETRY 次）"; return 1; }
+    if ! download_retry "$BASE_URL?action=manifest" "$TMP/manifest.json"; then
+        log "[✗] manifest 下载失败（已重试 $NET_RETRY 次）"
+        retry_note_fail
+        return 1
+    fi
 
     KB_URL=$(json_get "$TMP/manifest.json" url)
     KB_SHA=$(json_get "$TMP/manifest.json" sha256)
     KB_SIG=$(json_get "$TMP/manifest.json" signature)
-    [ -n "$KB_URL" ] || { log "[✗] manifest 缺 url"; return 1; }
+    [ -n "$KB_URL" ] || { log "[✗] manifest 缺 url"; retry_note_fail; return 1; }
 
-    log "[·] 下载 keybox"
-    download "$KB_URL" "$TMP/keybox.xml" || { log "[✗] keybox 下载失败"; return 1; }
-
-    # sha256 校验
-    got=$(sha256_of "$TMP/keybox.xml")
-    if [ -n "$KB_SHA" ] && [ "$got" != "$KB_SHA" ]; then
-        log "[✗] sha256 不匹配 ($got)"; return 1
+    # 本地缓存已是最新 -> 不下载 keybox
+    local fresh=0
+    local dest_now=$(sha256_of "$KEYBOX_DEST")
+    if [ -n "$KB_SHA" ] && [ -n "$dest_now" ] && [ "$dest_now" = "$KB_SHA" ] && [ -s "$KEYBOX_CACHE" ]; then
+        fresh=1
+        log "[✓] keybox 已是服务端最新（sha256 一致），跳过下载"
+        cp -f "$TMP/manifest.json" "$DATA_DIR/manifest.json" 2>/dev/null
     fi
 
+    if [ "$fresh" = "0" ]; then
+        log "[·] 下载 keybox"
+        if ! download "$KB_URL" "$TMP/keybox.xml"; then
+            log "[✗] keybox 下载失败"
+            retry_note_fail
+            return 1
+        fi
+        # sha256 校验
+        got=$(sha256_of "$TMP/keybox.xml")
+        if [ -n "$KB_SHA" ] && [ "$got" != "$KB_SHA" ]; then
+            log "[✗] sha256 不匹配 ($got)"; retry_note_fail; return 1
+        fi
+        cp -f "$TMP/keybox.xml" "$TMP/keybox.verify" 2>/dev/null
+        [ -f "$TMP/keybox.verify" ] || cp -f "$TMP/keybox.xml" "$TMP/keybox.verify"
+        cp -f "$TMP/manifest.json" "$DATA_DIR/manifest.json" 2>/dev/null
+    fi
+
+    local src="$TMP/keybox.verify"
+    [ -f "$src" ] || src="$TMP/keybox.xml"
+
     # Ed25519 验签（有 verify_tool 则强校验，缺失则 sha256 兜底）
+    # 每次执行都验一遍：能发现本地 keybox 被第三方替换的情况。
+    # 公钥取 active_pubkey()（支持轮换：pubkey_use 指定当前使用的公钥文件）。
     if [ -n "$KB_SIG" ]; then
-        if [ -x "$VERIFY_TOOL" ] && [ -f "$PUBKEY" ]; then
+        local PK=$(active_pubkey)
+        if [ -x "$VERIFY_TOOL" ] && [ -f "$PK" ]; then
             echo "$KB_SIG" > "$TMP/keybox.sig"
-            if ! "$VERIFY_TOOL" "$PUBKEY" "$TMP/keybox.sig" "$TMP/keybox.xml" >/dev/null 2>&1; then
-                log "[✗] 签名校验失败，拒绝注入"; return 1
+            if ! "$VERIFY_TOOL" "$PK" "$TMP/keybox.sig" "$src" >/dev/null 2>&1; then
+                log "[✗] 签名校验失败，拒绝注入（公钥 $(basename "$PK")）"
+                retry_note_fail
+                return 1
             fi
             log "[✓] 签名校验通过"
         else
@@ -159,14 +235,137 @@ fetch_keybox() {
 
     # 挂载到 TEESimulator（写 tricky_store/keybox.xml）+ 本地缓存
     mkdir -p "$TRICKY_DIR"
-    cp "$TMP/keybox.xml" "$KEYBOX_DEST"
+    cp -f "$src" "$KEYBOX_DEST"
     chmod 644 "$KEYBOX_DEST"
-    cp "$TMP/keybox.xml" "$KEYBOX_CACHE"
+    cp -f "$src" "$KEYBOX_CACHE"
     chmod 644 "$KEYBOX_CACHE"
 
     local size=$(wc -c < "$KEYBOX_DEST" 2>/dev/null)
-    log "[✓] keybox 已挂载到 $KEYBOX_DEST ($size 字节)"
+    if [ "$fresh" = "1" ]; then
+        log "[✓] keybox 校验通过并已挂载 ($size 字节，未重新下载)"
+    else
+        log "[✓] keybox 已挂载到 $KEYBOX_DEST ($size 字节)"
+    fi
+    retry_note_ok
     return 0
+}
+
+# ---- 候选模块目录：生效区 + 待生效区 ----
+# 用 MODDIR 的目录名当模块 id（KernelSU 下 MODDIR 就是 /data/adb/modules/<id>）
+module_dirs() {
+    local id=$(basename "$MODDIR")
+    echo "/data/adb/modules/$id"
+    echo "/data/adb/modules_update/$id"
+}
+
+# 在多个候选目录里取第一个有值的（生效区优先）
+module_vc() {
+    local d v
+    for d in $(module_dirs); do
+        [ -d "$d" ] || continue
+        v=$(vc_of "$d")
+        [ -n "$v" ] && { echo "$v"; return 0; }
+    done
+    return 0
+}
+
+# 待生效区的 id 列表（每个一行）
+staged_ids() {
+    local d
+    for d in /data/adb/modules_update/*; do
+        [ -d "$d" ] || continue
+        sed -n 's/^id=//p' "$d/module.prop" 2>/dev/null | head -1 | tr -d ' \r'
+    done
+}
+
+# 待生效区某个 id 的 versionCode
+staged_vc_of() { # $1 = id
+    vc_of "/data/adb/modules_update/$1" 2>/dev/null
+}
+
+# 生效区某个 id 的 versionCode
+live_vc_of() { # $1 = id
+    vc_of "/data/adb/modules/$1" 2>/dev/null
+}
+
+# 是否有"已安装但待重启生效"的模块（本模块或附属模块）
+restart_pending() {
+    local id lv sv
+    for id in $(staged_ids); do
+        [ -n "$id" ] || continue
+        lv=$(live_vc_of "$id")
+        sv=$(staged_vc_of "$id")
+        # 生效区没有（新装）或版本不一致 -> 需要重启
+        if [ -z "$lv" ]; then echo "$id"; continue; fi
+        [ "$lv" != "$sv" ] && echo "$id"
+    done
+    return 0
+}
+
+# keybox 已使用天数（取挂载文件与缓存里较早的 mtime，避免刚 cp 就"看起来是新的"）
+keybox_age_days() {
+    local t="" f
+    for f in "$KEYBOX_CACHE" "$KEYBOX_DEST"; do
+        [ -f "$f" ] || continue
+        local ft=$(stat -c '%Y' "$f" 2>/dev/null)
+        [ -n "$ft" ] || continue
+        if [ -z "$t" ] || [ "$ft" -lt "$t" ] 2>/dev/null; then t="$ft"; fi
+    done
+    [ -n "$t" ] || return 0
+    echo $(( ( $(date +%s) - t ) / 86400 ))
+}
+
+# 服务端最新 keybox 的 sha256（来自上次保存的 manifest）
+remote_keybox_sha() {
+    [ -f "$DATA_DIR/manifest.json" ] && json_get "$DATA_DIR/manifest.json" sha256
+}
+
+# 本地公钥指纹（sha256 前 16 位），用于"公钥是否被替换"的自检
+pubkey_fp() {
+    [ -f "$PUBKEY" ] || return 0
+    local h=$(sha256_of "$PUBKEY")
+    [ -n "$h" ] && echo "$h" | cut -c1-16
+}
+
+# 内置期望指纹：以文件 pubkey.fp 为准（构建时写入；缺失则跳过自检）
+expect_pubkey_fp() {
+    [ -f "$MODDIR/pubkey.fp" ] && tr -d ' \r\n' < "$MODDIR/pubkey.fp" 2>/dev/null
+}
+
+pubkey_intact() {
+    local e=$(expect_pubkey_fp)
+    [ -n "$e" ] || { echo "unknown"; return 0; }
+    local a=$(pubkey_fp)
+    [ -n "$a" ] && [ "$a" = "$e" ] && echo "ok" || echo "bad"
+}
+
+# 公钥校验（支持轮换：真正使用的公钥写在 pubkey_use，缺省 pubkey.b64）
+# 适配 verify_tool <pubkey_file> <sig_file> <file> 的既有调用方式。
+active_pubkey() {
+    local sel=$(cfg_get pubkey_use "")
+    if [ -n "$sel" ] && [ -f "$MODDIR/$sel" ]; then echo "$MODDIR/$sel"; else echo "$PUBKEY"; fi
+}
+
+# ---- 连通性自检：各下载源的可达性与延迟（毫秒）----
+# 输出：名称|http码|毫秒（失败时 http码为 000）
+probe_source() { # $1 名称  $2 url
+    local name="$1" url="$2" code="000" ms=""
+    local t0=$(date +%s%N 2>/dev/null); [ -n "$t0" ] || t0=0
+    if command -v curl >/dev/null 2>&1; then
+        code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 6 --max-time 12 "$url" 2>/dev/null)
+    elif command -v busybox >/dev/null 2>&1; then
+        if busybox wget -T 10 --no-check-certificate -q -O /dev/null "$url" 2>/dev/null; then code="200"; fi
+    fi
+    local t1=$(date +%s%N 2>/dev/null); [ -n "$t1" ] || t1=0
+    if [ "$t1" -gt "$t0" ] 2>/dev/null; then ms=$(( (t1 - t0) / 1000000 )); fi
+    [ -n "$code" ] || code="000"
+    echo "$name|$code|$ms"
+}
+
+health_check() {
+    local m="${1:-6}"
+    probe_source "自建服务器" "$BASE_URL?action=manifest"
+    probe_source "GitHub" "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
 }
 
 # ---- 状态输出（供 WebUI 解析，key=value 格式）----
@@ -199,6 +398,48 @@ echo_status() {
     echo "UPDATE_CHECKED=$(update_state_field checked_at 未检查)"
     echo "UPDATE_NEED=$(update_state_field need 0)"
     echo "UPDATE_SUMMARY=$(update_state_field summary -)"
+
+    # ---- 检查间隔与失败重试 ----
+    echo "CHECK_INTERVAL=$(get_interval)"
+    echo "CHECK_INTERVAL_H=$(( $(get_interval) / 3600 ))"
+    local rf=$(retry_fails)
+    echo "RETRY_FAILS=${rf:-0}"
+    echo "RETRY_NEXT_IN=$(retry_due_in)"
+
+    # ---- keybox 新鲜度 ----
+    local age=$(keybox_age_days)
+    echo "KEYBOX_AGE_DAYS=${age:-}"
+    echo "KEYBOX_REMOTE_SHA=$(remote_keybox_sha)"
+    local rs=$(remote_keybox_sha) ls=$(sha256_of "$KEYBOX_DEST" 2>/dev/null)
+    if [ -n "$rs" ] && [ -n "$ls" ] && [ "$rs" = "$ls" ]; then
+        echo "KEYBOX_LATEST=1"
+    else
+        echo "KEYBOX_LATEST=0"
+    fi
+
+    # ---- 待重启生效（对比生效区与待生效区的 versionCode）----
+    local pend=""
+    local pid
+    for pid in $(restart_pending); do
+        [ -n "$pid" ] || continue
+        local lv=$(live_vc_of "$pid") sv=$(staged_vc_of "$pid")
+        pend="${pend}${pid}:${lv:-无}->${sv:-?};"
+    done
+    if [ -n "$pend" ]; then
+        echo "RESTART_PENDING=1"
+        echo "RESTART_ITEMS=$pend"
+    else
+        echo "RESTART_PENDING=0"
+        echo "RESTART_ITEMS="
+    fi
+    echo "LIVE_VCODE=$(vc_of "$MODDIR" 2>/dev/null)"
+    echo "STAGED_VCODE=$(staged_vc_of "$(basename "$MODDIR")")"
+
+    # ---- 公钥自检 ----
+    echo "PUBKEY_FP=$(pubkey_fp)"
+    echo "PUBKEY_EXPECT=$(expect_pubkey_fp)"
+    echo "PUBKEY_INTACT=$(pubkey_intact)"
+    echo "PUBKEY_ACTIVE=$(basename "$(active_pubkey)")"
 }
 
 # ============ 附属模块更新检查（WebUI 只读检查，不安装）============
@@ -575,6 +816,80 @@ download_packages() {
             log "[✗] 模块下载失败: $name"
         fi
     done < "$TMP/dl_list.txt"
+    return 0
+}
+
+# ---- 一键安装：把检查到的"可更新"附属模块批量装到暂存区 ----
+# 流程：check_updates（拿结论）-> 按需下载包 -> sha256 校验 -> ksud 安装
+# 说明：ksud 会把模块装到 modules_update，重启后统一生效；这里逐个安装，
+# 并在结束时汇报成功/失败个数。安装完不自动重启（交由用户决定）。
+install_all_packages() {
+    echo "正在检查附属模块 ..."
+    check_updates
+    if [ ! -f "$TMP/check_out.txt" ]; then
+        echo "INSTALL_ALL=NONE"
+        echo "INSTALL_ALL_MSG=检查失败，未取得结果"
+        return 1
+    fi
+
+    local n=0 ok=0 fail=0 skip=0
+    local KS=/data/adb/ksud
+    local dest="$DATA_DIR/packages"
+    mkdir -p "$dest"
+
+    while IFS='|' read -r tag fn mid lvc rvc st msg; do
+        [ -n "$fn" ] || continue
+        # 只装"确实有新版本"的；OK/NEW/MISMATCH/ERR 都跳过
+        [ "$st" = "UPD" ] || continue
+        n=$((n + 1))
+        echo "→ 安装 $mid $lvc → $rvc"
+
+        if [ ! -x "$KS" ]; then
+            echo "  [✗] 未找到 ksud，无法自动安装"
+            fail=$((fail + 1))
+            continue
+        fi
+
+        # 按清单里的 url 下载这一版（确保装的就是检查时看到的版本）
+        # plist.txt 每行是 文件名|url，用 awk 取第二段（sed 多层引号转义易错）
+        local src="$dest/$fn"
+        local url=$(awk -F'|' -v k="$fn" '$1==k{print $2}' "$TMP/plist.txt" 2>/dev/null | head -1)
+        [ -n "$url" ] || { echo "  [✗] 未找到 $fn 的下载地址"; fail=$((fail + 1)); continue; }
+
+        echo "  [·] 下载 $fn"
+        if ! download "$url" "$src" || [ ! -s "$src" ]; then
+            echo "  [✗] 下载失败"
+            fail=$((fail + 1))
+            continue
+        fi
+
+        local out
+        if out=$("$KS" module install "$src" 2>&1); then
+            echo "  [✓] 已安装 $mid（重启后生效）"
+            ok=$((ok + 1))
+        else
+            echo "  [✗] 安装失败"
+            fail=$((fail + 1))
+        fi
+    done < "$TMP/check_out.txt"
+
+    # 把本模块自身也纳入"待重启"判定：附属模块装好后同样需要重启
+    if [ "$ok" -gt 0 ]; then
+        log "[✓] 批量安装完成：成功 $ok，失败 $fail（重启后生效）"
+        echo "INSTALL_ALL=OK"
+        echo "INSTALL_ALL_OK=$ok"
+        echo "INSTALL_ALL_FAIL=$fail"
+        echo "INSTALL_ALL_RESTART=1"
+    else
+        if [ "$n" -eq 0 ]; then
+            echo "INSTALL_ALL=NONE"
+            echo "INSTALL_ALL_MSG=没有需要安装的附属模块"
+        else
+            log "[✗] 批量安装失败：成功 0，失败 $fail"
+            echo "INSTALL_ALL=FAIL"
+            echo "INSTALL_ALL_FAIL=$fail"
+        fi
+    fi
     return 0
 }
 

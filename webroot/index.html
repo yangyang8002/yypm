@@ -87,6 +87,36 @@ border:1px solid var(--outline);border-radius:20px;background:transparent;color:
 font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;transition:background-color .2s,color .2s}
 .theme-btn:active{background:var(--surface-container-high)}
 .note{font-size:12.5px;color:var(--on-surface-variant);margin-top:10px;line-height:1.6}
+
+/* 待重启生效横幅（比更新提示更醒目：更新已装但还没重启） */
+.restart-strip{display:none;align-items:center;gap:12px;background:var(--error-container);
+ color:var(--on-error-container);border-radius:var(--r-card);padding:14px 16px;margin-bottom:12px;font-size:13.5px}
+.restart-strip.show{display:flex}
+.restart-strip .grow{flex:1}
+.restart-strip .vlink{color:var(--on-error-container);font-weight:700;text-decoration:none;padding:4px 8px;border-radius:8px;border:1px solid currentColor}
+
+/* 分段选择（检查间隔等） */
+.seg{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.seg button{flex:1;min-width:56px;padding:9px 6px;border:1px solid var(--outline);
+ border-radius:var(--r-btn);background:transparent;color:var(--on-surface-variant);
+ font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:background-color .2s,color .2s}
+.seg button.sel{background:var(--primary);color:var(--on-primary);border-color:transparent}
+.seg button:active{filter:brightness(.94)}
+
+/* 连通性结果行 */
+.hrow{display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 0}
+.hrow .nm{flex:1;color:var(--on-surface-variant)}
+.hrow .ms{font-family:ui-monospace,monospace;font-size:12px;color:var(--on-surface-variant)}
+
+/* 配置导入框 */
+textarea.cfg{width:100%;box-sizing:border-box;margin-top:10px;padding:12px;border-radius:var(--r-in);
+ border:1px solid var(--outline);background:var(--code-bg);color:var(--code-sub);
+ font-family:ui-monospace,'Roboto Mono',SFMono-Regular,monospace;font-size:12px;line-height:1.5;
+ resize:vertical;min-height:76px;outline:none}
+.row2{display:flex;gap:10px}
+.row2 .btn{flex:1}
+#logPanel{height:280px}
+.pill.warn2{background:var(--error-container);color:var(--on-error-container)}
 </style>
 </head>
 <body>
@@ -106,12 +136,18 @@ font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;transition:b
   <a class="vlink" href="javascript:void(0)" onclick="confirmUpdate()">更新</a>
 </div>
 
+<div class="restart-strip" id="restartStrip">
+  <span>♻</span>
+  <div class="grow">有更新已安装但<b>尚未重启生效</b>：<span id="restartItems"></span></div>
+</div>
+
 <div class="card">
   <h2>Keybox 状态</h2>
   <div class="row"><span class="k">挂载状态</span><span class="v" id="kbMount">-</span></div>
   <div class="row"><span class="k"><span id="kbDot" class="dot off"></span>文件大小</span><span class="v" id="kbSize">-</span></div>
   <div class="row"><span class="k">SHA256</span><span class="v" id="kbSha">-</span></div>
   <div class="row"><span class="k">更新时间</span><span class="v" id="kbTime">-</span></div>
+  <div class="row"><span class="k">新鲜度</span><span class="v" id="kbFresh">-</span></div>
   <div class="row"><span class="k">TEESimulator</span><span class="v" id="teeState">-</span></div>
 </div>
 
@@ -121,8 +157,17 @@ font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;transition:b
     <div><div class="lab">定时自动获取 keybox</div><div class="hint">关闭后仅保留手动获取</div></div>
     <div class="switch" id="autoSwitch"></div>
   </div>
+  <div class="lab" style="margin-top:14px">检查间隔</div>
+  <div class="hint" id="intervalHint">当前每 6 小时检查一次</div>
+  <div class="seg" id="intervalSeg">
+    <button type="button" data-h="1">1 小时</button>
+    <button type="button" data-h="6">6 小时</button>
+    <button type="button" data-h="12">12 小时</button>
+    <button type="button" data-h="24">24 小时</button>
+  </div>
+  <div class="row" style="margin-top:12px"><span class="k"><span id="retryDot" class="dot off"></span>上次失败重试</span><span class="v" id="retryState">正常</span></div>
   <button class="btn ghost" id="btnUpdate"><span>⟳</span> 检查更新</button>
-  <p class="note">发现新版本后可一键下载并自动安装，重启手机即生效</p>
+  <p class="note">发现新版本后可一键下载并自动安装；v2.1.6 起装完立即生效，无需重启</p>
 </div>
 
 <div class="card">
@@ -146,7 +191,8 @@ font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;transition:b
   <div class="row"><span class="k"><span id="modDot" class="dot off"></span>待更新</span><span class="v" id="modCount">未检查</span></div>
   <div class="row"><span class="k">上次检查</span><span class="v" id="modTime">-</span></div>
   <button class="btn" id="btnCheckMods"><span>⟳</span> 检查附属模块更新</button>
-  <p class="note">只检查不安装；需更新时用 KernelSU 的 Action 按钮安装</p>
+  <button class="btn ghost" id="btnInstallAll"><span>⤓</span> 一键安装可更新的模块</button>
+  <p class="note">只检查不安装；「一键安装」会把可更新的附属模块交给 ksud 安装（重启后生效）</p>
 </div>
 
 <div class="card">
@@ -156,7 +202,42 @@ font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;transition:b
 </div>
 
 <div class="card">
-  <h2>日志</h2>
+  <h2>下载源连通性</h2>
+  <div id="healthBox"><div class="note">点下面的按钮检测各下载源的可达性与延迟</div></div>
+  <button class="btn ghost" id="btnHealth"><span>📶</span> 开始检测</button>
+</div>
+
+<div class="card">
+  <h2>安全</h2>
+  <div class="row"><span class="k"><span id="pkDot" class="dot off"></span>公钥指纹</span><span class="v" id="pkState">-</span></div>
+  <div class="row"><span class="k">当前指纹</span><span class="v" id="pkFp">-</span></div>
+  <div class="row"><span class="k">使用中</span><span class="v" id="pkActive">-</span></div>
+  <p class="note">指纹用于自检 pubkey.b64 是否被替换。轮换密钥时把新公钥放进模块目录，
+  并在配置里设置 <b>pubkey_use</b> 指向新文件名。</p>
+</div>
+
+<div class="card">
+  <h2>配置备份</h2>
+  <div class="row2">
+    <button class="btn ghost" id="btnCfgExport"><span>⧉</span> 导出</button>
+    <button class="btn ghost" id="btnCfgImport"><span>↥</span> 导入</button>
+  </div>
+  <textarea class="cfg" id="cfgBox" placeholder="点「导出」把当前配置显示在这里；粘贴配置后点「导入」即可恢复"></textarea>
+  <p class="note">导出的就是 config.prop 内容，可直接复制保存；换机或重置后粘贴回来即可。</p>
+</div>
+
+<div class="card">
+  <h2>运行日志</h2>
+  <div class="row2">
+    <button class="btn ghost" id="btnLogLoad"><span>↻</span> 加载日志</button>
+    <button class="btn ghost" id="btnLogClear"><span>🗑</span> 清空</button>
+  </div>
+  <div class="output" id="logPanel">点「加载日志」查看模块运行日志</div>
+  <div class="note" id="logMeta"></div>
+</div>
+
+<div class="card">
+  <h2>操作记录</h2>
   <div class="output" id="output"></div>
 </div>
 
@@ -241,6 +322,62 @@ async function refresh(){
   md.className='dot '+((checked==='未检查'||checked==='-')?'off':(need>0?'warn':'on'));
   document.getElementById('modCount').textContent=(checked==='未检查')?'未检查':(need>0?('有 '+need+' 个可更新'):'全部最新');
   document.getElementById('modTime').textContent=checked==='未检查'?'-':checked;
+  busy('btnInstallAll',need<=0);
+
+  // ---- keybox 新鲜度 ----
+  var age=s.KEYBOX_AGE_DAYS, fresh=document.getElementById('kbFresh');
+  if(s.KEYBOX_MOUNTED!=='1'){fresh.textContent='-';}
+  else if(age===''||age===undefined){fresh.textContent='-';}
+  else{
+    var d=parseInt(age,10)||0;
+    var latest=(s.KEYBOX_LATEST==='1');
+    var txt=d+' 天前更新';
+    if(!latest)txt+='（服务端有更新）';
+    fresh.innerHTML=(latest&&d<30)?('<span class="pill ok">'+txt+'</span>'):
+      ((d>=30||!latest)?('<span class="pill warn2">'+txt+'</span>'):txt);
+  }
+
+  // ---- 检查间隔 ----
+  var ih=parseInt(s.CHECK_INTERVAL_H||'6',10)||6;
+  document.getElementById('intervalHint').textContent='当前每 '+ih+' 小时检查一次';
+  var seg=document.getElementById('intervalSeg');
+  for(var i=0;i<seg.children.length;i++){
+    var b=seg.children[i];
+    b.classList.toggle('sel',parseInt(b.dataset.h,10)===ih);
+  }
+
+  // ---- 失败重试状态 ----
+  var rf=parseInt(s.RETRY_FAILS||'0',10)||0;
+  var rdot=document.getElementById('retryDot');
+  rdot.className='dot '+(rf>0?'warn':'on');
+  if(rf>0){
+    var nin=parseInt(s.RETRY_NEXT_IN||'',10);
+    var when=(!isNaN(nin)&&nin>0)?('，'+Math.ceil(nin/60)+' 分钟后重试'):'';
+    document.getElementById('retryState').textContent='已失败 '+rf+' 次'+when;
+  }else{
+    document.getElementById('retryState').textContent='正常';
+  }
+
+  // ---- 待重启生效 ----
+  var rs=document.getElementById('restartStrip');
+  if(s.RESTART_PENDING==='1'){
+    var items=(s.RESTART_ITEMS||'').split(';').filter(function(x){return x.trim();});
+    document.getElementById('restartItems').textContent=items.length?items.join('、'):'（有模块待生效）';
+    rs.classList.add('show');
+  }else{
+    rs.classList.remove('show');
+  }
+
+  // ---- 公钥自检 ----
+  var intact=s.PUBKEY_INTACT||'unknown';
+  var pkd=document.getElementById('pkDot');
+  pkd.className='dot '+(intact==='ok'?'on':(intact==='bad'?'warn':'off'));
+  var pks=document.getElementById('pkState');
+  if(intact==='ok')pks.innerHTML='<span class="pill ok">一致</span>';
+  else if(intact==='bad')pks.innerHTML='<span class="pill err">已被替换！</span>';
+  else pks.innerHTML='<span class="pill">未校验</span>';
+  document.getElementById('pkFp').textContent=s.PUBKEY_FP||'-';
+  document.getElementById('pkActive').textContent=s.PUBKEY_ACTIVE||'-';
 }
 
 async function toggleBl(){
@@ -368,11 +505,133 @@ async function modCheck(){
     var sum=t2.match(/UPDATE_SUMMARY=(.*)/);
     if(sum&&sum[1])log('汇总：'+sum[1].trim(),'info');
     var need=t2.match(/UPDATE_NEED=(\d+)/);
-    if(need&&parseInt(need[1],10)>0)log('检测到 '+need[1]+' 个模块可更新，请用 KernelSU 的 Action 按钮安装','info');
+    if(need&&parseInt(need[1],10)>0)log('检测到 '+need[1]+' 个模块可更新，可点「一键安装可更新的模块」','info');
     else if(sum)log('附属模块均为最新','ok');
   }catch(e){log('检查异常: '+e.message,'err');}
   await refresh();
   busy('btnCheckMods',false);
+}
+
+// ---- 一键安装可更新的附属模块 ----
+async function installAll(){
+  log('开始一键安装可更新的附属模块 ...','info');
+  busy('btnInstallAll',true,'安装中...');
+  try{
+    var r=await exec(MODDIR+'/webui.sh install-all');
+    var out=r.stdout||'';
+    out.split('\n').forEach(function(l){
+      l=l.trim(); if(!l)return;
+      if(l.indexOf('---')>=0)return;
+      if(/^(INSTALL_ALL|UPDATE_SCAN)/.test(l))return;
+      if(l.indexOf('[✓]')>=0||l.indexOf('INSTALL_ALL=OK')>=0)log(l,'ok');
+      else if(l.indexOf('[✗]')>=0||l.indexOf('FAIL')>=0)log(l,'err');
+      else log(l,'info');
+    });
+    if(out.indexOf('INSTALL_ALL=OK')>=0){
+      var ok=(out.match(/INSTALL_ALL_OK=(\d+)/)||[])[1]||'?';
+      log('已安装 '+ok+' 个模块，重启手机后生效','ok');
+      document.getElementById('restartStrip').classList.add('show');
+    }else if(out.indexOf('INSTALL_ALL=NONE')>=0){
+      log('没有需要安装的附属模块','ok');
+    }else{
+      log('安装未成功，可稍后重试或手动刷入','err');
+    }
+  }catch(e){log('安装异常: '+e.message,'err');}
+  await refresh();
+  busy('btnInstallAll',false);
+}
+
+// ---- 检查间隔 ----
+async function setIntervalH(h){
+  try{
+    var r=await exec(MODDIR+'/webui.sh set-interval '+h);
+    var s=parseKv(r.stdout);
+    if(s.CHECK_INTERVAL_H)log('检查间隔已设为每 '+s.CHECK_INTERVAL_H+' 小时','ok');
+    else log('设置间隔失败','err');
+  }catch(e){log('设置间隔异常: '+e.message,'err');}
+  await refresh();
+}
+
+// ---- 下载源连通性 ----
+async function healthCheck(){
+  log('检测下载源连通性 ...','info');
+  busy('btnHealth',true,'检测中...');
+  var box=document.getElementById('healthBox');
+  try{
+    var r=await exec(MODDIR+'/webui.sh health');
+    var rows=(r.stdout||'').split('\n').filter(function(l){return l.indexOf('HEALTH|')===0;});
+    if(!rows.length){box.innerHTML='<div class="note">检测失败</div>';}
+    else{
+      box.innerHTML=rows.map(function(l){
+        var p=l.split('|');
+        var nm=p[1]||'?',code=p[2]||'000',ms=p[3]||'';
+        var ok=(code==='200'||code==='204'||code==='304');
+        var cls=ok?'pill ok':'pill err';
+        var label=ok?'可达':('失败 '+code);
+        return '<div class="hrow"><span class="dot '+(ok?'on':'off')+'"></span>'+
+               '<span class="nm">'+nm+'</span>'+
+               '<span class="ms">'+(ms?(ms+' ms'):'')+'</span>'+
+               '<span class="'+cls+'">'+label+'</span></div>';
+      }).join('');
+      log('连通性检测完成','ok');
+    }
+  }catch(e){box.innerHTML='<div class="note">异常: '+e.message+'</div>';log('检测异常: '+e.message,'err');}
+  busy('btnHealth',false);
+}
+
+// ---- 日志查看 ----
+async function loadLog(){
+  busy('btnLogLoad',true,'加载中...');
+  var panel=document.getElementById('logPanel');
+  try{
+    var r=await exec(MODDIR+'/webui.sh log 200');
+    var out=r.stdout||'';
+    var m=out.match(/---LOG-BEGIN---\n([\s\S]*?)\n---LOG-END---/);
+    var body=m?m[1]:out;
+    panel.textContent=body||'(空)';
+    var s=parseKv(out);
+    document.getElementById('logMeta').textContent='共 '+(s.LOG_LINES||'?')+' 行 / '+(s.LOG_SIZE||'?')+' 字节，显示最近 200 行';
+    panel.scrollTop=panel.scrollHeight;
+  }catch(e){panel.textContent='加载失败: '+e.message;}
+  busy('btnLogLoad',false);
+}
+
+async function clearLog(){
+  try{await exec(MODDIR+'/webui.sh log-clear');document.getElementById('logPanel').textContent='(已清空)';document.getElementById('logMeta').textContent='';log('日志已清空','ok');}
+  catch(e){log('清空日志异常: '+e.message,'err');}
+}
+
+// ---- 配置导出 / 导入 ----
+async function cfgExport(){
+  try{
+    var r=await exec(MODDIR+'/webui.sh cfg-export');
+    var out=r.stdout||'';
+    var m=out.match(/---CFG-BEGIN---\n([\s\S]*?)\n---CFG-END---/);
+    var body=(m?m[1]:out).replace(/\s+$/,'');
+    document.getElementById('cfgBox').value=body||'';
+    log('配置已导出到下面的文本框，可复制保存','ok');
+  }catch(e){log('导出配置异常: '+e.message,'err');}
+}
+
+async function cfgImport(){
+  var txt=document.getElementById('cfgBox').value||'';
+  if(!txt.trim()){log('文本框为空，请先粘贴要导入的配置','err');return;}
+  busy('btnCfgImport',true,'导入中...');
+  try{
+    // base64 编码后传参，避免换行/空格被 shell 吃掉
+    var b64=btoa(unescape(encodeURIComponent(txt)));
+    var r=await exec(MODDIR+'/webui.sh cfg-import '+b64);
+    var out=r.stdout||'';
+    if(out.indexOf('CFG_IMPORT=OK')>=0){
+      log('配置导入成功（'+(out.match(/CFG_ITEMS=(\d+)/)||[])[1]+' 项）','ok');
+      var m=out.match(/---CFG-BEGIN---\n([\s\S]*?)\n---CFG-END---/);
+      if(m)document.getElementById('cfgBox').value=m[1].replace(/\s+$/,'');
+    }else{
+      log((out.match(/CFG_IMPORT=FAIL\((.*?)\)/)||[])[1]||'导入失败','err');
+    }
+  }catch(e){log('导入配置异常: '+e.message,'err');}
+  busy('btnCfgImport',false);
+  await refresh();
 }
 
 document.getElementById('themeBtn').onclick=toggleTheme;
@@ -381,10 +640,24 @@ document.getElementById('btnFetch').onclick=manualFetch;
 document.getElementById('btnMount').onclick=manualMount;
 document.getElementById('btnUpdate').onclick=checkUpdate;
 document.getElementById('btnCheckMods').onclick=modCheck;
+document.getElementById('btnInstallAll').onclick=installAll;
+document.getElementById('btnHealth').onclick=healthCheck;
+document.getElementById('btnLogLoad').onclick=loadLog;
+document.getElementById('btnLogClear').onclick=clearLog;
+document.getElementById('btnCfgExport').onclick=cfgExport;
+document.getElementById('btnCfgImport').onclick=cfgImport;
 document.getElementById('autoBlSwitch').onclick=toggleBl;
 document.getElementById('autoDebugSwitch').onclick=toggleDebug;
 document.getElementById('btnBl').onclick=manualBl;
 document.getElementById('btnDebug').onclick=manualDebug;
+
+// 检查间隔分段按钮
+(function(){
+  var seg=document.getElementById('intervalSeg');
+  for(var i=0;i<seg.children.length;i++){
+    (function(b){ b.onclick=function(){ setIntervalH(b.dataset.h); }; })(seg.children[i]);
+  }
+})();
 
 setTimeout(function(){overlay.classList.add('hide');},600);
 readVersion();
