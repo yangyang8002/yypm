@@ -289,11 +289,45 @@ check_updates() {
     ' "$TMP/pkg_check.json" > "$TMP/plist.txt" 2>/dev/null
     [ -s "$TMP/plist.txt" ] || { save_update_cache "FAIL" "-" "0" "清单为空"; return 1; }
 
+    # 兜底用的 awk 程序（无 python 的机器走这条）：先写好文件再用 -f 调用，
+    # 避免把 awk 脚本内嵌在 shell 引号里被解析坏（踩过坑）。
+    #
+    # 注意：必须兼容"美化"与"单行压缩"两种 JSON 形态，且不能在 awk 里用
+    # $(i+1) 这种动态字段引用——BusyBox awk 在这种写法下会取到空值，
+    # 必须用 split() 得到的数组元素。字段值有两种形态：": 7854" 与 ":7854}"，
+    # 统一"去掉冒号与空白，为空或只剩 {" 时再取下一个元素"。
+    cat > "$TMP/pmeta.awk" <<'AWKEOF'
+BEGIN { FS = "[,\"]" }
+{
+  n = split($0, f, "[,\"]")
+  for (i = 1; i <= n; i++) {
+    if (f[i] == "x-id" || f[i] == "module_id" ||
+        f[i] == "x-versionCode" || f[i] == "versionCode" ||
+        f[i] == "x-version" || f[i] == "version") {
+      v = f[i+1]
+      sub(/^[ \t]*:/, "", v)
+      gsub(/[ \t]/, "", v)
+      if (v == "" || v == "{") { v = f[i+2]; gsub(/[ \t]/, "", v) }
+      if (f[i] == "x-id" || f[i] == "module_id") id = v
+      else if (f[i] == "x-versionCode" || f[i] == "versionCode") { gsub(/[^0-9]/, "", v); if (v != "") vc = v }
+      else vr = v
+    } else if (f[i] ~ /\.zip$/ && f[i-1] != "url") {
+      s = f[i+1]
+      sub(/^[ \t]*:/, "", s)
+      gsub(/[ \t]/, "", s)
+      if (s != "{") continue
+      if (k != "") print k "|" id "|" vc "|" vr
+      k = f[i]; id = ""; vc = ""; vr = ""
+    }
+  }
+}
+END { if (k != "") print k "|" id "|" vc "|" vr }
+AWKEOF
+
     # 抽取清单里的模块元信息 文件名|id|versionCode|version
     # 服务端 scan_packages.py 生成的新版清单会带 x-id / x-versionCode；
     # 老版清单没有这些字段时，抽取结果为空，后面自动退化成"下载包再读 module.prop"。
     # 解析优先用 python（不装 python 或解析失败就回退到 awk）。
-    # 说明：字段值只认行首缩进的 "x-..." 键，避免误命中值里可能出现的同样词。
     rm -f "$TMP/pmeta.txt" 2>/dev/null
     if command -v python3 >/dev/null 2>&1; then
         python3 -c '
@@ -315,16 +349,6 @@ for name, e in mods.items():
         # 兜底：老清单没有 x- 字段时这里也会是空，正好让后面走"下载包再读 module.prop"
         awk -f "$TMP/pmeta.awk" "$TMP/pkg_check.json" > "$TMP/pmeta.txt" 2>/dev/null
     fi
-
-    # 兜底用的 awk 程序（无 python 的机器走这条）：先写好文件再用 -f 调用，
-    # 避免把 awk 脚本内嵌在 shell 引号里被解析坏（踩过坑）。
-    cat > "$TMP/pmeta.awk" <<'AWKEOF'
-BEGIN { FS = "\"" }
-/"x-versionCode"/ { vc = $4 }
-/"x-id"/          { id = $4 }
-/"url"/           { if (k != "") print k "|" id "|" vc "|" ""; k = ""; id = ""; vc = "" }
-{ if ($0 ~ /\.zip"[[:space:]]*:/ && $2 ~ /\.zip$/) k = $2 }
-AWKEOF
 
     # 本地已下载包的 sha256（由 download_packages 维护）
     : > "$TMP/cache_hash.txt" 2>/dev/null

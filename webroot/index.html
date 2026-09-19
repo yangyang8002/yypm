@@ -199,6 +199,14 @@ function exec(cmd){
 
 function parseKv(t){var m={};(t||'').split('\n').forEach(function(l){var i=l.indexOf('=');if(i>0)m[l.slice(0,i).trim()]=l.slice(i+1).trim();});return m;}
 
+// 运行态反馈：这几步要跑几秒（附属模块检查最多要下几 MB 的包），
+// 期间明确禁用按钮并改文案，避免"点了没反应"甚至被重复点击。
+function busy(id,on,text){
+  var b=document.getElementById(id);if(!b)return;
+  if(on){if(!b.dataset.html)b.dataset.html=b.innerHTML;b.disabled=true;if(text)b.textContent=text;}
+  else{b.disabled=false;if(b.dataset.html)b.innerHTML=b.dataset.html;}
+}
+
 async function readVersion(){
   try{var r=await exec('sed -n "s/^version=//p" '+MODDIR+'/module.prop');var v=(r.stdout||'').trim();if(v)document.getElementById('verChip').textContent='v'+v;}catch(e){}
 }
@@ -261,6 +269,7 @@ async function manualDebug(){
 
 async function checkUpdate(){
   log('检查更新...','info');
+  busy('btnUpdate',true,'检查中...');
   try{var r=await exec(MODDIR+'/webui.sh update');var s=parseKv(r.stdout);
     if(s.UPDATE==='AVAILABLE'){
       document.getElementById('upVer').textContent='v'+s.REMOTE_VERSION;
@@ -272,10 +281,12 @@ async function checkUpdate(){
       log('已是最新版本 v'+s.LOCAL_VERSION,'ok');
     }else{log('检查更新失败','err');}
   }catch(e){log('检查更新异常: '+e.message,'err');}
+  busy('btnUpdate',false);
 }
 
 async function confirmUpdate(){
   log('下载新版本模块...','info');
+  var a=document.querySelector('.update-strip .vlink');if(a){a.textContent='下载中...';a.style.pointerEvents='none';}
   try{var r=await exec(MODDIR+'/webui.sh update');var s=parseKv(r.stdout);
     var url=s.DOWNLOAD_URL;
     if(!url){log('无下载地址或已是最新','info');return;}
@@ -291,6 +302,7 @@ async function confirmUpdate(){
       (dl.stdout||'').split('\n').forEach(function(l){if(l.trim())log(l,'err');});
     }
   }catch(e){log('异常: '+e.message,'err');}
+  if(a){a.textContent='更新';a.style.pointerEvents='';}
 }
 
 async function toggleAuto(){
@@ -318,6 +330,7 @@ async function manualMount(){
 
 async function modCheck(){
   log('检查附属模块更新 ...','info');
+  busy('btnCheckMods',true,'检查中...');
   try{
     var r=await exec(MODDIR+'/webui.sh check-packages');
     var t2=r.stdout||'';
@@ -340,6 +353,7 @@ async function modCheck(){
     else if(sum)log('附属模块均为最新','ok');
   }catch(e){log('检查异常: '+e.message,'err');}
   await refresh();
+  busy('btnCheckMods',false);
 }
 
 document.getElementById('themeBtn').onclick=toggleTheme;
