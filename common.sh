@@ -289,66 +289,11 @@ check_updates() {
     ' "$TMP/pkg_check.json" > "$TMP/plist.txt" 2>/dev/null
     [ -s "$TMP/plist.txt" ] || { save_update_cache "FAIL" "-" "0" "清单为空"; return 1; }
 
-    # 兜底用的 awk 程序（无 python 的机器走这条）：先写好文件再用 -f 调用，
-    # 避免把 awk 脚本内嵌在 shell 引号里被解析坏（踩过坑）。
-    #
-    # 注意：必须兼容"美化"与"单行压缩"两种 JSON 形态，且不能在 awk 里用
-    # $(i+1) 这种动态字段引用——BusyBox awk 在这种写法下会取到空值，
-    # 必须用 split() 得到的数组元素。字段值有两种形态：": 7854" 与 ":7854}"，
-    # 统一"去掉冒号与空白，为空或只剩 {" 时再取下一个元素"。
-    cat > "$TMP/pmeta.awk" <<'AWKEOF'
-BEGIN { FS = "[,\"]" }
-{
-  n = split($0, f, "[,\"]")
-  for (i = 1; i <= n; i++) {
-    if (f[i] == "x-id" || f[i] == "module_id" ||
-        f[i] == "x-versionCode" || f[i] == "versionCode" ||
-        f[i] == "x-version" || f[i] == "version") {
-      v = f[i+1]
-      sub(/^[ \t]*:/, "", v)
-      gsub(/[ \t]/, "", v)
-      if (v == "" || v == "{") { v = f[i+2]; gsub(/[ \t]/, "", v) }
-      if (f[i] == "x-id" || f[i] == "module_id") id = v
-      else if (f[i] == "x-versionCode" || f[i] == "versionCode") { gsub(/[^0-9]/, "", v); if (v != "") vc = v }
-      else vr = v
-    } else if (f[i] ~ /\.zip$/ && f[i-1] != "url") {
-      s = f[i+1]
-      sub(/^[ \t]*:/, "", s)
-      gsub(/[ \t]/, "", s)
-      if (s != "{") continue
-      if (k != "") print k "|" id "|" vc "|" vr
-      k = f[i]; id = ""; vc = ""; vr = ""
-    }
-  }
-}
-END { if (k != "") print k "|" id "|" vc "|" vr }
-AWKEOF
-
     # 抽取清单里的模块元信息 文件名|id|versionCode|version
     # 服务端 scan_packages.py 生成的新版清单会带 x-id / x-versionCode；
     # 老版清单没有这些字段时，抽取结果为空，后面自动退化成"下载包再读 module.prop"。
-    # 解析优先用 python（不装 python 或解析失败就回退到 awk）。
-    rm -f "$TMP/pmeta.txt" 2>/dev/null
-    if command -v python3 >/dev/null 2>&1; then
-        python3 -c '
-import json, sys
-try:
-    mods = json.load(open(sys.argv[1], encoding="utf-8")).get("modules") or {}
-except Exception:
-    sys.exit(0)
-for name, e in mods.items():
-    vid = e.get("x-id") or e.get("module_id") or ""
-    vc  = e.get("x-versionCode")
-    if vc is None:
-        vc = e.get("versionCode")
-    vr  = e.get("x-version") or e.get("version") or ""
-    print("%s|%s|%s|%s" % (name, vid, "" if vc is None else vc, vr))
-' "$TMP/pkg_check.json" > "$TMP/pmeta.txt" 2>/dev/null
-    fi
-    if [ ! -s "$TMP/pmeta.txt" ]; then
-        # 兜底：老清单没有 x- 字段时这里也会是空，正好让后面走"下载包再读 module.prop"
-        awk -f "$TMP/pmeta.awk" "$TMP/pkg_check.json" > "$TMP/pmeta.txt" 2>/dev/null
-    fi
+    # 解析器与 download_packages 共用 build_pmeta（见文件上方定义）。
+    build_pmeta "$TMP/pkg_check.json"
 
     # 本地已下载包的 sha256（由 download_packages 维护）
     : > "$TMP/cache_hash.txt" 2>/dev/null
@@ -358,16 +303,7 @@ for name, e in mods.items():
     done
 
     # 已安装模块（含 modules_update 待生效）
-    : > "$TMP/installed.txt" 2>/dev/null
-    for d in /data/adb/modules/* /data/adb/modules_update/*; do
-        [ -d "$d" ] || continue
-        mp="$d/module.prop"
-        [ -f "$mp" ] || continue
-        mid=$(sed -n 's/^id=//p' "$mp" 2>/dev/null | head -1 | tr -d ' \r')
-        mnm=$(sed -n 's/^name=//p' "$mp" 2>/dev/null | head -1 | tr -d '\r')
-        mvc=$(vc_of "$d")
-        [ -n "$mid" ] && echo "$mid|$mnm|$mvc" >> "$TMP/installed.txt"
-    done
+    list_installed
 
     : > "$TMP/check_out.txt" 2>/dev/null
     while IFS='|' read -r fn u; do
@@ -480,17 +416,157 @@ update_state_field() { # $1 key  $2 default
     [ -n "$v" ] && echo "$v" || echo "$2"
 }
 # ---- 下载服务端 package 清单里列出的所有模块 ----
+# ---- 清单元信息解析 ----
+# 输出：模块id|versionCode（供多处复用，避免重复解析）
+# 说明：本函数只负责把清单转成元信息写到 $TMP/pmeta.txt，解析器兼容
+# "美化"与"单行压缩"两种 JSON，且不能用 $(i+1) 这种动态字段引用
+# （BusyBox awk 下会取到空值，必须用 split() 的数组元素）。
+# 字段值有 ": 7854" 与 ":7854}" 两种形态：统一"去掉冒号与空白"，
+# 为空或只剩 "{" 时再取下一个元素。
+build_pmeta() { # $1 = 清单文件（默认 $TMP/packages.json）
+    local src="${1:-$TMP/packages.json}"
+    [ -f "$src" ] || return 1
+    cat > "$TMP/pmeta.awk" <<'AWKEOF'
+BEGIN { FS = "[,\"]" }
+{
+  n = split($0, f, "[,\"]")
+  for (i = 1; i <= n; i++) {
+    if (f[i] == "x-id" || f[i] == "module_id" ||
+        f[i] == "x-versionCode" || f[i] == "versionCode" ||
+        f[i] == "x-version" || f[i] == "version") {
+      v = f[i+1]
+      sub(/^[ \t]*:/, "", v)
+      gsub(/[ \t]/, "", v)
+      if (v == "" || v == "{") { v = f[i+2]; gsub(/[ \t]/, "", v) }
+      if (f[i] == "x-id" || f[i] == "module_id") id = v
+      else if (f[i] == "x-versionCode" || f[i] == "versionCode") { gsub(/[^0-9]/, "", v); if (v != "") vc = v }
+      else vr = v
+    } else if (f[i] ~ /\.zip$/ && f[i-1] != "url") {
+      s = f[i+1]
+      sub(/^[ \t]*:/, "", s)
+      gsub(/[ \t]/, "", s)
+      if (s != "{") continue
+      if (k != "") print k "|" id "|" vc "|" vr
+      k = f[i]; id = ""; vc = ""; vr = ""
+    }
+  }
+}
+END { if (k != "") print k "|" id "|" vc "|" vr }
+AWKEOF
+    rm -f "$TMP/pmeta.txt" 2>/dev/null
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c '
+import json, sys
+try:
+    mods = json.load(open(sys.argv[1], encoding="utf-8")).get("modules") or {}
+except Exception:
+    sys.exit(0)
+for name, e in mods.items():
+    vid = e.get("x-id") or e.get("module_id") or ""
+    vc  = e.get("x-versionCode")
+    if vc is None:
+        vc = e.get("versionCode")
+    vr  = e.get("x-version") or e.get("version") or ""
+    print("%s|%s|%s|%s" % (name, vid, "" if vc is None else vc, vr))
+' "$src" > "$TMP/pmeta.txt" 2>/dev/null
+    fi
+    if [ ! -s "$TMP/pmeta.txt" ]; then
+        awk -f "$TMP/pmeta.awk" "$src" > "$TMP/pmeta.txt" 2>/dev/null
+    fi
+    return 0
+}
+
+# 清单里某个模块的云端 versionCode；取不到输出空
+remote_vc_of() { # $1 = 文件名（清单里直接可用的版本号，优先用它）
+    sed -n "/^$1|/p" "$TMP/pmeta.txt" 2>/dev/null | cut -d'|' -f3 | head -1
+}
+
+# 取包内 module.prop 的 versionCode（已验证回退），失败输出空
+zip_vc_of() { # $1 = zip
+    zip_version "$1" 2>/dev/null
+}
+
+# 输出"需要下载"的 url 列表（每行一个）。
+# 判定规则（尽量省流量，同时保证 Action 安装始终可用）：
+#   1) 本地已装 / 已待生效(id 在 modules) 的模块：云端不高于它就不下载；
+#      Action 装的就是这个版本，同版本无需再下一份。
+#   2) 本地没装的模块：只有已下载的缓存包 sha256 等于云端 sha256 时才跳过，
+#      否则下载（首次开机要拿到包，Action 才能安装）。
+#   3) 拿不到云端版本号（老清单）时一律下载，安全优先。
+dl_filter() { # $1 = 清单文件
+    local src="$1"
+    local urls=$(grep -o '"url"[[:space:]]*:[[:space:]]*"[^"]*"' "$src" 2>/dev/null | sed 's/.*"\(http[^"]*\)".*/\1/')
+    [ -n "$urls" ] || return 0
+    local have_meta=0
+    [ -s "$TMP/pmeta.txt" ] && have_meta=1
+    echo "$urls" | while IFS= read -r url; do
+        [ -n "$url" ] || continue
+        local name=$(basename "$url")
+        [ "$have_meta" = "1" ] || { echo "$url"; continue; }
+
+        local p_id=$(sed -n "/^$name|/p" "$TMP/pmeta.txt" 2>/dev/null | cut -d'|' -f2 | head -1)
+        local p_vc=$(sed -n "/^$name|/p" "$TMP/pmeta.txt" 2>/dev/null | cut -d'|' -f3 | head -1)
+        local mid="$p_id"; [ -n "$mid" ] || mid=$(echo "$name" | sed 's/\.zip$//')
+
+        # 本地已装（或待生效）的版本
+        local lvc=$(vc_of "/data/adb/modules/$mid" 2>/dev/null)
+        [ -n "$lvc" ] || lvc=$(vc_of "/data/adb/modules_update/$mid" 2>/dev/null)
+
+        if [ -n "$p_vc" ] && [ -n "$lvc" ] && [ "$p_vc" -le "$lvc" ] 2>/dev/null; then
+            continue   # 已是最新，不必下载（Action 装的也是同一版本）
+        fi
+
+        # 本地没装：只有缓存包已是云端版本才跳过
+        local want=$(sed -n "/\"$name\"/p" "$src" 2>/dev/null | tr -d ' ' | grep -o '"sha256":"[0-9a-f]*"' | head -1 | sed 's/.*"sha256":"\([0-9a-f]*\)".*/\1/')
+        local cache="$DATA_DIR/packages/$name"
+        if [ -n "$want" ] && [ -s "$cache" ] && [ "$(sha256_of "$cache")" = "$want" ]; then
+            continue   # 缓存包与云端一致，直接复用
+        fi
+        echo "$url"
+    done
+}
+
+# 已安装模块（含 modules_update 待生效）
+list_installed() {
+    : > "$TMP/installed.txt" 2>/dev/null
+    for d in /data/adb/modules/* /data/adb/modules_update/*; do
+        [ -d "$d" ] || continue
+        local mp="$d/module.prop"
+        [ -f "$mp" ] || continue
+        local mid=$(sed -n 's/^id=//p' "$mp" 2>/dev/null | head -1 | tr -d ' \r')
+        local mnm=$(sed -n 's/^name=//p' "$mp" 2>/dev/null | head -1 | tr -d '\r')
+        local mvc=$(vc_of "$d")
+        [ -n "$mid" ] && echo "$mid|$mnm|$mvc" >> "$TMP/installed.txt"
+    done
+    return 0
+}
+
 download_packages() {
     local list_url="$BASE_URL?action=packages"
     log "[·] 拉取模块清单"
     download_retry "$list_url" "$TMP/packages.json" || { log "[✗] 模块清单下载失败（已重试 $NET_RETRY 次）"; return 1; }
 
-    local urls=$(grep -o '"url"[[:space:]]*:[[:space:]]*"[^"]*"' "$TMP/packages.json" | sed 's/.*"\(http[^"]*\)".*/\1/')
-    [ -n "$urls" ] || { log "[!] 清单为空"; return 0; }
+    # 解析清单元信息（含云端 versionCode），用来判断哪些包真的需要下载
+    build_pmeta "$TMP/packages.json"
 
     local dest="/data/adb/yypm/packages"
     mkdir -p "$dest"
-    for url in $urls; do
+
+    # 只下载"确实需要"的包：已装同版本的不重下（实测开机可省约 16MB），
+    # 但确保 Action 安装所需的包仍在本地（已装的模块本就不需要再装）。
+    dl_filter "$TMP/packages.json" > "$TMP/dl_list.txt" 2>/dev/null
+    local need=$(wc -l < "$TMP/dl_list.txt" 2>/dev/null | tr -d ' ')
+    local total=$(grep -c '"url"' "$TMP/packages.json" 2>/dev/null | tr -d ' ')
+    need=${need:-0}; total=${total:-0}
+
+    if [ "$need" = "0" ]; then
+        log "[✓] 附属模块均为最新，无需下载（共 ${total} 个）"
+        return 0
+    fi
+    [ "$need" -lt "$total" ] 2>/dev/null && log "[·] 附属模块需下载 ${need}/${total} 个（其余已是本地版本）"
+
+    while IFS= read -r url; do
+        [ -n "$url" ] || continue
         local name=$(basename "$url")
         log "[·] 下载模块: $name"
         if download "$url" "$dest/$name"; then
@@ -498,7 +574,7 @@ download_packages() {
         else
             log "[✗] 模块下载失败: $name"
         fi
-    done
+    done < "$TMP/dl_list.txt"
     return 0
 }
 
