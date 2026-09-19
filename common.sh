@@ -174,8 +174,266 @@ echo_status() {
     # 关闭调试状态
     echo "AUTO_DEBUG=$(cfg_get auto_debug off)"
     [ "$(getprop ro.debuggable 2>/dev/null)" = "0" ] && echo "DEBUG_CLOSED=1" || echo "DEBUG_CLOSED=0"
+    # 附属模块更新检查结果（由 webui.sh check-packages 写入缓存）
+    echo "UPDATE_CHECKED=$(update_state_field checked_at 未检查)"
+    echo "UPDATE_NEED=$(update_state_field need 0)"
+    echo "UPDATE_SUMMARY=$(update_state_field summary -)"
 }
 
+# ============ 附属模块更新检查（WebUI 只读检查，不安装）============
+# 依据：服务端 ?action=packages 清单（sha256 + url） 与 已安装模块的 module.prop
+# 逻辑：本地已下载的包 sha256 与清单一致 -> 视为最新；
+#       不一致 -> 把新包下到临时目录，解出其中的 module.prop 取版本，再与本地已装版本对比。
+# 注意：只检查与提示，不安装任何东西；安装请用 KernelSU 的 Action 按钮。
+
+# 取模块目录里 module.prop 的 versionCode（缺失则退回 version 字符串）
+vc_of() { # $1 module dir
+    local mp="$1/module.prop"
+    [ -f "$mp" ] || return 1
+    local v=$(sed -n 's/^versionCode=//p' "$mp" 2>/dev/null | head -1 | tr -d ' \r')
+    [ -n "$v" ] && { echo "$v"; return 0; }
+    v=$(sed -n 's/^version=//p' "$mp" 2>/dev/null | head -1 | tr -d ' \r')
+    [ -n "$v" ] && { echo "$v"; return 0; }
+    return 1
+}
+
+# 从 zip 包内读出 module.prop 的 id（模块真实 id，与 zip 文件名可能不同）
+zip_id() { # $1 zip file
+    local out=$(zip_prop "$1")
+    [ -n "$out" ] || return 1
+    local v=$(printf '%s\n' "$out" | sed -n 's/^id=//p' | head -1 | tr -d ' \r')
+    [ -n "$v" ] || return 1
+    echo "$v"
+    return 0
+}
+
+# 读出 zip 内 module.prop 的全部内容
+zip_prop() { # $1 zip file
+    local z="$1" out="" c
+    [ -f "$z" ] || return 1
+    if command -v unzip >/dev/null 2>&1; then
+        out=$(unzip -p "$z" module.prop 2>/dev/null)
+    fi
+    if [ -z "$out" ]; then
+        for c in busybox toybox; do
+            command -v "$c" >/dev/null 2>&1 || continue
+            "$c" --list 2>/dev/null | grep -qx unzip || continue
+            out=$("$c" unzip -p "$z" module.prop 2>/dev/null)
+            [ -n "$out" ] && break
+        done
+    fi
+    [ -n "$out" ] || return 1
+    printf '%s\n' "$out"
+    return 0
+}
+
+# 从 zip 包内读出 module.prop 的 versionCode（退回 version）
+zip_version() { # $1 zip file
+    local out=$(zip_prop "$1")
+    [ -n "$out" ] || return 1
+    local v=$(printf '%s\n' "$out" | sed -n 's/^versionCode=//p' | head -1 | tr -d ' \r')
+    [ -n "$v" ] || v=$(printf '%s\n' "$out" | sed -n 's/^version=//p' | head -1 | tr -d ' \r')
+    [ -n "$v" ] || return 1
+    echo "$v"
+    return 0
+}
+
+check_updates() {
+    mkdir -p "$TMP" 2>/dev/null
+    log "[·] 检查附属模块更新"
+
+    if ! download "$BASE_URL?action=packages" "$TMP/pkg_check.json" >/dev/null 2>&1; then
+        save_update_cache "FAIL" "-" "0" "清单下载失败"
+        return 1
+    fi
+
+    # 防呆：若服务器回的是 301/302 跳转页（download 里的 curl 不带 -L 时会存成 HTML），
+    # 这里必须识别出来，否则会被误判成"清单为空"。同时提示把 BASE_URL 写成带尾斜杠的地址。
+    if grep -qiE '<html|301 moved|302 found' "$TMP/pkg_check.json" 2>/dev/null; then
+        save_update_cache "FAIL" "-" "0" "清单被重定向（请给 BASE_URL 加尾斜杠）"
+        log "[!] 清单返回的是跳转页，不是 JSON——把 BASE_URL 改为以 / 结尾即可"
+        return 1
+    fi
+
+    # 抽取 文件名|url（清单格式 {"modules":{"X.zip":{"sha256","size","url"}}}）
+    # 只认 "X.zip" 这种"键名"（后面紧跟冒号），否则会误命中 url 字段里的文件名。
+    # 用 awk 单遍扫描，避免多层引号嵌套的转义坑；文件名在前、url 在后，顺序天然成立。
+    awk -F'"' '
+        /\.zip"[[:space:]]*:/ { k = $2 }
+        /"url"/ {
+            u = ""
+            for (i = 1; i <= NF; i++) if ($i ~ /^http/) u = $i
+            if (k != "" && u != "") print k "|" u
+        }
+    ' "$TMP/pkg_check.json" > "$TMP/plist.txt" 2>/dev/null
+    [ -s "$TMP/plist.txt" ] || { save_update_cache "FAIL" "-" "0" "清单为空"; return 1; }
+
+    # 抽取清单里的模块元信息 文件名|id|versionCode|version
+    # 服务端 scan_packages.py 生成的新版清单会带 x-id / x-versionCode；
+    # 老版清单没有这些字段时，抽取结果为空，后面自动退化成"下载包再读 module.prop"。
+    # 解析优先用 python（不装 python 或解析失败就回退到 awk）。
+    # 说明：字段值只认行首缩进的 "x-..." 键，避免误命中值里可能出现的同样词。
+    rm -f "$TMP/pmeta.txt" 2>/dev/null
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c '
+import json, sys
+try:
+    mods = json.load(open(sys.argv[1], encoding="utf-8")).get("modules") or {}
+except Exception:
+    sys.exit(0)
+for name, e in mods.items():
+    vid = e.get("x-id") or e.get("module_id") or ""
+    vc  = e.get("x-versionCode")
+    if vc is None:
+        vc = e.get("versionCode")
+    vr  = e.get("x-version") or e.get("version") or ""
+    print("%s|%s|%s|%s" % (name, vid, "" if vc is None else vc, vr))
+' "$TMP/pkg_check.json" > "$TMP/pmeta.txt" 2>/dev/null
+    fi
+    if [ ! -s "$TMP/pmeta.txt" ]; then
+        # 兜底：老清单没有 x- 字段时这里也会是空，正好让后面走"下载包再读 module.prop"
+        awk -f "$TMP/pmeta.awk" "$TMP/pkg_check.json" > "$TMP/pmeta.txt" 2>/dev/null
+    fi
+
+    # 兜底用的 awk 程序（无 python 的机器走这条）：先写好文件再用 -f 调用，
+    # 避免把 awk 脚本内嵌在 shell 引号里被解析坏（踩过坑）。
+    cat > "$TMP/pmeta.awk" <<'AWKEOF'
+BEGIN { FS = "\"" }
+/"x-versionCode"/ { vc = $4 }
+/"x-id"/          { id = $4 }
+/"url"/           { if (k != "") print k "|" id "|" vc "|" ""; k = ""; id = ""; vc = "" }
+{ if ($0 ~ /\.zip"[[:space:]]*:/ && $2 ~ /\.zip$/) k = $2 }
+AWKEOF
+
+    # 本地已下载包的 sha256（由 download_packages 维护）
+    : > "$TMP/cache_hash.txt" 2>/dev/null
+    for f in "$DATA_DIR"/packages/*.zip; do
+        [ -f "$f" ] || continue
+        echo "$(basename "$f")|$(sha256_of "$f")" >> "$TMP/cache_hash.txt"
+    done
+
+    # 已安装模块（含 modules_update 待生效）
+    : > "$TMP/installed.txt" 2>/dev/null
+    for d in /data/adb/modules/* /data/adb/modules_update/*; do
+        [ -d "$d" ] || continue
+        mp="$d/module.prop"
+        [ -f "$mp" ] || continue
+        mid=$(sed -n 's/^id=//p' "$mp" 2>/dev/null | head -1 | tr -d ' \r')
+        mnm=$(sed -n 's/^name=//p' "$mp" 2>/dev/null | head -1 | tr -d '\r')
+        mvc=$(vc_of "$d")
+        [ -n "$mid" ] && echo "$mid|$mnm|$mvc" >> "$TMP/installed.txt"
+    done
+
+    : > "$TMP/check_out.txt" 2>/dev/null
+    while IFS='|' read -r fn u; do
+        [ -n "$fn" ] || continue
+        # 清单自带版本信息（服务端 scan_packages.py 生成）时，直接用清单判定，不下载任何包；
+        # 老版清单没有这些字段 -> rvc 为空 -> 退回"下载包再读 module.prop"。
+        p_id=$(grep -F "$fn|" "$TMP/pmeta.txt" 2>/dev/null | cut -d'|' -f2 | head -1)
+        p_vc=$(grep -F "$fn|" "$TMP/pmeta.txt" 2>/dev/null | cut -d'|' -f3 | head -1)
+        p_vr=$(grep -F "$fn|" "$TMP/pmeta.txt" 2>/dev/null | cut -d'|' -f4 | head -1)
+
+        mid=$(echo "$fn" | sed 's/\.zip$//')
+        [ -n "$p_id" ] && mid="$p_id"
+        lvc=$(grep -F "$mid|" "$TMP/installed.txt" 2>/dev/null | cut -d'|' -f3 | head -1)
+
+        if [ -n "$p_vc" ]; then
+            # ---- 快路径：清单给了 versionCode，零下载 ----
+            rvc="$p_vc"
+            rvtxt=${p_vr:-$p_vc}
+            if [ -z "$lvc" ]; then
+                echo "CHECK|$fn|$mid|未安装|$rvc|NEW|未安装（可用 KernelSU 的 Action 安装）${rvtxt:+（$rvtxt）}" >> "$TMP/check_out.txt"
+            elif [ "$lvc" = "$rvc" ]; then
+                echo "CHECK|$fn|$mid|$lvc|$rvc|OK|已是最新" >> "$TMP/check_out.txt"
+            elif [ "$lvc" -gt "$rvc" ] 2>/dev/null; then
+                echo "CHECK|$fn|$mid|$lvc|$rvc|OK|本地版本($lvc)高于线上($rvc)，不提示更新" >> "$TMP/check_out.txt"
+            else
+                echo "CHECK|$fn|$mid|$lvc|$rvc|UPD|发现新版本${rvtxt:+：$rvtxt}" >> "$TMP/check_out.txt"
+            fi
+            continue
+        fi
+
+        # ---- 慢路径：清单没有版本信息，只能下载包（或用已下载的缓存包）来读 ----
+        want=$(grep -F "\"$fn\"" "$TMP/pkg_check.json" 2>/dev/null | tr -d ' ' | grep -o '"sha256":"[0-9a-f]*"' | head -1 | sed 's/.*"sha256":"\([0-9a-f]*\)".*/\1/')
+        have=$(grep -F "$fn|" "$TMP/cache_hash.txt" 2>/dev/null | cut -d'|' -f2)
+        z="$TMP/$fn"
+        if [ -n "$want" ] && [ -n "$have" ] && [ "$want" = "$have" ] && [ -s "$DATA_DIR/packages/$fn" ]; then
+            z="$DATA_DIR/packages/$fn"
+        else
+            rm -f "$TMP/$fn" 2>/dev/null
+            if ! download "$u" "$TMP/$fn" >/dev/null 2>&1 || [ ! -s "$TMP/$fn" ]; then
+                echo "CHECK|$fn|$mid|?|?|ERR|新包下载失败（网络）" >> "$TMP/check_out.txt"
+                continue
+            fi
+            if [ -n "$want" ] && [ "$(sha256_of "$TMP/$fn")" != "$want" ]; then
+                echo "CHECK|$fn|$mid|?|?|ERR|sha256 校验失败" >> "$TMP/check_out.txt"
+                continue
+            fi
+        fi
+
+        # 模块 id 以包内 module.prop 为准（zip 文件名可能与 id 不同）
+        bid=$(zip_id "$z")
+        [ -n "$bid" ] && mid="$bid"
+        rvc=$(zip_version "$z")
+        [ -z "$rvc" ] && rvc="?"
+
+        lvc=$(grep -F "$mid|" "$TMP/installed.txt" 2>/dev/null | cut -d'|' -f3 | head -1)
+        if [ -z "$lvc" ]; then
+            while IFS='|' read -r i_id i_nm i_vc; do
+                [ -n "$i_id" ] || continue
+                case "$mid" in
+                    *"$i_id"*) lvc="$i_vc"; mid="$i_id"; break ;;
+                    "$i_id"*)  lvc="$i_vc"; mid="$i_id"; break ;;
+                esac
+            done < "$TMP/installed.txt"
+        fi
+
+        if [ -z "$lvc" ]; then
+            echo "CHECK|$fn|$mid|未安装|$rvc|NEW|未安装（可用 KernelSU 的 Action 安装）" >> "$TMP/check_out.txt"
+        elif [ "$rvc" != "?" ] && [ "$rvc" = "$lvc" ]; then
+            echo "CHECK|$fn|$mid|$lvc|$rvc|OK|已是最新" >> "$TMP/check_out.txt"
+        elif [ "$rvc" = "?" ]; then
+            echo "CHECK|$fn|$mid|$lvc|$rvc|MISMATCH|包内容有变化，版本号读取失败（建议重装）" >> "$TMP/check_out.txt"
+        else
+            echo "CHECK|$fn|$mid|$lvc|$rvc|UPD|发现新版本" >> "$TMP/check_out.txt"
+        fi
+    done < "$TMP/plist.txt"
+
+    # 清掉本轮的临时下载（不占用手机存储）
+    rm -f "$TMP"/*.zip 2>/dev/null
+
+    # 汇总（按输出文件统计，避免子 shell 变量丢失）
+    NU=$(grep -cE '\|(UPD|NEW|MISMATCH)\|' "$TMP/check_out.txt" 2>/dev/null); NU=${NU:-0}
+    NE=$(grep -c '|ERR|' "$TMP/check_out.txt" 2>/dev/null); NE=${NE:-0}
+    NT=$(wc -l < "$TMP/check_out.txt" 2>/dev/null | tr -d ' '); NT=${NT:-0}
+    NC=$((NT - NU - NE)); [ "$NC" -lt 0 ] && NC=0
+
+    if [ "$NE" -gt 0 ] && [ "$NU" -eq 0 ]; then ST=FAIL
+    elif [ "$NU" -gt 0 ]; then ST=UPD
+    else ST=OK; fi
+
+    save_update_cache "$ST" "$(date '+%m-%d %H:%M')" "$NU" "共 ${NT} 个：最新 ${NC}，可更新 ${NU}，失败 ${NE}"
+    log "[✓] 附属模块检查完成：可更新 ${NU} 个，失败 ${NE} 个"
+    return 0
+}
+
+# 写检查结果缓存，供 WebUI 状态显示
+save_update_cache() { # $1 state  $2 time  $3 need  $4 summary
+    mkdir -p "$DATA_DIR" 2>/dev/null
+    {
+        echo "state=$1"
+        echo "checked_at=$2"
+        echo "need=$3"
+        echo "summary=$4"
+    } > "$DATA_DIR/update_check.prop" 2>/dev/null
+}
+
+update_state_field() { # $1 key  $2 default
+    local f="$DATA_DIR/update_check.prop"
+    [ -f "$f" ] || { echo "$2"; return; }
+    local v=$(grep "^$1=" "$f" 2>/dev/null | tail -1 | cut -d= -f2-)
+    [ -n "$v" ] && echo "$v" || echo "$2"
+}
 # ---- 下载服务端 package 清单里列出的所有模块 ----
 download_packages() {
     local list_url="$BASE_URL?action=packages"

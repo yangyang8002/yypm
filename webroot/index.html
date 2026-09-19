@@ -5,55 +5,100 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>yypm</title>
 <style>
-:root{--bg:#08080c;--panel:rgba(20,20,28,.72);--panel2:rgba(30,30,40,.8);--border:rgba(255,255,255,.08);
---txt:#ececf1;--sub:#9b9bad;--muted:#646472;--accent:#4f8cff;--accent2:#7c5cff;--ok:#27c97f;--warn:#f5a623;--err:#ff5c5c}
+/* ===== Material You (M3) —— Shizuku 同款主题 =====
+   设计要点：surface 层级代替边框描边、primary 单色代替渐变、
+   无玻璃拟态、无发光、卡片圆角 16、按钮全圆角、典型 M3 状态色。 */
+:root{
+--primary:#6750A4;--on-primary:#FFFFFF;
+--secondary-container:#E8DEF8;--on-secondary-container:#1D192B;
+--error-container:#F9DEDC;--on-error-container:#410E0B;
+--surface:#FEF7FF;
+--surface-container:#F3EDF7;--surface-container-high:#ECE6F0;--surface-container-highest:#E6E0E9;
+--on-surface:#1D1B20;--on-surface-variant:#49454F;--outline:#79747E;--outline-variant:#CAC4D0;
+--ok:#146C2E;--ok-container:#C4EED0;--warn:#7A5900;--warn-container:#FFDEA6;
+--code-bg:#1C1B1F;--code-sub:#CAC4D0;
+--r-card:16px;--r-btn:20px;--r-in:12px}
+html[data-theme="dark"]{
+--primary:#D0BCFF;--on-primary:#381E72;
+--secondary-container:#4A4458;--on-secondary-container:#E8DEF8;
+--error-container:#8C1D18;--on-error-container:#F9DEDC;
+--surface:#141218;
+--surface-container:#211F26;--surface-container-high:#2B2930;--surface-container-highest:#36343B;
+--on-surface:#E6E0E9;--on-surface-variant:#CAC4D0;--outline:#938F99;--outline-variant:#49454F;
+--ok:#7ADFA0;--ok-container:#1F4A2C;--warn:#F0C048;--warn-container:#4A3A00;
+--code-bg:#0F0D13;--code-sub:#CAC4D0}
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;min-height:100vh;padding:24px 16px 48px;line-height:1.5;background-image:radial-gradient(circle at 50% -10%,#23233a 0%,var(--bg) 55%)}
-h1{font-size:26px;font-weight:800;letter-spacing:-.5px;background:linear-gradient(135deg,#fff 0%,#9a9ab0 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:2px}
-.sub{color:var(--muted);font-size:12.5px;margin-bottom:22px}
-.card{background:var(--panel);border:1px solid var(--border);border-radius:18px;padding:18px;margin-bottom:16px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 8px 28px rgba(0,0,0,.28)}
-.card h2{font-size:12px;color:var(--sub);font-weight:700;margin-bottom:14px;text-transform:uppercase;letter-spacing:.6px}
-.row{display:flex;align-items:center;justify-content:space-between;font-size:14px;padding:6px 0}
-.row .k{color:var(--sub)}
-.row .v{font-family:ui-monospace,SFMono-Regular,monospace;font-size:12.5px;word-break:break-all;text-align:right;max-width:62%;color:var(--txt)}
-.dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:7px;vertical-align:middle}
-.dot.on{background:var(--ok);box-shadow:0 0 10px var(--ok);animation:pulse 2s infinite}
-.dot.off{background:var(--muted)}
-.dot.warn{background:var(--warn);box-shadow:0 0 10px var(--warn)}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
-.pill{display:inline-block;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700}
-.pill.ok{background:rgba(39,201,127,.15);color:var(--ok)}
-.pill.err{background:rgba(255,92,92,.15);color:var(--err)}
-.pill.warn{background:rgba(245,166,35,.15);color:var(--warn)}
-.switch-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0}
-.switch-row .lab{font-size:15px}
-.switch-row .hint{font-size:11.5px;color:var(--muted);margin-top:2px}
-.switch{position:relative;width:54px;height:31px;background:var(--panel2);border:1px solid var(--border);border-radius:16px;cursor:pointer;transition:.25s;flex-shrink:0}
-.switch.on{background:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent}
-.switch::after{content:'';position:absolute;top:2px;left:2px;width:25px;height:25px;background:#fff;border-radius:50%;transition:.25s;box-shadow:0 2px 6px rgba(0,0,0,.4)}
-.switch.on::after{left:27px}
-.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;border:none;border-radius:14px;font-size:15px;font-weight:700;color:#fff;background:linear-gradient(135deg,var(--accent),var(--accent2));cursor:pointer;transition:.15s;margin-top:10px;box-shadow:0 4px 16px rgba(79,140,255,.28)}
-.btn:active{transform:scale(.98)}
-.btn.ghost{background:var(--panel2);border:1px solid var(--border);color:var(--txt);box-shadow:none}
-.btn:disabled{opacity:.5;pointer-events:none}
-.update-strip{display:none;align-items:center;gap:10px;background:linear-gradient(135deg,rgba(79,140,255,.16),rgba(124,92,255,.16));border:1px solid rgba(79,140,255,.35);border-radius:14px;padding:12px 14px;margin-bottom:16px;font-size:13.5px}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--surface);color:var(--on-surface);
+font-family:'Roboto','Noto Sans SC',-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+min-height:100vh;padding:20px 16px 44px;line-height:1.5;font-size:14px;
+transition:background-color .2s ease,color .2s ease}
+.appbar{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:16px}
+.appbar>div:first-child{min-width:0;flex:1 1 auto}
+h1{font-size:24px;font-weight:600;letter-spacing:0;color:var(--on-surface);line-height:1.25}
+.sub{color:var(--on-surface-variant);font-size:12.5px;margin-top:3px}
+.card{background:var(--surface-container);border-radius:var(--r-card);padding:16px;margin-bottom:12px;transition:background-color .2s ease}
+.card h2{font-size:14px;font-weight:600;color:var(--on-surface);margin-bottom:10px;letter-spacing:0}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:14px;padding:7px 0}
+.row .k{color:var(--on-surface-variant);display:flex;align-items:center;flex-shrink:0}
+.row .v{font-family:ui-monospace,'Roboto Mono',SFMono-Regular,monospace;font-size:12.5px;
+word-break:break-all;overflow-wrap:anywhere;text-align:right;max-width:62%;min-width:0;flex:0 1 auto;color:var(--on-surface)}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:8px;flex-shrink:0}
+.dot.on{background:var(--ok)}
+.dot.off{background:var(--outline-variant)}
+.dot.warn{background:var(--warn)}
+.pill{display:inline-block;padding:3px 12px;border-radius:8px;font-size:12px;font-weight:600}
+.pill.ok{background:var(--ok-container);color:var(--ok)}
+.pill.err{background:var(--error-container);color:var(--on-error-container)}
+.pill.warn{background:var(--warn-container);color:var(--warn)}
+.switch-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0}
+.switch-row .lab{font-size:14px;color:var(--on-surface)}
+.switch-row .hint{font-size:12px;color:var(--on-surface-variant);margin-top:2px}
+.switch{position:relative;width:52px;height:32px;background:var(--surface-container-highest);
+border:2px solid var(--outline);border-radius:16px;cursor:pointer;transition:background-color .2s,border-color .2s;flex-shrink:0}
+.switch.on{background:var(--primary);border-color:var(--primary)}
+.switch::after{content:'';position:absolute;top:50%;left:6px;width:16px;height:16px;background:var(--outline);
+border-radius:50%;transform:translateY(-50%);transition:left .2s,width .2s,height .2s,background-color .2s}
+.switch.on::after{left:26px;width:24px;height:24px;background:var(--on-primary)}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:13px 24px;
+border:none;border-radius:var(--r-btn);font-family:inherit;font-size:14px;font-weight:600;
+background:var(--primary);color:var(--on-primary);cursor:pointer;transition:filter .15s,background-color .2s;margin-top:10px}
+.btn:active{filter:brightness(.92)}
+.btn.ghost{background:var(--secondary-container);color:var(--on-secondary-container)}
+.btn:disabled{opacity:.38;pointer-events:none}
+.update-strip{display:none;align-items:center;gap:12px;background:var(--secondary-container);
+color:var(--on-secondary-container);border-radius:var(--r-card);padding:14px 16px;margin-bottom:12px;font-size:13.5px}
 .update-strip.show{display:flex}
 .update-strip .grow{flex:1}
-.update-strip .vlink{color:var(--accent);font-weight:700;text-decoration:none}
-.output{background:#060609;border:1px solid var(--border);border-radius:14px;padding:13px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:12px;height:190px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;color:var(--sub)}
-.output .ok{color:var(--ok)}.output .err{color:var(--err)}.output .info{color:var(--accent)}
-.overlay{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:99;transition:opacity .3s}
+.update-strip .vlink{color:var(--primary);font-weight:700;text-decoration:none;padding:4px 8px;border-radius:8px}
+html[data-theme="dark"] .update-strip .vlink{color:var(--on-secondary-container)}
+.output{background:var(--code-bg);border-radius:var(--r-in);padding:12px;
+font-family:ui-monospace,'Roboto Mono',SFMono-Regular,monospace;font-size:12px;line-height:1.55;
+height:190px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;color:var(--code-sub)}
+.output .ok{color:#7ADFA0}.output .err{color:#F2B8B5}.output .info{color:#D0BCFF}
+.overlay{position:fixed;inset:0;background:var(--surface);display:flex;align-items:center;justify-content:center;z-index:99;transition:opacity .3s}
 .overlay.hide{opacity:0;pointer-events:none}
-.spin{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:rot .8s linear infinite}
+.spin{width:36px;height:36px;border:3px solid var(--surface-container-highest);border-top-color:var(--primary);border-radius:50%;animation:rot .9s linear infinite}
 @keyframes rot{to{transform:rotate(360deg)}}
-.chip{display:inline-block;font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:1px 8px;margin-left:6px}
+.chip{display:inline-block;font-size:11px;font-weight:500;color:var(--on-surface-variant);
+border:1px solid var(--outline-variant);border-radius:8px;padding:2px 8px;margin-left:6px;white-space:nowrap}
+.theme-btn{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;padding:8px 14px;
+border:1px solid var(--outline);border-radius:20px;background:transparent;color:var(--on-surface-variant);
+font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;transition:background-color .2s,color .2s}
+.theme-btn:active{background:var(--surface-container-high)}
+.note{font-size:12.5px;color:var(--on-surface-variant);margin-top:10px;line-height:1.6}
 </style>
 </head>
 <body>
 <div class="overlay" id="overlay"><div class="spin"></div></div>
 
-<h1>yypm</h1>
-<div class="sub">Keybox 管理 · TEESimulator 挂载 <span class="chip" id="verChip">v-</span></div>
+<div class="appbar">
+  <div>
+    <h1>yypm</h1>
+    <div class="sub">Keybox 管理 · TEESimulator 挂载 <span class="chip" id="verChip">v-</span></div>
+  </div>
+  <button class="theme-btn" id="themeBtn" type="button"><span id="themeIcon">☾</span><span id="themeLabel">浅色</span></button>
+</div>
 
 <div class="update-strip" id="updateStrip">
   <span>⬆</span>
@@ -96,6 +141,14 @@ h1{font-size:26px;font-weight:800;letter-spacing:-.5px;background:linear-gradien
 </div>
 
 <div class="card">
+  <h2>附属模块更新</h2>
+  <div class="row"><span class="k"><span id="modDot" class="dot off"></span>待更新</span><span class="v" id="modCount">未检查</span></div>
+  <div class="row"><span class="k">上次检查</span><span class="v" id="modTime">-</span></div>
+  <button class="btn" id="btnCheckMods"><span>⟳</span> 检查附属模块更新</button>
+  <p class="note">只检查不安装；需更新时用 KernelSU 的 Action 按钮安装</p>
+</div>
+
+<div class="card">
   <h2>操作</h2>
   <button class="btn" id="btnFetch"><span>⬇</span> 手动获取并挂载 keybox</button>
   <button class="btn ghost" id="btnMount"><span>🔗</span> 挂载到 TEESimulator</button>
@@ -108,6 +161,24 @@ h1{font-size:26px;font-weight:800;letter-spacing:-.5px;background:linear-gradien
 
 <script>
 var MODDIR='/data/adb/modules/yypm';
+var THEME_KEY='yypm_theme';
+function applyTheme(t){
+  document.documentElement.setAttribute('data-theme',t);
+  var i=document.getElementById('themeIcon'),l=document.getElementById('themeLabel');
+  if(i)i.textContent=(t==='dark')?'☀':'☾';
+  if(l)l.textContent=(t==='dark')?'深色':'浅色';
+  try{localStorage.setItem(THEME_KEY,t);}catch(e){}
+}
+(function(){
+  var t='light';
+  try{t=localStorage.getItem(THEME_KEY)||'light';}catch(e){}
+  applyTheme(t);
+})();
+
+function toggleTheme(){
+  var cur=document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light';
+  applyTheme(cur==='dark'?'light':'dark');
+}
 var out=document.getElementById('output');
 var overlay=document.getElementById('overlay');
 
@@ -151,6 +222,13 @@ async function refresh(){
   document.getElementById('dbgDot').className='dot '+(dbgClosed?'on':'off');
   document.getElementById('dbgState').textContent=dbgClosed?'已关闭':'未关闭';
   document.getElementById('autoDebugSwitch').classList.toggle('on',s.AUTO_DEBUG==='on');
+  // 附属模块更新检查结果
+  var need=parseInt(s.UPDATE_NEED||'0',10)||0;
+  var checked=s.UPDATE_CHECKED||'未检查';
+  var md=document.getElementById('modDot');
+  md.className='dot '+((checked==='未检查'||checked==='-')?'off':(need>0?'warn':'on'));
+  document.getElementById('modCount').textContent=(checked==='未检查')?'未检查':(need>0?('有 '+need+' 个可更新'):'全部最新');
+  document.getElementById('modTime').textContent=checked==='未检查'?'-':checked;
 }
 
 async function toggleBl(){
@@ -229,10 +307,38 @@ async function manualMount(){
   await refresh();
 }
 
+async function modCheck(){
+  log('检查附属模块更新 ...','info');
+  try{
+    var r=await exec(MODDIR+'/webui.sh check-packages');
+    var t2=r.stdout||'';
+    t2.split('\n').forEach(function(l){
+      l=l.trim(); if(!l)return;
+      if(l.indexOf('---STATUS-')>=0)return;
+      var p=l.split('|');
+      if(p.length>=6){
+        var st=p[0],fn=p[1],lvc=p[3],rvc=p[4],msg=p[5];
+        var cls=(st==='OK')?'ok':((st==='ERR')?'err':'info');
+        log(fn+'  本地 '+lvc+'  →  云端 '+rvc+'   ['+msg+']',cls);
+      }else if(l.indexOf('KEYBOX')<0){
+        log(l);
+      }
+    });
+    var sum=t2.match(/UPDATE_SUMMARY=(.*)/);
+    if(sum&&sum[1])log('汇总：'+sum[1].trim(),'info');
+    var need=t2.match(/UPDATE_NEED=(\d+)/);
+    if(need&&parseInt(need[1],10)>0)log('检测到 '+need[1]+' 个模块可更新，请用 KernelSU 的 Action 按钮安装','info');
+    else if(sum)log('附属模块均为最新','ok');
+  }catch(e){log('检查异常: '+e.message,'err');}
+  await refresh();
+}
+
+document.getElementById('themeBtn').onclick=toggleTheme;
 document.getElementById('autoSwitch').onclick=toggleAuto;
 document.getElementById('btnFetch').onclick=manualFetch;
 document.getElementById('btnMount').onclick=manualMount;
 document.getElementById('btnUpdate').onclick=checkUpdate;
+document.getElementById('btnCheckMods').onclick=modCheck;
 document.getElementById('autoBlSwitch').onclick=toggleBl;
 document.getElementById('autoDebugSwitch').onclick=toggleDebug;
 document.getElementById('btnBl').onclick=manualBl;
@@ -242,6 +348,7 @@ setTimeout(function(){overlay.classList.add('hide');},600);
 readVersion();
 refresh();
 checkUpdate();
+setTimeout(function(){ if(document.getElementById('modTime').textContent==='-') modCheck(); }, 1200);
 </script>
 </body>
 </html>

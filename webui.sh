@@ -7,6 +7,7 @@
 #   webui.sh auto <on|off> 切换自动获取
 #   webui.sh status      输出状态(key=value)
 #   webui.sh mount       把缓存的 keybox 挂载到 tricky_store
+#   webui.sh check-packages  检查附属模块（TEESimulator / PIF 等）是否有更新
 # =========================================================
 MODDIR="$(cd "$(dirname "$0")" && pwd)"
 . "$MODDIR/common.sh"
@@ -59,6 +60,20 @@ case "${1:-status}" in
         else
             echo "MOUNT=FAIL(no keybox cached)"
         fi
+        ;;
+    check-packages)
+        echo "正在检查附属模块更新 ..."
+        check_updates
+        # 结构化结果放最后：每行 6 段 NC|文件名|模块id|本地版本|云端版本|说明
+        # （NC = OK/UPD/NEW/MISMATCH/ERR），WebUI 按段数解析
+        if [ -f "$TMP/check_out.txt" ]; then
+            while IFS='|' read -r tag fn mid lvc rvc st msg; do
+                echo "$st|$fn|$mid|$lvc|$rvc|$msg"
+            done < "$TMP/check_out.txt"
+        fi
+        echo "UPDATE_CHECKED=$(update_state_field checked_at 未检查)"
+        echo "UPDATE_NEED=$(update_state_field need 0)"
+        echo "UPDATE_SUMMARY=$(update_state_field summary -)"
         ;;
     update)
         check_github_release
