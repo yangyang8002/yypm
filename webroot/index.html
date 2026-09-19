@@ -122,6 +122,7 @@ font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;transition:b
     <div class="switch" id="autoSwitch"></div>
   </div>
   <button class="btn ghost" id="btnUpdate"><span>⟳</span> 检查更新</button>
+  <p class="note">发现新版本后可一键下载并自动安装，重启手机即生效</p>
 </div>
 
 <div class="card">
@@ -199,6 +200,9 @@ function exec(cmd){
 
 function parseKv(t){var m={};(t||'').split('\n').forEach(function(l){var i=l.indexOf('=');if(i>0)m[l.slice(0,i).trim()]=l.slice(i+1).trim();});return m;}
 
+// 版本号可能已经自带 v（module.prop 里就是 v2.1.4），避免显示成 vv2.1.4
+function ver(v){v=(v||'').trim();if(!v)return '-';return /^v/i.test(v)?v:'v'+v;}
+
 // 运行态反馈：这几步要跑几秒（附属模块检查最多要下几 MB 的包），
 // 期间明确禁用按钮并改文案，避免"点了没反应"甚至被重复点击。
 function busy(id,on,text){
@@ -208,7 +212,7 @@ function busy(id,on,text){
 }
 
 async function readVersion(){
-  try{var r=await exec('sed -n "s/^version=//p" '+MODDIR+'/module.prop');var v=(r.stdout||'').trim();if(v)document.getElementById('verChip').textContent='v'+v;}catch(e){}
+  try{var r=await exec('sed -n "s/^version=//p" '+MODDIR+'/module.prop');var v=(r.stdout||'').trim();if(v)document.getElementById('verChip').textContent=/^v/i.test(v)?v:'v'+v;}catch(e){}
 }
 
 async function refresh(){
@@ -272,37 +276,52 @@ async function checkUpdate(){
   busy('btnUpdate',true,'检查中...');
   try{var r=await exec(MODDIR+'/webui.sh update');var s=parseKv(r.stdout);
     if(s.UPDATE==='AVAILABLE'){
-      document.getElementById('upVer').textContent='v'+s.REMOTE_VERSION;
-      document.getElementById('upCur').textContent='v'+s.LOCAL_VERSION;
+      document.getElementById('upVer').textContent=ver(s.REMOTE_VERSION);
+      document.getElementById('upCur').textContent=ver(s.LOCAL_VERSION);
       document.getElementById('updateStrip').classList.add('show');
-      log('发现新版本 v'+s.REMOTE_VERSION,'ok');
+      log('发现新版本 '+ver(s.REMOTE_VERSION),'ok');
     }else if(s.UPDATE==='NONE'){
       document.getElementById('updateStrip').classList.remove('show');
-      log('已是最新版本 v'+s.LOCAL_VERSION,'ok');
+      log('已是最新版本 '+ver(s.LOCAL_VERSION),'ok');
     }else{log('检查更新失败','err');}
   }catch(e){log('检查更新异常: '+e.message,'err');}
   busy('btnUpdate',false);
 }
 
 async function confirmUpdate(){
-  log('下载新版本模块...','info');
-  var a=document.querySelector('.update-strip .vlink');if(a){a.textContent='下载中...';a.style.pointerEvents='none';}
-  try{var r=await exec(MODDIR+'/webui.sh update');var s=parseKv(r.stdout);
+  log('开始更新模块 ...','info');
+  var a=document.querySelector('.update-strip .vlink');if(a){a.textContent='更新中...';a.style.pointerEvents='none';}
+  try{
+    var r=await exec(MODDIR+'/webui.sh update');var s=parseKv(r.stdout);
     var url=s.DOWNLOAD_URL;
-    if(!url){log('无下载地址或已是最新','info');return;}
-    // 交给 webui.sh 下载（设备上常无 curl，模块内有 busybox wget 回退 + 重试）
-    var dl=await exec(MODDIR+'/webui.sh download-self '+url);
-    if((dl.stdout||'').indexOf('DOWNLOAD=OK')>=0){
-      var sz=(dl.stdout.match(/SIZE=(\d+)/)||[])[1]||'';
-      var src=(dl.stdout.match(/SOURCE=(\S+)/)||[])[1]||'';
-      log('已下载到 /data/adb/yypm/update.zip'+(sz?'（'+sz+' 字节）':'')+'，请用 KernelSU 管理器安装','ok');
-      if(src)log('下载源: '+src,'info');
-    }else{
+    if(!url&&s.UPDATE!=='AVAILABLE'){log('无下载地址或已是最新','info');return;}
+    // 一键更新：webui.sh 内部完成 下载 -> 版本防回退 -> ksud 自动安装
+    var up=await exec(MODDIR+'/webui.sh update-self '+(url||''));
+    var out=up.stdout||'';
+    out.split('\n').forEach(function(l){
+      l=l.trim(); if(!l)return;
+      if(/^(DOWNLOAD|SOURCE|SAVED|SIZE|INSTALL|PKG_VCODE|CUR_VCODE)=/.test(l))return;
+      if(/^(- |Done|Installing|Installation)/.test(l))return;
+      log(l,'info');
+    });
+    if(out.indexOf('INSTALL=OK')>=0){
+      if(out.indexOf('LIVE=SYNCED')>=0){
+        log('新版本已安装并立即生效（无需重启）','ok');
+      }else{
+        log('新版本已安装到待生效区，重启后生效','ok');
+        log('请重启手机完成更新（也可在 KernelSU 管理器里点重启）','info');
+      }
+      document.getElementById('updateStrip').classList.remove('show');
+    }else if(out.indexOf('INSTALL=SKIP')>=0){
+      log('包内版本不高于当前版本，已丢弃（防止降级）','info');
+    }else if(out.indexOf('DOWNLOAD=FAIL')>=0){
       log('下载失败','err');
-      (dl.stdout||'').split('\n').forEach(function(l){if(l.trim())log(l,'err');});
+    }else{
+      log('自动安装失败，包已保留在 /data/adb/yypm/update.zip，请在 KernelSU 管理器中手动刷入','err');
     }
-  }catch(e){log('异常: '+e.message,'err');}
+  }catch(e){log('更新异常: '+e.message,'err');}
   if(a){a.textContent='更新';a.style.pointerEvents='';}
+  await refresh();
 }
 
 async function toggleAuto(){

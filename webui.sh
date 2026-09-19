@@ -10,9 +10,89 @@
 #   webui.sh check-packages  检查附属模块（TEESimulator / PIF 等）是否有更新
 #   webui.sh update      检查模块自身是否有新版本（GitHub Release）
 #   webui.sh download-self <url>  下载新版模块包到 /data/adb/yypm/update.zip
+#   webui.sh install-self        把已下载的 update.zip 交给 ksud 自动安装
+#   webui.sh update-self <url>   下载 + 校验版本 + 自动安装（WebUI 一键更新用）
 # =========================================================
 MODDIR="$(cd "$(dirname "$0")" && pwd)"
 . "$MODDIR/common.sh"
+
+# 下载新版模块包（先自建服务器，再退回传入的 GitHub 地址），成功返回 0
+download_self() { # $1 = 备用 url
+    [ -n "${1:-}" ] || { echo "DOWNLOAD=FAIL(no url)"; return 1; }
+    mkdir -p "$DATA_DIR"
+    for u in "$BASE_URL?action=module" "$1"; do
+        [ -n "$u" ] || continue
+        rm -f "$DATA_DIR/update.zip"
+        if download_retry "$u" "$DATA_DIR/update.zip"; then
+            echo "DOWNLOAD=OK"
+            echo "SOURCE=$u"
+            echo "SAVED=$DATA_DIR/update.zip"
+            echo "SIZE=$(wc -c < "$DATA_DIR/update.zip" 2>/dev/null | tr -d ' ')"
+            return 0
+        fi
+        echo "源失败，尝试下一个: $u"
+    done
+    rm -f "$DATA_DIR/update.zip"
+    echo "DOWNLOAD=FAIL"
+    return 1
+}
+
+# 把已装到暂存区的模块文件同步到生效目录，让更新立刻可用（不必等重启）。
+# KernelSU 的 ksud install 只写 modules_update，重启时才接管；这里补上
+# "立即生效"这一步，否则用户更新完会发现版本号变了、界面却还是旧的。
+# 注意用独立副本（不用 cp -a 硬链接），避免覆盖源文件时连带污染。
+sync_live() {
+    S=/data/adb/modules_update/yypm
+    L=/data/adb/modules/yypm
+    [ -d "$S" ] || return 0
+    mkdir -p "$L" "$L/webroot" 2>/dev/null
+    for f in module.prop action.sh service.sh webui.sh common.sh pubkey.b64 verify_tool; do
+        [ -f "$S/$f" ] && cat "$S/$f" > "$L/$f" 2>/dev/null
+    done
+    [ -f "$S/webroot/index.html" ] && cat "$S/webroot/index.html" > "$L/webroot/index.html" 2>/dev/null
+    # customize.sh 是安装期脚本，不参与运行，故意不同步
+    chmod 755 "$L"/*.sh "$L/verify_tool" 2>/dev/null
+    chmod 644 "$L/module.prop" "$L/pubkey.b64" "$L/webroot/index.html" 2>/dev/null
+    rm -f "$L/update" 2>/dev/null
+    return 0
+}
+
+# 用 ksud 把 update.zip 装进 modules_update（重启后生效）
+install_self() {
+    KS=/data/adb/ksud
+    Z="$DATA_DIR/update.zip"
+    [ -s "$Z" ] || { echo "INSTALL=FAIL(没有已下载的包)"; return 1; }
+    # 版本防回退：包内 versionCode 不高于当前就丢弃，避免误降级
+    pkg_vc=$(zip_version "$Z" 2>/dev/null)
+    cur_vc=$(vc_of "$MODDIR")
+    if [ -n "$pkg_vc" ] && [ -n "$cur_vc" ] && [ "$pkg_vc" -le "$cur_vc" ] 2>/dev/null; then
+        echo "INSTALL=SKIP"
+        echo "PKG_VCODE=$pkg_vc"
+        echo "CUR_VCODE=$cur_vc"
+        rm -f "$Z"
+        return 0
+    fi
+    [ -x "$KS" ] || { echo "INSTALL=FAIL(未找到 ksud)"; echo "SAVED=$Z"; return 1; }
+    lsout=$("$KS" module install "$Z" 2>&1)
+    rc=$?
+    echo "$lsout"
+    if [ "$rc" -ne 0 ]; then
+        echo "INSTALL=FAIL"
+        echo "SAVED=$Z"
+        return 1
+    fi
+    rm -f "$Z"
+    echo "INSTALL=OK"
+    echo "PKG_VCODE=${pkg_vc:-?}"
+    echo "CUR_VCODE=${cur_vc:-?}"
+    # 同步到生效目录，让新版本立刻可用
+    if sync_live; then
+        echo "LIVE=SYNCED"
+    else
+        echo "LIVE=SYNC_FAIL"
+    fi
+    return 0
+}
 
 case "${1:-status}" in
     fetch)
@@ -83,22 +163,17 @@ case "${1:-status}" in
     download-self)
         # 供 WebUI 调用：先试自建服务器（实测最稳），再退回传入的 GitHub 地址。
         # 设备上不一定有 curl，网页端直接调 curl 会失败。
-        [ -n "${2:-}" ] || { echo "DOWNLOAD=FAIL(no url)"; exit 1; }
-        mkdir -p "$DATA_DIR"
-        for u in "$BASE_URL?action=module" "$2"; do
-            [ -n "$u" ] || continue
-            rm -f "$DATA_DIR/update.zip"
-            if download_retry "$u" "$DATA_DIR/update.zip"; then
-                echo "DOWNLOAD=OK"
-                echo "SOURCE=$u"
-                echo "SAVED=$DATA_DIR/update.zip"
-                echo "SIZE=$(wc -c < "$DATA_DIR/update.zip" 2>/dev/null | tr -d ' ')"
-                exit 0
-            fi
-            echo "源失败，尝试下一个: $u"
-        done
-        rm -f "$DATA_DIR/update.zip"
-        echo "DOWNLOAD=FAIL"
+        download_self "${2:-}" || exit 1
+        ;;
+    install-self)
+        install_self
+        ;;
+    update-self)
+        # 一键更新：下载 -> 版本防回退 -> ksud 自动安装，装完提示重启
+        echo "正在下载新版本 ..."
+        download_self "${2:-}" || exit 1
+        echo "正在自动安装 ..."
+        install_self
         ;;
     status|*)
         echo_status
