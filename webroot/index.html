@@ -279,8 +279,17 @@ async function confirmUpdate(){
   try{var r=await exec(MODDIR+'/webui.sh update');var s=parseKv(r.stdout);
     var url=s.DOWNLOAD_URL;
     if(!url){log('无下载地址或已是最新','info');return;}
-    var dl=await exec('curl -fsSL "'+url+'" -o /data/adb/yypm/update.zip && echo OK');
-    if((dl.stdout||'').indexOf('OK')>=0){log('已下载到 /data/adb/yypm/update.zip，请用 KernelSU 管理器安装','info');}else{log('下载失败','err');}
+    // 交给 webui.sh 下载（设备上常无 curl，模块内有 busybox wget 回退 + 重试）
+    var dl=await exec(MODDIR+'/webui.sh download-self '+url);
+    if((dl.stdout||'').indexOf('DOWNLOAD=OK')>=0){
+      var sz=(dl.stdout.match(/SIZE=(\d+)/)||[])[1]||'';
+      var src=(dl.stdout.match(/SOURCE=(\S+)/)||[])[1]||'';
+      log('已下载到 /data/adb/yypm/update.zip'+(sz?'（'+sz+' 字节）':'')+'，请用 KernelSU 管理器安装','ok');
+      if(src)log('下载源: '+src,'info');
+    }else{
+      log('下载失败','err');
+      (dl.stdout||'').split('\n').forEach(function(l){if(l.trim())log(l,'err');});
+    }
   }catch(e){log('异常: '+e.message,'err');}
 }
 

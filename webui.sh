@@ -8,6 +8,8 @@
 #   webui.sh status      输出状态(key=value)
 #   webui.sh mount       把缓存的 keybox 挂载到 tricky_store
 #   webui.sh check-packages  检查附属模块（TEESimulator / PIF 等）是否有更新
+#   webui.sh update      检查模块自身是否有新版本（GitHub Release）
+#   webui.sh download-self <url>  下载新版模块包到 /data/adb/yypm/update.zip
 # =========================================================
 MODDIR="$(cd "$(dirname "$0")" && pwd)"
 . "$MODDIR/common.sh"
@@ -77,6 +79,26 @@ case "${1:-status}" in
         ;;
     update)
         check_github_release
+        ;;
+    download-self)
+        # 供 WebUI 调用：先试自建服务器（实测最稳），再退回传入的 GitHub 地址。
+        # 设备上不一定有 curl，网页端直接调 curl 会失败。
+        [ -n "${2:-}" ] || { echo "DOWNLOAD=FAIL(no url)"; exit 1; }
+        mkdir -p "$DATA_DIR"
+        for u in "$BASE_URL?action=module" "$2"; do
+            [ -n "$u" ] || continue
+            rm -f "$DATA_DIR/update.zip"
+            if download_retry "$u" "$DATA_DIR/update.zip"; then
+                echo "DOWNLOAD=OK"
+                echo "SOURCE=$u"
+                echo "SAVED=$DATA_DIR/update.zip"
+                echo "SIZE=$(wc -c < "$DATA_DIR/update.zip" 2>/dev/null | tr -d ' ')"
+                exit 0
+            fi
+            echo "源失败，尝试下一个: $u"
+        done
+        rm -f "$DATA_DIR/update.zip"
+        echo "DOWNLOAD=FAIL"
         ;;
     status|*)
         echo_status

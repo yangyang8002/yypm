@@ -16,8 +16,11 @@ PUBKEY="$MODDIR/pubkey.b64"
 VERIFY_TOOL="$MODDIR/verify_tool"
 TMP="$DATA_DIR/tmp"
 UPDATE_INTERVAL=21600
-
 LOG="$DATA_DIR/yypm.log"
+
+# 下载重试（开机时网络往往尚未就绪，单次失败会白等一个周期）
+NET_RETRY=3
+NET_RETRY_DELAY=20
 
 log() { echo "[$(date '+%m-%d %H:%M:%S')] $*" >> "$LOG"; }
 
@@ -32,6 +35,24 @@ download() { # $1 url  $2 out
     if command -v toybox >/dev/null 2>&1 && toybox --list 2>/dev/null | grep -qx wget; then
         toybox wget -T 40 --no-check-certificate -q -O "$2" "$1" && return 0
     fi
+    return 1
+}
+
+# ---- 带重试的下载：开机时网络尚未就绪，单次失败会造成"下载失败" ----
+# 每次尝试自身已有超时（curl 40s / wget -T 40），这里做退避重试。
+download_retry() { # $1 url  $2 out
+    local i=1
+    while [ "$i" -le "$NET_RETRY" ]; do
+        if download "$1" "$2"; then
+            [ "$i" -gt 1 ] && log "[✓] 第 $i 次尝试下载成功"
+            return 0
+        fi
+        if [ "$i" -lt "$NET_RETRY" ]; then
+            log "[·] 下载失败，${NET_RETRY_DELAY}s 后重试（$i/$NET_RETRY）"
+            sleep "$NET_RETRY_DELAY"
+        fi
+        i=$((i + 1))
+    done
     return 1
 }
 
@@ -107,7 +128,7 @@ close_debug() {
 fetch_keybox() {
     mkdir -p "$TMP"
     log "[·] 拉取 manifest"
-    download "$BASE_URL?action=manifest" "$TMP/manifest.json" || { log "[✗] manifest 下载失败"; return 1; }
+    download_retry "$BASE_URL?action=manifest" "$TMP/manifest.json" || { log "[✗] manifest 下载失败（已重试 $NET_RETRY 次）"; return 1; }
 
     KB_URL=$(json_get "$TMP/manifest.json" url)
     KB_SHA=$(json_get "$TMP/manifest.json" sha256)
@@ -438,7 +459,7 @@ update_state_field() { # $1 key  $2 default
 download_packages() {
     local list_url="$BASE_URL?action=packages"
     log "[·] 拉取模块清单"
-    download "$list_url" "$TMP/packages.json" || { log "[✗] 模块清单下载失败"; return 1; }
+    download_retry "$list_url" "$TMP/packages.json" || { log "[✗] 模块清单下载失败（已重试 $NET_RETRY 次）"; return 1; }
 
     local urls=$(grep -o '"url"[[:space:]]*:[[:space:]]*"[^"]*"' "$TMP/packages.json" | sed 's/.*"\(http[^"]*\)".*/\1/')
     [ -n "$urls" ] || { log "[!] 清单为空"; return 0; }
@@ -480,18 +501,43 @@ check_github_release() {
     return 0
 }
 
-# ---- 自动更新模块自身（GitHub Release）----
+# ---- 自动更新模块自身 ----
+# 下载源优先自建服务器（实测 3/3 成功），GitHub 直连作为兜底（实测 1/3）。
+# 下载后会解包核对包内 versionCode，避免拿到旧包把模块"更新"回退。
 check_module_update() {
     [ -f "$MODDIR/module.prop" ] || return 0
     local out; out=$(check_github_release) || return 0
     local tag=$(echo "$out" | sed -n 's/^REMOTE_VERSION=//p')
-    local url=$(echo "$out" | sed -n 's/^DOWNLOAD_URL=//p')
     local cur=$(echo "$out" | sed -n 's/^LOCAL_VERSION=//p')
-    [ -n "$tag" ] && [ "$tag" != "$cur" ] && [ -n "$url" ] || return 0
+    local gh_url=$(echo "$out" | sed -n 's/^DOWNLOAD_URL=//p')
+    [ -n "$tag" ] && [ "$tag" != "$cur" ] || return 0
+
+    local cur_vc=$(vc_of "$MODDIR")
     log "[·] 发现新版本 $tag（当前 $cur）"
-    download "$url" "$TMP/update.zip" || return 0
+
+    local got=""
+    for u in "$BASE_URL?action=module" "$gh_url"; do
+        [ -n "$u" ] || continue
+        rm -f "$TMP/update.zip"
+        if ! download_retry "$u" "$TMP/update.zip"; then
+            log "[!] 下载失败，换下一个源"
+            continue
+        fi
+        # 校验包内 versionCode 必须大于当前，防止装到旧包
+        local pkg_vc=$(zip_version "$TMP/update.zip" 2>/dev/null)
+        if [ -n "$pkg_vc" ] && [ "$pkg_vc" -gt "$cur_vc" ] 2>/dev/null; then
+            got="$u"
+            log "[✓] 已下载 $tag（versionCode $pkg_vc）"
+            break
+        fi
+        log "[!] 包内 versionCode=$pkg_vc 不高于当前 $cur_vc，丢弃"
+        rm -f "$TMP/update.zip"
+    done
+    [ -n "$got" ] || { log "[✗] 所有下载源均失败"; return 0; }
+
+    [ -f "$TMP/update.zip" ] || return 0
     if command -v ksud >/dev/null 2>&1; then
-        ksud module install "$TMP/update.zip" 2>/dev/null && log "[✓] 已通过 ksud 安装更新"
+        ksud module install "$TMP/update.zip" 2>/dev/null && log "[✓] 已通过 ksud 安装更新（重启后生效）"
     else
         log "[!] 新模块已下载到 $TMP/update.zip，请手动安装"
     fi
