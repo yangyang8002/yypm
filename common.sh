@@ -21,6 +21,10 @@ TMP="$DATA_DIR/tmp"
 UPDATE_INTERVAL_DEFAULT=21600
 LOG="$DATA_DIR/yypm.log"
 RETRY_STATE="$DATA_DIR/retry.state"
+# 已验签 keybox 的本地池（用于服务端主用失效时回滚）
+CACHE_DIR="$DATA_DIR/cache"
+CACHE_KEEP=3
+CACHE_MAX_AGE_DAYS=45
 
 # 下载重试（开机时网络往往尚未就绪，单次失败会白等一个周期）
 NET_RETRY=3
@@ -253,6 +257,10 @@ fetch_keybox() {
     cp -f "$src" "$KEYBOX_CACHE"
     chmod 644 "$KEYBOX_CACHE"
 
+    # 已验签 -> 存进本地池（供将来失效时回滚）
+    cache_store "$src" "$(sha256_of "$src")"
+    cache_prune
+
     local size=$(wc -c < "$KEYBOX_DEST" 2>/dev/null)
     if [ "$fresh" = "1" ]; then
         log "[✓] keybox 校验通过并已挂载 ($size 字节，未重新下载)"
@@ -263,8 +271,267 @@ fetch_keybox() {
     return 0
 }
 
-# ---- 候选模块目录：生效区 + 待生效区 ----
+# ---- 带有效性判断与回滚的获取流程（对外只用这个）----
+# 顺序：拉 manifest -> 看服务端对这份 keybox 的有效性结论
+#   - invalid：不注入，回滚到本地池里上一份已验签的 keybox
+#   - warning：照常注入，但把原因写进日志
+#   - valid/unknown：正常注入（unknown 兼容旧服务端）
+fetch_keybox_safe() {
+    if fetch_keybox; then
+        local lvl=$(remote_validity_level)
+        case "$lvl" in
+            invalid)
+                local why=$(remote_validity_reason)
+                log "[!] 服务端判定当前 keybox 无效：${why:-原因未提供}"
+                rollback_keybox && return 0
+                log "[✗] 且本地池没有可回滚的 keybox"
+                return 1
+                ;;
+            warning)
+                log "[!] 服务端提示（仍会注入）：$(remote_validity_reason)"
+                ;;
+        esac
+        return 0
+    fi
+
+    # 拉取失败：本地池里还有有效备份就先顶上，保证开机可用
+    log "[!] 拉取失败，尝试回滚到本地池里的上一份 keybox"
+    rollback_keybox && return 0
+    return 1
+}
+
+# 从本地池恢复一份 keybox 到生效位置
+rollback_keybox() {
+    local cur=$(sha256_of "$KEYBOX_DEST")
+    local f=$(cache_latest_valid "$cur")
+    if [ -z "$f" ] || [ ! -s "$f" ]; then
+        # 没有池，退而用本地缓存文件
+        if [ -s "$KEYBOX_CACHE" ] && [ "$(sha256_of "$KEYBOX_CACHE")" != "$cur" ]; then
+            mkdir -p "$TRICKY_DIR"
+            cp -f "$KEYBOX_CACHE" "$KEYBOX_DEST"; chmod 644 "$KEYBOX_DEST"
+            log "[✓] 已用本地缓存兜底（$(sha256_of "$KEYBOX_DEST" | cut -c1-16)）"
+            return 0
+        fi
+        return 1
+    fi
+    mkdir -p "$TRICKY_DIR"
+    cp -f "$f" "$KEYBOX_DEST"; chmod 644 "$KEYBOX_DEST"
+    cp -f "$f" "$KEYBOX_CACHE"; chmod 644 "$KEYBOX_CACHE"
+    log "[✓] 已回滚到本地池中的 keybox（$(sha256_of "$KEYBOX_DEST" | cut -c1-16)，来自 $(basename "$f")）"
+    return 0
+}
+
+# ---- 网络条件判断（供"仅 WiFi 下自动更新"开关使用）----
+# 设备上没有 curl，用 Android 自带的 dumpsys（wlan0 有 IP 即视为已连 WiFi）。
+# 判断失败时返回 unknown，调用方按"允许更新"处理，避免误伤正常更新。
+net_is_wifi() {
+    local ip=""
+    ip=$(dumpsys wifi 2>/dev/null | sed -n 's/.*Wi-Fi is \([a-z]*\).*/\1/p' | head -1)
+    if [ -n "$ip" ]; then
+        [ "$ip" = "enabled" ] && { echo "yes"; return 0; }
+        echo "no"; return 0
+    fi
+    # 兜底：看 wlan0 是否有非 0 地址
+    local a=$(ip addr show wlan0 2>/dev/null | sed -n 's/.*inet \([0-9.]*\).*/\1/p' | head -1)
+    if [ -n "$a" ] && [ "$a" != "0.0.0.0" ]; then echo "yes"; else echo "unknown"; fi
+}
+
+# 是否允许自动拉取（受 wifi_only 开关约束）
+allow_auto_fetch() {
+    [ "$(get_auto)" = "on" ] || return 1
+    if [ "$(cfg_get wifi_only off)" = "on" ]; then
+        local w=$(net_is_wifi)
+        if [ "$w" = "no" ]; then
+            log "[·] 当前不在 WiFi 下，且已开启「仅 WiFi 自动更新」，跳过本轮"
+            return 1
+        fi
+    fi
+    return 0
+}
+
+# ---- 本地 keybox 池：缓存已验签的 keybox，用于失效时回滚 ----
+# 只缓存"签名验证通过"的，所以回滚出来的也一定是可信的。
+cache_store() { # $1 = keybox 文件  $2 = sha256
+    mkdir -p "$CACHE_DIR" 2>/dev/null
+    [ -s "$1" ] || return 1
+    [ -n "$2" ] || return 1
+    cp -f "$1" "$CACHE_DIR/${2}.xml" 2>/dev/null
+    echo "$(date +%s)" > "$CACHE_DIR/${2}.ts" 2>/dev/null
+}
+
+# 清理过期/超量的缓存
+cache_prune() {
+    [ -d "$CACHE_DIR" ] || return 0
+    local now=$(date +%s)
+    local f base ts age
+    for f in "$CACHE_DIR"/*.xml; do
+        [ -f "$f" ] || continue
+        base=$(basename "$f" .xml)
+        ts=$(cat "$CACHE_DIR/$base.ts" 2>/dev/null)
+        [ -n "$ts" ] || ts=$now
+        age=$(( (now - ts) / 86400 ))
+        if [ "$age" -gt "$CACHE_MAX_AGE_DAYS" ] 2>/dev/null; then
+            rm -f "$f" "$CACHE_DIR/$base.ts" 2>/dev/null
+        fi
+    done
+    # 超出数量上限时删最旧的
+    local n=$(ls -1 "$CACHE_DIR"/*.xml 2>/dev/null | wc -l | tr -d ' ')
+    while [ "$n" -gt "$CACHE_KEEP" ] 2>/dev/null; do
+        local oldest=$(ls -1t "$CACHE_DIR"/*.xml 2>/dev/null | tail -1)
+        [ -n "$oldest" ] || break
+        base=$(basename "$oldest" .xml)
+        rm -f "$oldest" "$CACHE_DIR/$base.ts" 2>/dev/null
+        n=$((n - 1))
+    done
+    return 0
+}
+
+# 缓存里最近一份仍有效的 keybox（返回文件路径；没有则输出空）
+cache_latest_valid() {
+    [ -d "$CACHE_DIR" ] || return 0
+    local f sha
+    for f in $(ls -1t "$CACHE_DIR"/*.xml 2>/dev/null); do
+        [ -s "$f" ] || continue
+        # 传进来的那份不重复用
+        sha=$(basename "$f" .xml)
+        [ "$sha" = "$1" ] && continue
+        echo "$f"
+        return 0
+    done
+    return 0
+}
+
+# ---- 服务端有效性判断（来自 manifest 的 keybox.validity）----
+# 输出：valid | warning | invalid | unknown
+remote_validity_level() {
+    [ -f "$TMP/manifest.json" ] || { echo "unknown"; return 0; }
+    local l=$(sed -n 's/.*"level"[[:space:]]*:[[:space:]]*"\([a-z]*\)".*/\1/p' "$TMP/manifest.json" | head -1)
+    [ -n "$l" ] && echo "$l" || echo "unknown"
+}
+
+# 服务端报告的问题列表（reasons 是**每行一条**的数组，不能用单行正则取）
+# 注意：服务端已用 JSON_UNESCAPED_UNICODE 输出，所以这里是可读中文，
+# 不要再去剥 \uXXXX 转义——那会把中文整段删掉。
+remote_validity_reason() {
+    local f="${1:-$TMP/manifest.json}"
+    [ -f "$f" ] || return 0
+    awk '
+        done_ { next }
+        /"reasons"[[:space:]]*:/ {
+            if ($0 ~ /\[\][[:space:]]*,?[[:space:]]*$/) { done_ = 1; next }
+            inr = 1; next
+        }
+        inr && /^[[:space:]]*\]/ { done_ = 1; next }
+        inr {
+            line = $0
+            gsub(/^[[:space:]]*"/, "", line)
+            gsub(/",?[[:space:]]*$/, "", line)
+            if (line != "") { if (out != "") out = out "；"; out = out line }
+        }
+        END { print out }
+    ' "$f" 2>/dev/null
+}
+
+# 服务端报告的剩余天数
+remote_days_remaining() {
+    local f="${1:-$TMP/manifest.json}"
+    [ -f "$f" ] || return 0
+    sed -n 's/.*"days_remaining"[[:space:]]*:[[:space:]]*\([0-9-]*\).*/\1/p' "$f" | head -1
+}
+
+# 备用池数量（服务端提供的其他有效候选）
+# 两个坑都要避开：
+#   1) pretty-print 的 `"fallbacks": [` 单独占一行，内容在后续行
+#   2) 空数组写成 `"fallbacks": [],`（同一行闭合），若只靠 `]` 结束标记，
+#      会一路吃进后面的 server.sources，数出错误的条目数
+remote_fallback_count() {
+    local f="${1:-$TMP/manifest.json}"
+    [ -f "$f" ] || { echo 0; return 0; }
+    awk '
+        done_ { next }
+        /"fallbacks"[[:space:]]*:/ {
+            if ($0 ~ /\[\][[:space:]]*,?[[:space:]]*$/) { print 0; done_ = 1; next }
+            inf = 1; next
+        }
+        inf && /^[[:space:]]*\]/ { print c+0; done_ = 1; next }
+        inf && /"source"/ { c++ }
+        END { if (!done_) print c+0 }
+    ' "$f" 2>/dev/null
+}
+
+# ---- 诊断包（②）：把排障需要的东西打成一个 zip 放到 /sdcard ----
+export_diag() {
+    local out="/sdcard/yypm-diag-$(date +%Y%m%d-%H%M%S).zip"
+    local stage="$TMP/diag"
+    rm -rf "$stage" 2>/dev/null
+    mkdir -p "$stage" 2>/dev/null
+
+    # 1) 状态快照
+    echo_status > "$stage/status.txt" 2>/dev/null
+    # 2) 日志（末 800 行，够排障又不至于太大）
+    [ -f "$LOG" ] && tail -n 800 "$LOG" > "$stage/yypm.log" 2>/dev/null
+    # 3) 模块与服务端信息
+    {
+        echo "=== module.prop ==="
+        cat "$MODDIR/module.prop" 2>/dev/null
+        echo
+        echo "=== 已安装模块 ==="
+        for d in /data/adb/modules/*/; do
+            [ -d "$d" ] || continue
+            local id=$(sed -n 's/^id=//p' "$d/module.prop" 2>/dev/null | head -1)
+            local v=$(sed -n 's/^version=//p' "$d/module.prop" 2>/dev/null | head -1)
+            local vc=$(sed -n 's/^versionCode=//p' "$d/module.prop" 2>/dev/null | head -1)
+            echo "$id  $v  ($vc)"
+        done
+        echo
+        echo "=== 待生效区 ==="
+        ls -1 /data/adb/modules_update/ 2>/dev/null
+        echo
+        echo "=== keybox ==="
+        echo "挂载: $(sha256_of "$KEYBOX_DEST")"
+        echo "缓存: $(sha256_of "$KEYBOX_CACHE")"
+        echo "本地池: $(ls -1 "$CACHE_DIR"/*.xml 2>/dev/null | wc -l) 份"
+        echo
+        echo "=== config.prop ==="
+        cat "$CONFIG" 2>/dev/null
+        echo
+        echo "=== 环境 ==="
+        echo "设备: $(getprop ro.product.model 2>/dev/null) / $(getprop ro.build.version.release 2>/dev/null) / SDK $(getprop ro.build.version.sdk 2>/dev/null)"
+        echo "构建类型: $(getprop ro.build.type 2>/dev/null)"
+        echo "时间: $(date '+%Y-%m-%d %H:%M:%S')"
+    } > "$stage/info.txt" 2>/dev/null
+
+    # 4) 服务端 manifest 快照 + 校验结果
+    [ -f "$TMP/manifest.json" ] && cp -f "$TMP/manifest.json" "$stage/manifest.json" 2>/dev/null
+    {
+        echo "有效性: $(remote_validity_level)"
+        echo "剩余天数: $(remote_days_remaining)"
+        echo "问题: $(remote_validity_reason)"
+        echo "备用池: $(remote_fallback_count) 个"
+    } > "$stage/validity.txt" 2>/dev/null
+
+    # 5) 打包（设备自带 unzip，但打包需要 zip——用 busybox 的 tar+gzip 更稳）
+    if command -v busybox >/dev/null 2>&1 && busybox --list 2>/dev/null | grep -qx zip; then
+        (cd "$TMP" && busybox zip -qr "$out" diag) 2>/dev/null
+    else
+        # 退而求其次：用 tar.gz（扩展名如实反映）
+        out="${out%.zip}.tar.gz"
+        tar czf "$out" -C "$TMP" diag 2>/dev/null
+    fi
+    rm -rf "$stage" 2>/dev/null
+
+    if [ -s "$out" ]; then
+        echo "DIAG=OK"
+        echo "DIAG_PATH=$out"
+        echo "DIAG_SIZE=$(wc -c < "$out" 2>/dev/null | tr -d ' ')"
+    else
+        echo "DIAG=FAIL"
+    fi
+}
+
+
 # 用 MODDIR 的目录名当模块 id（KernelSU 下 MODDIR 就是 /data/adb/modules/<id>）
+# ---- 候选模块目录：生效区 + 待生效区 ----
 module_dirs() {
     local id=$(basename "$MODDIR")
     echo "/data/adb/modules/$id"
@@ -481,6 +748,21 @@ echo_status() {
     echo "PUBKEY_EXPECT=$(expect_pubkey_fp)"
     echo "PUBKEY_INTACT=$(pubkey_intact)"
     echo "PUBKEY_ACTIVE=$(basename "$(active_pubkey)")"
+
+    # ---- 服务端有效性（①）----
+    echo "SERVER_VALIDITY=$(remote_validity_level)"
+    echo "SERVER_DAYS=$(remote_days_remaining)"
+    echo "SERVER_REASON=$(remote_validity_reason)"
+    echo "SERVER_FALLBACKS=$(remote_fallback_count)"
+
+    # ---- 本地已验签 keybox 池（③ 回滚能力）----
+    local pc=0
+    [ -d "$CACHE_DIR" ] && pc=$(ls -1 "$CACHE_DIR"/*.xml 2>/dev/null | wc -l | tr -d ' ')
+    echo "POOL_COUNT=${pc:-0}"
+
+    # ---- 网络与 WiFi 门控（⑤）----
+    echo "WIFI_ONLY=$(cfg_get wifi_only off)"
+    echo "NET_WIFI=$(net_is_wifi)"
 }
 
 # ============ 附属模块更新检查（WebUI 只读检查，不安装）============

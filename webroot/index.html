@@ -148,7 +148,19 @@ textarea.cfg{width:100%;box-sizing:border-box;margin-top:10px;padding:12px;borde
   <div class="row"><span class="k">SHA256</span><span class="v" id="kbSha">-</span></div>
   <div class="row"><span class="k">更新时间</span><span class="v" id="kbTime">-</span></div>
   <div class="row"><span class="k">新鲜度</span><span class="v" id="kbFresh">-</span></div>
+  <div class="row"><span class="k"><span id="valDot" class="dot off"></span>有效性</span><span class="v" id="kbValid">-</span></div>
+  <div class="row"><span class="k">证书有效期</span><span class="v" id="kbExpiry">-</span></div>
   <div class="row"><span class="k">TEESimulator</span><span class="v" id="teeState">-</span></div>
+</div>
+
+<div class="card">
+  <h2>服务端</h2>
+  <div class="row"><span class="k">最后更新</span><span class="v" id="srvTime">-</span></div>
+  <div class="row"><span class="k">选用的源</span><span class="v" id="srvSrc">-</span></div>
+  <div class="row"><span class="k">备用源</span><span class="v" id="srvFb">-</span></div>
+  <div class="row"><span class="k">本地已验签池</span><span class="v" id="poolCnt">-</span></div>
+  <button class="btn ghost" id="btnRollback"><span>↺</span> 回滚到池中上一份</button>
+  <p class="note">服务端会校验 keybox 里证书链的有效期与吊销状态；判定失效时模块会自动回滚到本地池中已验签的备份。</p>
 </div>
 
 <div class="card">
@@ -165,6 +177,11 @@ textarea.cfg{width:100%;box-sizing:border-box;margin-top:10px;padding:12px;borde
     <button type="button" data-h="12">12 小时</button>
     <button type="button" data-h="24">24 小时</button>
   </div>
+  <div class="switch-row" style="margin-top:14px">
+    <div><div class="lab">仅 WiFi 下自动更新</div><div class="hint">移动数据时不自动拉取，省流量</div></div>
+    <div class="switch" id="wifiOnlySwitch"></div>
+  </div>
+  <div class="row" style="margin-top:4px"><span class="k">当前网络</span><span class="v" id="netState">-</span></div>
   <div class="row" style="margin-top:12px"><span class="k"><span id="retryDot" class="dot off"></span>上次失败重试</span><span class="v" id="retryState">正常</span></div>
   <button class="btn ghost" id="btnUpdate"><span>⟳</span> 检查更新</button>
   <p class="note">发现新版本后可一键下载并自动安装；v2.1.6 起装完立即生效，无需重启</p>
@@ -214,6 +231,13 @@ textarea.cfg{width:100%;box-sizing:border-box;margin-top:10px;padding:12px;borde
   <div class="row"><span class="k">使用中</span><span class="v" id="pkActive">-</span></div>
   <p class="note">指纹用于自检 pubkey.b64 是否被替换。轮换密钥时把新公钥放进模块目录，
   并在配置里设置 <b>pubkey_use</b> 指向新文件名。</p>
+</div>
+
+<div class="card">
+  <h2>诊断与排障</h2>
+  <button class="btn ghost" id="btnDiag"><span>📦</span> 导出诊断包到 /sdcard</button>
+  <p class="note">把状态快照、最近 800 行日志、模块清单、有效性报告打包成一个文件，
+  方便发给我或留档，省去连电脑跑 adb。</p>
 </div>
 
 <div class="card">
@@ -378,6 +402,32 @@ async function refresh(){
   else pks.innerHTML='<span class="pill">未校验</span>';
   document.getElementById('pkFp').textContent=s.PUBKEY_FP||'-';
   document.getElementById('pkActive').textContent=s.PUBKEY_ACTIVE||'-';
+
+  // ---- 服务端有效性（①）----
+  var lvl=s.SERVER_VALIDITY||'unknown';
+  var vd=document.getElementById('valDot'), vb=document.getElementById('kbValid');
+  if(lvl==='valid'){vd.className='dot on';vb.innerHTML='<span class="pill ok">有效</span>';}
+  else if(lvl==='warning'){vd.className='dot warn';vb.innerHTML='<span class="pill warn2">注意</span>';}
+  else if(lvl==='invalid'){vd.className='dot warn';vb.innerHTML='<span class="pill err">已失效</span>';}
+  else {vd.className='dot off';vb.innerHTML='<span class="pill">未校验</span>';}
+  var days=s.SERVER_DAYS||'';
+  var reason=s.SERVER_REASON||'';
+  var exp=document.getElementById('kbExpiry');
+  if(days!=='')exp.textContent='剩余 '+days+' 天'+(reason?('（'+reason+'）'):'');
+  else exp.textContent=reason||'-';
+
+  // ---- 服务端信息（④）----
+  document.getElementById('srvTime').textContent=s.SERVER_UPDATED||'-';
+  document.getElementById('srvSrc').textContent=s.SERVER_KEYBOX_SHA?s.SERVER_KEYBOX_SHA.slice(0,16)+'…':'-';
+  var fb=parseInt(s.SERVER_FALLBACKS||'0',10)||0;
+  document.getElementById('srvFb').innerHTML=(fb>0)?('<span class="pill ok">'+fb+' 个可用</span>'):'<span class="pill">无</span>';
+  var pc=parseInt(s.POOL_COUNT||'0',10)||0;
+  document.getElementById('poolCnt').textContent=pc+' 份';
+
+  // ---- 网络与仅 WiFi（⑤）----
+  document.getElementById('wifiOnlySwitch').classList.toggle('on',s.WIFI_ONLY==='on');
+  var nw=s.NET_WIFI||'unknown';
+  document.getElementById('netState').textContent=(nw==='yes')?'WiFi':((nw==='no')?'移动数据/未连接':'未知');
 }
 
 async function toggleBl(){
@@ -608,6 +658,48 @@ async function clearLog(){
   catch(e){log('清空日志异常: '+e.message,'err');}
 }
 
+// ---- 仅 WiFi 自动更新 ----
+async function toggleWifiOnly(){
+  var on=!document.getElementById('wifiOnlySwitch').classList.contains('on');
+  try{await exec(MODDIR+'/webui.sh wifi-only '+(on?'on':'off'));}catch(e){}
+  await refresh();
+  log('「仅 WiFi 自动更新」已'+(on?'开启':'关闭'),'info');
+}
+
+// ---- 回滚到本地池 ----
+async function doRollback(){
+  busy('btnRollback',true,'回滚中...');
+  try{
+    var r=await exec(MODDIR+'/webui.sh rollback');
+    if((r.stdout||'').indexOf('ROLLBACK=OK')>=0){
+      log('已回滚到本地池中上一份已验签的 keybox','ok');
+    }else{
+      log('回滚失败：本地池里没有其它可用的 keybox','err');
+    }
+  }catch(e){log('回滚异常: '+e.message,'err');}
+  busy('btnRollback',false);
+  await refresh();
+}
+
+// ---- 导出诊断包 ----
+async function exportDiag(){
+  busy('btnDiag',true,'打包中...');
+  log('正在导出诊断包 ...','info');
+  try{
+    var r=await exec(MODDIR+'/webui.sh diag');
+    var out=r.stdout||'';
+    var path=(out.match(/DIAG_PATH=(.*)/)||[])[1];
+    var size=(out.match(/DIAG_SIZE=(\d+)/)||[])[1];
+    if(out.indexOf('DIAG=OK')>=0){
+      log('诊断包已导出：'+(path||'').trim()+'（'+Math.round((parseInt(size||'0',10))/1024)+' KB）','ok');
+      log('路径在 /sdcard/ 下，可用文件管理器取出','info');
+    }else{
+      log('诊断包导出失败','err');
+    }
+  }catch(e){log('导出异常: '+e.message,'err');}
+  busy('btnDiag',false);
+}
+
 // ---- 配置导出 / 导入 ----
 async function cfgExport(){
   try{
@@ -653,6 +745,9 @@ document.getElementById('btnLogLoad').onclick=loadLog;
 document.getElementById('btnLogClear').onclick=clearLog;
 document.getElementById('btnCfgExport').onclick=cfgExport;
 document.getElementById('btnCfgImport').onclick=cfgImport;
+document.getElementById('wifiOnlySwitch').onclick=toggleWifiOnly;
+document.getElementById('btnRollback').onclick=doRollback;
+document.getElementById('btnDiag').onclick=exportDiag;
 document.getElementById('autoBlSwitch').onclick=toggleBl;
 document.getElementById('autoDebugSwitch').onclick=toggleDebug;
 document.getElementById('btnBl').onclick=manualBl;

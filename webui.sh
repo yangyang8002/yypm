@@ -97,7 +97,8 @@ install_self() {
 case "${1:-status}" in
     fetch)
         echo "正在获取 keybox ..."
-        if fetch_keybox; then
+        # 走带有效性判断与回滚的安全流程（手动操作，不受"仅 WiFi"约束）
+        if fetch_keybox_safe; then
             echo "KEYBOX=OK"
         else
             echo "KEYBOX=FAIL"
@@ -224,7 +225,7 @@ case "${1:-status}" in
         while IFS= read -r line; do
             local k=${line%%=*} v=${line#*=}
             case "$k" in
-                auto_fetch|auto_bl|auto_debug|check_interval|pubkey_use)
+                auto_fetch|auto_bl|auto_debug|check_interval|pubkey_use|wifi_only)
                     [ "$line" = "$k" ] && continue      # 没有 = 的裸键跳过
                     printf '%s=%s\n' "$k" "$v" >> "$TMP/cfg_clean.txt"
                     ;;
@@ -270,6 +271,52 @@ case "${1:-status}" in
         echo "PUBKEY_EXPECT=$(expect_pubkey_fp)"
         echo "PUBKEY_INTACT=$(pubkey_intact)"
         echo "PUBKEY_ACTIVE=$(basename "$(active_pubkey)")"
+        ;;
+    wifi-only)
+        [ "$2" = "on" ] || [ "$2" = "off" ] || { echo "用法: wifi-only on|off"; exit 1; }
+        cfg_set wifi_only "$2"
+        echo "WIFI_ONLY=$2"
+        ;;
+    diag)
+        export_diag
+        ;;
+    rollback)
+        echo "正在从本地池回滚 ..."
+        if rollback_keybox; then
+            echo "ROLLBACK=OK"
+            echo "KEYBOX_SHA256=$(sha256_of "$KEYBOX_DEST")"
+        else
+            echo "ROLLBACK=FAIL(本地池没有可用的 keybox)"
+        fi
+        ;;
+    pool)
+        # 本地已验签 keybox 池
+        N=0
+        if [ -d "$CACHE_DIR" ]; then
+            for f in $(ls -1t "$CACHE_DIR"/*.xml 2>/dev/null); do
+                [ -s "$f" ] || continue
+                N=$((N + 1))
+                TS=$(cat "$CACHE_DIR/$(basename "$f" .xml).ts" 2>/dev/null)
+                [ -n "$TS" ] && WHEN=$(date -d "@$TS" '+%m-%d %H:%M' 2>/dev/null) || WHEN="-"
+                CUR=""
+                [ "$(basename "$f" .xml)" = "$(sha256_of "$KEYBOX_DEST")" ] && CUR=" [当前使用]"
+                echo "POOL|$(basename "$f" .xml)|$WHEN|$(wc -c < "$f" | tr -d ' ')$CUR"
+            done
+        fi
+        echo "POOL_COUNT=$N"
+        ;;
+    server)
+        # 服务端状态（来自最近一次拉取的 manifest）
+        echo "SERVER_VALIDITY=$(remote_validity_level)"
+        echo "SERVER_DAYS=$(remote_days_remaining)"
+        echo "SERVER_REASON=$(remote_validity_reason)"
+        echo "SERVER_FALLBACKS=$(remote_fallback_count)"
+        echo "SERVER_KEYBOX_SHA=$(remote_keybox_sha)"
+        [ -f "$TMP/manifest.json" ] && echo "SERVER_UPDATED=$(json_get "$TMP/manifest.json" updated_at)"
+        ;;
+    net)
+        echo "NET_WIFI=$(net_is_wifi)"
+        echo "WIFI_ONLY=$(cfg_get wifi_only off)"
         ;;
     status|*)
         echo_status

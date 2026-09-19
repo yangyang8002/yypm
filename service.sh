@@ -16,12 +16,12 @@ MODDIR="${0%/*}"
 # 附属模块包下载失败不算致命，不打断正常周期。
 run_cycle() {
     CYCLE_FAILED=0
-    if [ "$(get_auto)" = "on" ]; then
-        fetch_keybox || CYCLE_FAILED=1
+    if allow_auto_fetch; then
+        fetch_keybox_safe || CYCLE_FAILED=1
         download_packages
         check_module_update
     else
-        log "自动获取已关闭，跳过本轮拉取"
+        log "本轮跳过拉取（自动获取已关闭，或非 WiFi 且开启了仅 WiFi 更新）"
     fi
     [ "$(cfg_get auto_bl off)" = "on" ] && hide_bl
     [ "$(cfg_get auto_debug off)" = "on" ] && close_debug
@@ -29,7 +29,7 @@ run_cycle() {
 }
 
 log "========== 服务启动 =========="
-log "fetch=$(get_auto) bl=$(cfg_get auto_bl off) debug=$(cfg_get auto_debug off) 间隔=$(($(get_interval) / 3600))h"
+log "fetch=$(get_auto) wifi_only=$(cfg_get wifi_only off) bl=$(cfg_get auto_bl off) debug=$(cfg_get auto_debug off) 间隔=$(($(get_interval) / 3600))h"
 
 # 启动时执行一次（网络可能尚未就绪，失败会自动进入短期重试）
 run_cycle
