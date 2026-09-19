@@ -564,15 +564,22 @@ async function healthCheck(){
     else{
       box.innerHTML=rows.map(function(l){
         var p=l.split('|');
-        var nm=p[1]||'?',code=p[2]||'000',ms=p[3]||'';
+        var nm=p[1]||'?',code=p[2]||'000',ms=p[3]||'',hops=parseInt(p[4]||'0',10)||0;
         var ok=(code==='200'||code==='204'||code==='304');
         var cls=ok?'pill ok':'pill err';
         var label=ok?'可达':('失败 '+code);
+        var hopTxt=(hops>0)?('<span class="pill warn2">'+hops+' 次跳转</span>'):'';
+        // 延迟只接受 0~300000ms 的合理值，异常值不显示（防止历史 bug 重现时界面显示假数字）
+        var msNum=parseInt(ms,10);
+        var msTxt=(ms!==''&&!isNaN(msNum)&&msNum>=0&&msNum<=300000)?(msNum+' ms'):'';
         return '<div class="hrow"><span class="dot '+(ok?'on':'off')+'"></span>'+
                '<span class="nm">'+nm+'</span>'+
-               '<span class="ms">'+(ms?(ms+' ms'):'')+'</span>'+
+               '<span class="ms">'+msTxt+'</span>'+
+               hopTxt+
                '<span class="'+cls+'">'+label+'</span></div>';
       }).join('');
+      var anyHop=rows.some(function(l){return (parseInt(l.split('|')[4]||'0',10)||0)>0;});
+      if(anyHop)log('检测到跳转：该地址被重定向，每次请求会多花约 1 秒，建议把地址补成以 / 结尾','info');
       log('连通性检测完成','ok');
     }
   }catch(e){box.innerHTML='<div class="note">异常: '+e.message+'</div>';log('检测异常: '+e.message,'err');}

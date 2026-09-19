@@ -20,7 +20,7 @@ MODDIR="$(cd "$(dirname "$0")" && pwd)"
 download_self() { # $1 = 备用 url
     [ -n "${1:-}" ] || { echo "DOWNLOAD=FAIL(no url)"; return 1; }
     mkdir -p "$DATA_DIR"
-    for u in "$BASE_URL?action=module" "$1"; do
+    for u in "$(api_url module)" "$1"; do
         [ -n "$u" ] || continue
         rm -f "$DATA_DIR/update.zip"
         if download_retry "$u" "$DATA_DIR/update.zip"; then
@@ -260,8 +260,8 @@ case "${1:-status}" in
         ;;
     health)
         echo "正在检测下载源连通性 ..."
-        health_check | while IFS='|' read -r n c ms; do
-            echo "HEALTH|$n|$c|$ms"
+        health_check | while IFS='|' read -r n c ms hp; do
+            echo "HEALTH|$n|$c|$ms|${hp:-0}"
         done
         echo "HEALTH_DONE=1"
         ;;

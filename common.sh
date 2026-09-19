@@ -4,9 +4,12 @@
 # =========================================================
 
 # ---- 配置 ----
-BASE_URL="https://your-server.example.com/api/kernelsu/module"
+# 注意结尾的斜杠：少了它 nginx 会先回 301 补斜杠，而重定向目标带 :444 端口，
+# 客户端要白跳两跳（实测 655ms -> 1937ms，慢 3 倍）。下面有 api_url 兜底归一化。
+BASE_URL="https://your-server.example.com/api/kernelsu/module/"
 GITHUB_REPO="yourname/yypm"   # GitHub 仓库（owner/repo），检查更新用
-MODDIR="/data/adb/modules/yypm"
+# MODDIR 优先用调用方（webui.sh/service.sh）已设好的值，否则用默认路径
+MODDIR="${MODDIR:-/data/adb/modules/yypm}"
 DATA_DIR="/data/adb/yypm"
 CONFIG="$DATA_DIR/config.prop"
 TRICKY_DIR="/data/adb/tricky_store"
@@ -68,6 +71,16 @@ retry_due_in() {
 }
 
 log() { echo "[$(date '+%m-%d %H:%M:%S')] $*" >> "$LOG"; }
+
+# ---- URL 拼接（保证 BASE_URL 以 / 结尾，避免每次请求都被 301 补斜杠）----
+# 拼接前去掉可能存在的结尾斜杠，避免出现 "module//?action=" 这种双斜杠，
+# 双斜杠同样会触发重定向。历史上 BASE_URL 没有尾斜杠，这里兜底。
+api_url() { # $1 = action 名
+    local b="${BASE_URL%/}"
+    # 万一有人把 query 写进了 BASE_URL，先切掉
+    b="${b%%\?*}"
+    echo "$b/?action=$1"
+}
 
 # ---- 下载 (curl -> busybox wget -> toybox wget) ----
 download() { # $1 url  $2 out
@@ -175,7 +188,7 @@ close_debug() {
 fetch_keybox() {
     mkdir -p "$TMP"
     log "[·] 拉取 manifest"
-    if ! download_retry "$BASE_URL?action=manifest" "$TMP/manifest.json"; then
+    if ! download_retry "$(api_url manifest)" "$TMP/manifest.json"; then
         log "[✗] manifest 下载失败（已重试 $NET_RETRY 次）"
         retry_note_fail
         return 1
@@ -347,24 +360,52 @@ active_pubkey() {
 }
 
 # ---- 连通性自检：各下载源的可达性与延迟（毫秒）----
-# 输出：名称|http码|毫秒（失败时 http码为 000）
+# 输出：名称|http码|毫秒|跳转次数
+# 说明：设备上没有 curl，实际走 busybox wget。busybox wget 会跟随重定向，
+# 所以这里把"跟随之后的最终状态"作为可达性结论，另外单独回传跳转次数。
+# 跳转本身不算故障，但每跳多一次往返（实测 301 补斜杠白花约 1.3 秒），
+# 所以跳转次数 >0 时值得在界面上提示，而不是简单报"失败"。
 probe_source() { # $1 名称  $2 url
-    local name="$1" url="$2" code="000" ms=""
-    local t0=$(date +%s%N 2>/dev/null); [ -n "$t0" ] || t0=0
+    local name="$1" url="$2" code="000" ms="" hops=0
+    # 用分享秒数换算毫秒：date +%s%N 在部分 Android 上返回 19 位纳秒数，
+    # 直接参与 $(( )) 会溢出（曾把延迟算成 -1785ms），所以不碰纳秒。
+    local t0=$(date +%s 2>/dev/null); [ -n "$t0" ] || t0=0
+    local a0=$(date +%N 2>/dev/null)
+    case "$a0" in ''|*[!0-9]*) a0=0 ;; esac
+
     if command -v curl >/dev/null 2>&1; then
-        code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 6 --max-time 12 "$url" 2>/dev/null)
-    elif command -v busybox >/dev/null 2>&1; then
-        if busybox wget -T 10 --no-check-certificate -q -O /dev/null "$url" 2>/dev/null; then code="200"; fi
+        # curl 存在时能拿到精确状态码与跳转次数
+        code=$(curl -sL -o /dev/null -w '%{http_code}' \
+               --connect-timeout 6 --max-time 12 "$url" 2>/dev/null)
+        hops=$(curl -sL -o /dev/null -w '%{num_redirects}' \
+               --connect-timeout 6 --max-time 12 "$url" 2>/dev/null)
+    elif command -v busybox >/dev/null 2>&1 && busybox --list 2>/dev/null | grep -qx wget; then
+        # busybox wget 会跟随重定向；用 -S 的 stderr 里的 3xx 行数估计跳转次数
+        local err
+        err=$(busybox wget -T 12 --no-check-certificate -S -q -O /dev/null "$url" 2>&1 >/dev/null)
+        if busybox wget -T 12 --no-check-certificate -q -O /dev/null "$url" 2>/dev/null; then
+            code="200"
+            hops=$(printf '%s\n' "$err" | grep -ciE '30[12378] |Moved|Found' 2>/dev/null)
+        fi
+    elif command -v toybox >/dev/null 2>&1; then
+        toybox wget -O /dev/null "$url" >/dev/null 2>&1 && code="200"
     fi
-    local t1=$(date +%s%N 2>/dev/null); [ -n "$t1" ] || t1=0
-    if [ "$t1" -gt "$t0" ] 2>/dev/null; then ms=$(( (t1 - t0) / 1000000 )); fi
+
+    local t1=$(date +%s 2>/dev/null); [ -n "$t1" ] || t1=0
+    local a1=$(date +%N 2>/dev/null)
+    case "$a1" in ''|*[!0-9]*) a1=0 ;; esac
+    ms=$(( (t1 - t0) * 1000 + (a1 / 1000000) - (a0 / 1000000) ))
+    # 兜底：异常值（负数或超过 5 分钟）视为无法测量，避免界面显示假数字
+    if [ "$ms" -lt 0 ] 2>/dev/null || [ "$ms" -gt 300000 ] 2>/dev/null; then ms=""; fi
+
     [ -n "$code" ] || code="000"
-    echo "$name|$code|$ms"
+    case "$hops" in ''|*[!0-9]*) hops=0 ;; esac
+    echo "$name|$code|$ms|$hops"
 }
 
 health_check() {
     local m="${1:-6}"
-    probe_source "自建服务器" "$BASE_URL?action=manifest"
+    probe_source "自建服务器" "$(api_url manifest)"
     probe_source "GitHub" "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
 }
 
@@ -504,7 +545,7 @@ check_updates() {
     mkdir -p "$TMP" 2>/dev/null
     log "[·] 检查附属模块更新"
 
-    if ! download "$BASE_URL?action=packages" "$TMP/pkg_check.json" >/dev/null 2>&1; then
+    if ! download "$(api_url packages)" "$TMP/pkg_check.json" >/dev/null 2>&1; then
         save_update_cache "FAIL" "-" "0" "清单下载失败"
         return 1
     fi
@@ -783,7 +824,7 @@ list_installed() {
 }
 
 download_packages() {
-    local list_url="$BASE_URL?action=packages"
+    local list_url="$(api_url packages)"
     log "[·] 拉取模块清单"
     download_retry "$list_url" "$TMP/packages.json" || { log "[✗] 模块清单下载失败（已重试 $NET_RETRY 次）"; return 1; }
 
@@ -931,7 +972,7 @@ check_module_update() {
     log "[·] 发现新版本 $tag（当前 $cur）"
 
     local got=""
-    for u in "$BASE_URL?action=module" "$gh_url"; do
+    for u in "$(api_url module)" "$gh_url"; do
         [ -n "$u" ] || continue
         rm -f "$TMP/update.zip"
         if ! download_retry "$u" "$TMP/update.zip"; then
