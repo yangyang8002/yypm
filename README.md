@@ -122,6 +122,10 @@ Android 的 `pm` / `dumpsys` **不输出应用显示名**，只给 `labelRes=0x7
 客户端，收件人 `your-email@example.com`，正文自动带上模块版本、系统版本、处理模式、锁定原因、
 锁定时间和完整检测结果 —— 你只需要补一句说明。部分 WebView 会吞掉 `mailto:`，
 这时用「复制反馈内容」手动粘贴发送。
+**反挂不设开关**：没有「关闭」档。这不是留给用户的选择权，而是模块的立场 ——
+游戏挂和本模块互相拖累，允许关掉等于允许用户把自己玩坏。历史配置里如果还留着
+`anti_cheat=off`，会被当成默认档处理。
+
 
 **白名单**（三层，任何一层命中都放行，且在 `delete` 模式下同样生效）：
 
@@ -345,6 +349,11 @@ feedback". The first opens your mail client addressed to `your-email@example.com
 version, Android version, mode, lock reason, lock time and the full detection result already
 filled in — you only add a sentence of explanation. Some WebViews swallow `mailto:`, in which
 case use "Copy feedback" and paste it manually.
+**The anti-cheat has no off switch.** That is not a user preference, it is the module's stance:
+game cheats and this module drag each other down, so letting the user switch the check off is
+letting them break their own setup. A leftover `anti_cheat=off` in an old config is treated as
+the default tier.
+
 
 **Whitelist** (three layers; any match passes, and it is enforced even in `delete` mode):
 

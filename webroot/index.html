@@ -536,7 +536,6 @@ html[data-lockdown="1"] #acBanner{
   按关键字扫第一个就会误伤它们。</p>
   <div class="row"><span class="k">处理模式</span><span class="v" id="acMode">-</span></div>
   <div class="seg" id="acSeg" style="margin-top:8px">
-    <button type="button" data-ac="off">关闭</button>
     <button type="button" data-ac="warn">只警告</button>
     <button type="button" data-ac="quarantine">隔离</button>
     <button type="button" data-ac="delete">删除</button>
@@ -1554,7 +1553,7 @@ function acUnlock(){
 // 关键约定：只有 block 级（实体注入工具文件 / 用户自定义名单）才允许处理，
 // warn 级（关键字命中）永远只是提示 —— 误杀 tricky_store 这类模块的代价太大。
 var AC_MODE_CUR='warn';
-var AC_LABEL={off:'关闭',warn:'只警告',quarantine:'隔离',delete:'删除'};
+var AC_LABEL={quarantine:'隔离（可还原）',delete:'删除'};
 function acRow(k,v){return '<div class="row"><span class="k">'+esc(k)+'</span><span class="v">'+esc(v==null||v===''?'-':String(v))+'</span></div>';}
 function acTag(t,kind){
   var bg=kind==='ok'?'var(--primary)':(kind==='warn'?'#8B5000':'#B3261E');
@@ -2003,6 +2002,21 @@ document.getElementById('btnKbAudit').onclick=keyboxAudit;
 document.getElementById('btnKbRepair').onclick=keyboxRepair;
 document.getElementById('btnAppsToHide').onclick=appsToHide;
 document.getElementById('btnAppsToTarget').onclick=appsToTarget;
+
+// 反挂卡片上的按钮。
+// 注意：这一批曾经整批漏绑 —— 当时用 split(锚点).join() 打补丁，锚点写错了，
+// 而 split/join 找不到锚点是静默无操作，不报错，于是 8 个按钮全是死的。
+// 现在 tools/check-webui.mjs 会逐个断言按钮绑定存在，这类静默失败不会再溜过去。
+document.getElementById('btnAcScan').onclick=acScan;
+document.getElementById('btnAcApply').onclick=acApply;
+document.getElementById('btnAcRestore').onclick=function(){
+ask('还原隔离的模块？','被隔离的模块会回到生效目录，下次开机重新加载。',acRestore);
+};
+document.getElementById('btnAcUnlock').onclick=acUnlock;
+document.getElementById('btnAcKeepModule').onclick=function(){acDecide('keep_module');};
+document.getElementById('btnAcKeepCheats').onclick=function(){acDecide('keep_cheats');};
+document.getElementById('btnAcMail').onclick=acMailto;
+document.getElementById('btnAcCopy').onclick=acCopyFeedback;
 document.getElementById('appSearch').oninput=appsRender;
 document.getElementById('appList').addEventListener('change',function(e){
   var t=e.target;
@@ -2094,6 +2108,11 @@ document.getElementById('btnAppsNone').onclick=function(){
     if(id)s.outerHTML='<svg class="i"><use href="#i-'+id+'"/></svg>';
   }
 })();
+
+// 开机先问一次锁定状态：锁定横幅必须在第一屏就出现，不能等用户点进反挂卡片。
+acLockCheck();
+// 系统版本也一样，它挂在「安全」卡片上，属于进页面就该有值的信息。
+sdkLoad();
 
 setTimeout(function(){overlay.classList.add('hide');},600);
 readVersion();

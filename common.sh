@@ -2029,14 +2029,26 @@ ac_is_allowed() { # $1 = 模块 id
 
 # yypm 装过的模块 id：直接读下载缓存里的 module.prop，不维护第二份名单。
 # 以后往服务端 package/ 加新模块，白名单自动跟上。
+# 结果缓存在 AC_INSTALLED_CACHE 里。ac_scan 会对每个模块调一次 ac_is_allowed，
+# 而它每次都要把 packages/ 下的缓存包全部解一遍 —— 10 个模块就是几十次 unzip 派生。
+# 这是扫描超时的主要来源之一，所以进程内缓存住。
+AC_INSTALLED_CACHE=""
 ac_installed_ids() {
-    local d="${DATA_DIR:-/data/adb/yypm}/packages" z id
-    [ -d "$d" ] || return 0
-    for z in "$d"/*.zip; do
-        [ -f "$z" ] || continue
-        id=$(zip_id "$z" 2>/dev/null)
-        [ -n "$id" ] && printf '%s\n' "$id"
-    done
+    if [ -n "$AC_INSTALLED_CACHE" ]; then
+        printf '%s\n' "$AC_INSTALLED_CACHE"
+        return 0
+    fi
+    local d="${DATA_DIR:-/data/adb/yypm}/packages" z id acc=""
+    if [ -d "$d" ]; then
+        for z in "$d"/*.zip; do
+            [ -f "$z" ] || continue
+            id=$(zip_id "$z" 2>/dev/null)
+            [ -n "$id" ] && acc="${acc}${id}
+"
+        done
+    fi
+    AC_INSTALLED_CACHE="$acc"
+    [ -n "$acc" ] && printf '%s\n' "$acc"
     return 0
 }
 
@@ -2065,13 +2077,36 @@ ac_match_user() { # $1 = 模块 id
 
 # B 级扫描：看模块目录里有没有注入/内存工具的实体文件。
 # 只扫两层、只比文件名，避免在几百个文件上把时间耗光。
-ac_scan_payload() { # $1=模块目录 -> 命中则输出说明
-    local dir="$1" f names=""
+# 让 find 自己按文件名筛，只把命中的几个名字带回 shell。
+# 原来的写法是把整个文件清单（find | tr）拉进变量再逐条子串匹配 —— 模块的
+# system/ 动辄上万个文件，这一步在真机上能把 WebUI 的 20 秒预算吃光，
+# 用户看到的就是「点了扫描没反应 / 没有输出」。
+ac_payload_hit() { # $1=模块目录 $2=特征表 -> 命中则输出说明
+    local dir="$1" table="$2" entry frag why hits f pat=""
     [ -d "$dir" ] || return 1
-    names=$(find "$dir" -maxdepth 3 -type f 2>/dev/null | tr 'A-Z' 'a-z')
-    [ -n "$names" ] || return 1
-    ac_match_table "$names" "$(ac_payload_strong)"
+    local oldifs="$IFS"
+    IFS='
+'
+    for entry in $table; do
+        [ -n "$entry" ] || continue
+        frag="${entry%%|*}"
+        pat="$pat -o -iname *$frag*"
+    done
+    IFS="$oldifs"
+    [ -n "$pat" ] || return 1
+    pat="${pat# -o }"
+    # 关掉路径展开：否则 *ceserver* 这种会被当前目录里的同名文件顶掉
+    local hadf=0; case "$- " in *f*) hadf=1 ;; esac
+    set -f
+    hits=$(find "$dir" -maxdepth 3 -type f \( $pat \) 2>/dev/null | head -3)
+    [ "$hadf" = "0" ] && set +f
+    [ -n "$hits" ] || return 1
+    f=$(printf '%s\n' "$hits" | head -1 | tr 'A-Z' 'a-z')
+    why=$(ac_match_table "$f" "$table") || return 1
+    printf '%s\n' "$why"
 }
+
+ac_scan_payload() { ac_payload_hit "$1" "$(ac_payload_strong)"; }
 
 ac_scan_payload_weak() { # $1=模块目录 -> 命中则输出说明
     local dir="$1" names=""
@@ -2115,7 +2150,7 @@ ac_scan() {
 "
         done
     fi
-    echo "AC_MODE=$(cfg_get anti_cheat delete)"
+    echo "AC_MODE=$(ac_mode)"
     echo "AC_LOCKED=$(ac_locked && echo 1 || echo 0)"
     echo "AC_PENDING=$(ac_pending && echo 1 || echo 0)"
     echo "AC_TOTAL=$total"
@@ -2223,7 +2258,11 @@ ac_decide_keep_module() {
     for id in $(ac_pending_ids); do
         ac_is_allowed "$id" && continue
         [ -d "$AC_MODDIR/$id" ] || continue
-        if rm -rf "$AC_MODDIR/$id" 2>/dev/null; then
+        # 按配置档位处置：quarantine 移进隔离区（可还原），其余一律删除
+        local mode=$(ac_mode)
+        if [ "$mode" = "quarantine" ]; then
+            ac_quarantine "$id" >/dev/null 2>&1 && { n=$((n + 1)); log "[!] 反挂：按你的选择已隔离挂模块 $id"; }
+        elif rm -rf "$AC_MODDIR/$id" 2>/dev/null; then
             n=$((n + 1))
             log "[!] 反挂：按你的选择已删除挂模块 $id"
         fi
@@ -2299,14 +2338,20 @@ ac_restore() {
 }
 
 # 按策略执行：block 级强制删除（或隔离），warn 级锁定自身。
+# 反挂的处理档位。没有「关闭」档 —— 这不是留给用户的选择权，是模块的立场：
+# 游戏挂和本模块互相拖累，允许关掉等于允许用户把自己玩坏。
+# 历史配置里如果还留着 off / warn，一律按默认档处理。
+ac_mode() {
+    local m=$(cfg_get anti_cheat delete)
+    case "$m" in
+        off|warn|"") echo delete ;;
+        *) echo "$m" ;;
+    esac
+}
+
 ac_apply() {
-    local mode=$(cfg_get anti_cheat delete)
+    local mode=$(ac_mode)
     echo "AC_MODE=$mode"
-    if [ "$mode" = "off" ]; then
-        echo "AC_ACTED=0"
-        echo "AC_LOCKED=$(ac_locked && echo 1 || echo 0)"
-        return 0
-    fi
     local scan=$(ac_scan)
     local nb=$(printf '%s\n' "$scan" | sed -n 's/^AC_BLOCK=//p')
     local nw=$(printf '%s\n' "$scan" | sed -n 's/^AC_WARN=//p')
@@ -2324,7 +2369,6 @@ ac_apply() {
         done
     fi
 
-    # 警告 -> 同样锁定自身（不删，因为误报率高，删错不可挽回）
     # 警告 -> 锁定自身（不删，因为误报率高，删错不可挽回）
     if [ "$nw" != "0" ] && [ "$nb" = "0" ]; then
         ac_lock_set "发现 $nw 个可疑游戏挂模块（关键字命中），已停用 yypm 全部功能"

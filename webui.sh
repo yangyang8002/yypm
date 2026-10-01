@@ -402,9 +402,10 @@ case "${1:-status}" in
         keybox_audit
         ;;
     anti-cheat-mode)
-        # 设置处理模式：off / warn / quarantine / delete
+        # 设置实锤的处置方式：quarantine（隔离，可还原）/ delete（删除）。
+        # 没有 off —— 反挂不开关，这是模块的立场。
         case "${2:-}" in
-            off|warn|quarantine|delete) cfg_set anti_cheat "$2"; echo "AC_MODE_SET=$2" ;;
+            quarantine|delete) cfg_set anti_cheat "$2"; echo "AC_MODE_SET=$2" ;;
             *) echo "AC_MODE_SET=bad" ;;
         esac
         ;;
