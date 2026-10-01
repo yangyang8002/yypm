@@ -2031,6 +2031,13 @@ ac_is_allowed() { # $1 = 模块 id
         shamiko|susfs*|kernelsu*|kernel_su*|magisk|*lsposed*|*shamiko*|*susfs*|*integrity*) return 0 ;;
     esac
 
+    # 3.5) 已知的性能调优 / 搞机模块。它们会带内存扫描类工具（ceserver 等），
+    # 但用途是调度和调参，不是游戏挂。真机上这四个曾被误判，所以直接放行。
+    case "$id" in
+        freepps|uperf|scene|scene_*|*_swap_controller|*_systemless) return 0 ;;
+        *perf*|*turbo*|*tune*|*boost*) return 0 ;;
+    esac
+
     # 4) yypm 亲手装过的（缓存包里的 module.prop 反推）
     local bid
     for bid in $(ac_installed_ids); do
@@ -2115,7 +2122,9 @@ ac_payload_hit() { # $1=模块目录 $2=特征表 -> 命中则输出说明
     [ -n "$hits" ] || return 1
     f=$(printf '%s\n' "$hits" | head -1 | tr 'A-Z' 'a-z')
     why=$(ac_match_table "$f" "$table") || return 1
-    printf '%s\n' "$why"
+    # 把真正命中的文件名一起带上。只报「目录含 GameGuardian 核心库」没法定位误报，
+    # 到底是哪个文件命中的必须看得见 —— 真机上就是靠这个才发现误判的。
+    printf '%s\n' "$why ← $(basename "$f")"
 }
 
 ac_scan_payload() { ac_payload_hit "$1" "$(ac_payload_strong)"; }

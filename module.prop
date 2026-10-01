@@ -1,6 +1,6 @@
 id=yypm
 name=yypm
-version=v2.5.4
-versionCode=254
+version=v2.5.5
+versionCode=255
 author=yangyang8002
 description=自动获取并注入 keybox · 环境伪装 · keybox 自检 · 反挂检查（KernelSU / Android 13-17）
