@@ -1819,3 +1819,41 @@ keybox_audit() {
         echo "KEYBOX_JSON_END"
     fi
 }
+
+# ---- 一键修复：把自检发现的问题就地解决 ----
+#
+# 能修的：本地 keybox 缺失 / 被第三方替换 / 与服务端不一致 / 服务端已经换源
+#   而设备还没跟上。这几类的解法是同一个 —— 重新与服务端对齐：走一次带
+#   Ed25519 验签的拉取，拉不到就回滚到本地池里上一份已验签的 keybox。
+#   （这一步其实每轮定时任务本来就会做，这里只是「现在立刻做一次」。）
+#
+# 不能修的：证书签发时间过早。例如当前这份叶证书是 2020-09-29 签发、有效期
+#   到 2030-09-27。真实的 TEE 认证证书是按需即时签发的，检测方一看签发时间
+#   就知道是套用了别人的密钥 —— 这正是春秋检测报「脏设备存在替换密钥行为」
+#   的最可能原因。叶证书由中间 CA 签发，而中间 CA 的私钥不在 keybox 里
+#   （keybox 只带叶的私钥），所以没有私钥就无法重签。这不是配置问题，
+#   换多少个源都一样，必须如实告诉用户，不能假装能修。
+keybox_repair() {
+    local before_sha=$(sha256_of "$KEYBOX_DEST")
+    local before_size=$(wc -c < "$KEYBOX_DEST" 2>/dev/null | tr -d ' \t')
+    echo "REPAIR_BEFORE_SHA=$before_sha"
+    echo "REPAIR_BEFORE_SIZE=$before_size"
+
+    # fetch_keybox_safe 内部已包含：拉 manifest -> 看服务端有效性结论 ->
+    # 无效则回滚到池里上一份 -> 拉取失败也回滚。所以这里不需要额外兜底。
+    local rc=0
+    fetch_keybox_safe || rc=$?
+
+    local after_sha=$(sha256_of "$KEYBOX_DEST")
+    local after_size=$(wc -c < "$KEYBOX_DEST" 2>/dev/null | tr -d ' \t')
+    echo "REPAIR_AFTER_SHA=$after_sha"
+    echo "REPAIR_AFTER_SIZE=$after_size"
+    if [ -n "$before_sha" ] && [ "$before_sha" = "$after_sha" ]; then
+        echo "REPAIR_CHANGED=0"
+    elif [ -z "$before_sha" ] && [ -z "$after_sha" ]; then
+        echo "REPAIR_CHANGED=0"
+    else
+        echo "REPAIR_CHANGED=1"
+    fi
+    echo "REPAIR_RC=$rc"
+}

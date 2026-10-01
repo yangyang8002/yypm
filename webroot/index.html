@@ -480,7 +480,9 @@ html[data-theme="dark"] .dlg-btn.danger{color:#F2B8B5}
   这里把设备上这份 keybox 与服务端算好的证书链、有效期、吊销结论对齐后一次摊开。</p>
   <div class="row2">
     <button class="btn ghost" id="btnKbAudit"><span>🔐</span> 开始自检</button>
+    <button class="btn ghost" id="btnKbRepair" style="display:none"><span>🛠️</span> 一键修复</button>
   </div>
+  <div id="kbFixNote"></div>
   <div id="kbReport"><div class="appempty">点「开始自检」查看证书链与吊销状态</div></div>
 </div>
 
@@ -1305,6 +1307,88 @@ function renderKb(rep,g){
   return h;
 }
 
+// 证书签发时间过早的提示：这不是配置问题，换源也解决不了，必须单独讲清楚，
+// 不能混在「可修复」里让用户以为点一下就好了。
+// 真实 TEE 认证证书是按需即时签发的；泄漏出来的 keybox 叶证书都是几年前的。
+function kbAgeAdvice(rep){
+  if(!rep||!rep.validity) return null;
+  var chains=rep.validity.chains||[];
+  var oldest=null;
+  for(var i=0;i<chains.length;i++){
+    var cs=chains[i].certs||[];
+    if(!cs.length) continue;
+    var d=cs[0].not_before;
+    if(!d) continue;
+    var t=Date.parse(d);
+    if(isNaN(t)) continue;
+    if(oldest===null || t<oldest) oldest=t;
+  }
+  if(oldest===null) return null;
+  var days=Math.floor((Date.now()-oldest)/86400000);
+  if(days<400) return null;
+  var years=(days/365).toFixed(1);
+  return '叶证书签发于 '+new Date(oldest).toISOString().slice(0,10)+'，距今 '+years+' 年。'
+    +'真实的 TEE 认证证书是按需即时签发的 —— 部分检测应用（例如春秋检测的'
+    +'「脏设备存在替换密钥行为」）正是靠这个签发时间判断密钥是被套用的。'
+    +'这一项无法自动修复：叶证书由中间 CA 签发，而中间 CA 的私钥不在 keybox 里，'
+    +'没有私钥就无法重签，换任何源都一样。';
+}
+
+// 能不能修：只有「本地与服务端不一致」这一类才谈得上修，
+// 因为修的手段就是重新与服务端对齐。
+function kbFix(rep,g){
+  var exists=g('KEYBOX_EXISTS')==='1';
+  var localSha=g('KEYBOX_LOCAL_SHA'), srvSha=g('KEYBOX_SERVER_SHA');
+  if(!srvSha) return {can:false,why:'取不到服务端报告，无法修复（先在「更新」页确认能连上服务器）'};
+  if(!exists) return {can:true,why:'设备上还没有 keybox，可以直接从服务端拉一份注入'};
+  if(localSha!==srvSha) return {can:true,why:'设备上这份与服务端不一致，可以重新对齐'};
+  var v=rep&&rep.validity;
+  if(v&&v.level&&v.level!=='valid') return {can:true,why:'服务端判定当前这份无效，可以重拉并回滚到本地池里的可用副本'};
+  return {can:false,why:'本地与服务端已经一致，且服务端判定有效 —— 没有需要修复的地方'};
+}
+
+function kbApplyFix(rep,g){
+  var f=kbFix(rep,g);
+  var note=document.getElementById('kbFixNote');
+  var btn=document.getElementById('btnKbRepair');
+  var h='';
+  if(f.can){
+    h+='<p class="note">'+kbTag('可修复','ok')+' '+esc(f.why)+'</p>';
+    btn.style.display='';
+  } else {
+    h+='<p class="note">'+kbTag('无需修复','warn')+' '+esc(f.why)+'</p>';
+    btn.style.display='none';
+  }
+  var adv=kbAgeAdvice(rep);
+  if(adv){
+    h+='<p class="note">'+kbTag('不可修复','err')+' '+esc(adv)+'</p>';
+  }
+  note.innerHTML=h;
+}
+
+async function keyboxRepair(){
+  busy('btnKbRepair',true,'修复中...');
+  log('===== 密钥自检：一键修复开始 =====','info');
+  try{
+    var r=await execT(MODDIR+'/webui.sh keybox-repair',60000);
+    var out=(r.stdout||'')+(r.stderr?('\n'+r.stderr):'');
+    var g=function(k){var m=out.match(new RegExp('^'+k+'=(.*)$','m'));return m?m[1].replace(/\r$/,''):'';};
+    var bs=g('REPAIR_BEFORE_SHA'), as=g('REPAIR_AFTER_SHA');
+    log('修复前: '+(bs?bs.slice(0,16):'(无 keybox)'),'info');
+    log('修复后: '+(as?as.slice(0,16):'(仍无 keybox)'),'info');
+    if(g('REPAIR_CHANGED')==='1'){
+      log('已替换为与服务端一致的那一份','ok');
+    } else if(bs&&bs===as){
+      log('内容没有变化（本地已与服务端一致，或服务端这份就是当前唯一可用的）','info');
+    }
+    if(g('REPAIR_RC')!=='0') log('修复过程返回非 0（'+g('REPAIR_RC')+'），详见「运行日志」','err');
+    log('===== 修复结束，重新自检 =====','ok');
+    busy('btnKbRepair',false);
+    await keyboxAudit();
+    return;
+  }catch(e){ log('修复异常: '+e.message,'err'); }
+  busy('btnKbRepair',false);
+}
 async function keyboxAudit(){
   busy('btnKbAudit',true,'自检中...');
   var box=document.getElementById('kbReport');
@@ -1321,8 +1405,10 @@ async function keyboxAudit(){
     var rep=null;
     if(jm){ try{ rep=JSON.parse(jm[1]); }catch(e){ rep={error:'服务端报告解析失败: '+e.message}; } }
     box.innerHTML=renderKb(rep,g);
+    kbApplyFix(rep,g);
   }catch(e){
     box.innerHTML='<div class="appempty">自检异常: '+esc(e.message)+'</div>';
+    document.getElementById('btnKbRepair').style.display='none';
   }
   busy('btnKbAudit',false);
 }
@@ -1482,6 +1568,7 @@ document.getElementById('btnAppsLoad').onclick=appsLoad;
 document.getElementById('btnAppsXposed').onclick=appsSelectXposed;
 document.getElementById('btnAppsDiag').onclick=appsDiag;
 document.getElementById('btnKbAudit').onclick=keyboxAudit;
+document.getElementById('btnKbRepair').onclick=keyboxRepair;
 document.getElementById('btnAppsToHide').onclick=appsToHide;
 document.getElementById('btnAppsToTarget').onclick=appsToTarget;
 document.getElementById('appSearch').oninput=appsRender;

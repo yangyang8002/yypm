@@ -387,6 +387,11 @@ case "${1:-status}" in
         # 吊销结论。JSON 由 WebUI 解析，这里只负责搬运（见 common.sh 的 keybox_audit）。
         keybox_audit
         ;;
+    keybox-repair)
+        # 一键修复：重新与服务端对齐（带验签），失败则回滚到本地池。
+        # 修不了的那类（证书签发时间过早）由 WebUI 明确标注，不在这里假装能修。
+        keybox_repair
+        ;;
     apps-list)
         # 全部应用 + 本地化应用名 + LSPosed 模块标记（TSV，见 common.sh 的 apps_list）
         apps_list
