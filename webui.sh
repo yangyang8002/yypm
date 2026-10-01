@@ -107,6 +107,20 @@ install_self() {
     return 0
 }
 
+# 反挂锁定闸门：除反挂自身的动作外，一律拒绝执行。
+# 白名单里这几个是排查/解锁必需的，锁定后必须仍然可用，否则没法恢复。
+case "${1:-status}" in
+    anti-cheat-*|log|log-clear|cfg-export) ;;
+    *)
+        if ac_guard; then :; else
+            echo "AC_LOCKED=1"
+            echo "AC_LOCK_REASON=$(ac_lock_reason)"
+            echo "AC_LOCK_SINCE=$(sed -n 's/^since=//p' "$AC_LOCK" 2>/dev/null | head -1)"
+            exit 1
+        fi
+        ;;
+esac
+
 case "${1:-status}" in
     fetch)
         echo "正在获取 keybox ..."
@@ -386,6 +400,37 @@ case "${1:-status}" in
         # 密钥自检：本地 keybox 的 sha256/DeviceID/证书数 + 服务端算好的证书链与
         # 吊销结论。JSON 由 WebUI 解析，这里只负责搬运（见 common.sh 的 keybox_audit）。
         keybox_audit
+        ;;
+    anti-cheat-mode)
+        # 设置处理模式：off / warn / quarantine / delete
+        case "${2:-}" in
+            off|warn|quarantine|delete) cfg_set anti_cheat "$2"; echo "AC_MODE_SET=$2" ;;
+            *) echo "AC_MODE_SET=bad" ;;
+        esac
+        ;;
+    anti-cheat-scan)
+        # 只读扫描，不动任何东西
+        ac_scan
+        ;;
+    anti-cheat-apply)
+        # 按 config 的 anti_cheat 执行（默认 warn，只警告不处理）
+        ac_apply
+        ;;
+    sdk)
+        # Android 版本与适配范围（只读）
+        sdk_report
+        ;;
+    anti-cheat-lock-status)
+        ac_lock_status
+        ;;
+    anti-cheat-unlock)
+        # 手动解锁：仅在确认误报时用。下次扫描若仍有 warn 级命中会再次锁定。
+        ac_lock_clear
+        echo "AC_LOCKED=0"
+        ;;
+    anti-cheat-restore)
+        # 把隔离区里的模块全部还原
+        ac_restore
         ;;
     keybox-repair)
         # 一键修复：重新与服务端对齐（带验签），失败则回滚到本地池。

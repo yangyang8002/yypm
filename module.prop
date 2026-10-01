@@ -1,6 +1,6 @@
 id=yypm
 name=yypm
-version=v2.4.1
-versionCode=241
+version=v2.5.0
+versionCode=250
 author=yangyang8002
-description=定时自动从自建服务器获取并注入 keybox (KernelSU)
+description=自动获取并注入 keybox · 环境伪装 · keybox 自检 · 反挂检查（KernelSU / Android 13-17）

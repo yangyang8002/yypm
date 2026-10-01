@@ -16,6 +16,12 @@ MODDIR="${0%/*}"
 # 附属模块包下载失败不算致命，不打断正常周期。
 run_cycle() {
     CYCLE_FAILED=0
+    # 反挂先跑：它可能锁定自身，后面所有功能都要看它的结果
+    ac_apply >/dev/null 2>&1
+    if ac_locked; then
+        log "[✗] 反挂锁定中，本轮跳过全部功能：$(ac_lock_reason)"
+        return 0
+    fi
     if allow_auto_fetch; then
         fetch_keybox_safe || CYCLE_FAILED=1
         download_packages
@@ -33,6 +39,13 @@ run_cycle() {
 }
 
 log "========== 服务启动 =========="
+
+# 反挂锁定：开机不加载任何功能（fail-closed，断网同样保持锁定）
+if ac_locked; then
+    log "[✗] 反挂锁定中，本次启动不加载任何功能：$(ac_lock_reason)"
+    log "[✗] 解除方法：在 WebUI「反挂检查」里处理掉可疑模块后点「解除锁定」"
+    exit 0
+fi
 log "fetch=$(get_auto) wifi_only=$(cfg_get wifi_only off) bl=$(cfg_get auto_bl off) debug=$(cfg_get auto_debug off) deep_bl=$(cfg_get deep_bl off) hide_apps=$(cfg_get hide_apps_enable off) 间隔=$(($(get_interval) / 3600))h"
 
 # 启动时执行一次（网络可能尚未就绪，失败会自动进入短期重试）

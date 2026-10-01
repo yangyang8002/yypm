@@ -12,6 +12,49 @@ GITHUB_REPO="yourname/yypm"   # GitHub 仓库（owner/repo），检查更新用
 MODDIR="${MODDIR:-/data/adb/modules/yypm}"
 DATA_DIR="/data/adb/yypm"
 CONFIG="$DATA_DIR/config.prop"
+# ---- 适配的 Android 版本 ----
+# 适配范围：Android 13 (API 33) ~ Android 17 (API 37)。
+# 依赖的系统能力：
+#   app_process   —— appinfo.dex 跑在它上面（按 app_process64 -> app_process -> app_process32 探测）
+#   pm hide       —— 隐藏应用列表
+#   resetprop     —— 属性伪装（KernelSU / Magisk 提供）
+# 低于 API 33 时这些能力的现代行为不齐，不保证可用；高于 API 37 属未验证区间。
+SDK_MIN=33
+SDK_MAX=37
+
+sdk_now() { getprop ro.build.version.sdk 2>/dev/null | tr -d ' \r'; }
+
+# ok / old / new / unknown
+sdk_state() {
+    local s=$(sdk_now)
+    [ -n "$s" ] || { echo unknown; return 0; }
+    if [ "$s" -lt "$SDK_MIN" ] 2>/dev/null; then echo old
+    elif [ "$s" -gt "$SDK_MAX" ] 2>/dev/null; then echo new
+    else echo ok; fi
+}
+
+# 给人看的版本串，例如 Android 16 (API 36)
+sdk_label() {
+    local s=$(sdk_now) r=$(getprop ro.build.version.release 2>/dev/null | tr -d ' \r')
+    echo "Android ${r:-?} (API ${s:-?})"
+}
+
+# 一行结论，供 WebUI 直接显示
+sdk_report() {
+    local st=$(sdk_state)
+    echo "SDK_LABEL=$(sdk_label)"
+    echo "SDK_NOW=$(sdk_now)"
+    echo "SDK_MIN=$SDK_MIN"
+    echo "SDK_MAX=$SDK_MAX"
+    echo "SDK_STATE=$st"
+    case "$st" in
+        ok)  echo "SDK_TEXT=在适配范围内（Android 13-17）" ;;
+        old) echo "SDK_TEXT=低于适配范围（需要 Android 13 / API 33 及以上），不保证可用" ;;
+        new) echo "SDK_TEXT=高于已验证范围（Android 17 / API 37），可能有兼容问题" ;;
+        *)   echo "SDK_TEXT=读不到系统版本" ;;
+    esac
+}
+
 TRICKY_DIR="/data/adb/tricky_store"
 KEYBOX_DEST="$TRICKY_DIR/keybox.xml"
 KEYBOX_CACHE="$DATA_DIR/keybox.xml"
@@ -1856,4 +1899,366 @@ keybox_repair() {
         echo "REPAIR_CHANGED=1"
     fi
     echo "REPAIR_RC=$rc"
+}
+
+# ============================================================
+# 反挂检查（游戏挂）
+# ============================================================
+# 判定思路：游戏挂的特征不是名字，而是「它挂了哪个游戏」和「它带了什么注入工具」。
+# 分四级信号，可靠性从高到低：
+#
+#   A 级  LSPosed 模块的 scope 命中【游戏应用】
+#         —— 最强信号。scope 表直接记录了模块 hook 哪些应用，而 Android 自己
+#            知道哪些包是游戏（CATEGORY_GAME），两边求交集即可，不需要维护
+#            游戏包名表。需要读 modules_config.db（见 ac_lspd_scope）。
+#   B 级  模块目录里躺着注入/内存工具的实体文件
+#         —— 文件级证据，比名字可靠得多，且不需要任何额外依赖。
+#   C 级  ID/名称/描述含游戏挂关键字
+#         —— 误报率最高，【只警告，永不自动处理】。
+#   D 级  已安装的作弊 APK
+#         —— 不是模块，只警告。
+#
+# 安全底线：只有 A/B 级允许自动处理；C/D 永远只警告。白名单在最低层强制。
+# 默认动作 quarantine（移到隔离区，可一键还原），想真删把 anti_cheat 设成 delete。
+#
+# config: anti_cheat     = off | warn（默认）| quarantine | delete
+#         anti_cheat_ids = 逗号分隔的自定义模块 id（精确匹配，按 A 级处理）
+
+# 路径变量化：生产环境用默认值，测试里可以覆盖成临时目录。
+AC_MODDIR="${AC_MODDIR:-/data/adb/modules}"
+AC_QDIR="${AC_QDIR:-/data/adb/yypm/quarantine}"
+AC_LOCK="${AC_LOCK:-/data/adb/yypm/ac.lock}"
+
+# B 级：注入 / 内存工具的实体文件名特征。格式 文件名片段|说明。
+# 只收【在模块里出现就基本不可能是正经用途】的东西。
+ac_payload_strong() {
+    cat <<'ACEOF'
+ceserver|Cheat Engine 服务端（内存扫描/修改）
+cheatengine|Cheat Engine（内存扫描/修改）
+frida-server|Frida 注入框架服务端
+frida-gadget|Frida 注入框架
+libgg.so|GameGuardian 核心库
+libgameguardian|GameGuardian 核心库
+libsubstrate|Substrate Hook 框架（游戏挂常用）
+ACEOF
+}
+
+# C 级：只提示、不处理的线索。ImGui/IL2CPP/UE4 在别的场景也可能是正经用途，
+# 所以单独放一档，避免误杀。
+ac_payload_weak() {
+    cat <<'ACEOF'
+libimgui|ImGui 绘制层（游戏 overlay 常用）
+libil2cpp|IL2CPP 注入（Unity 游戏挂常用）
+libue4|UE4 注入（虚幻引擎游戏挂常用）
+ACEOF
+}
+
+# C 级：模块 ID/名称/描述里的关键字。只警告。
+ac_keywords() {
+    cat <<'ACEOF'
+修改器
+外挂
+作弊
+透视
+自瞄
+锁头
+秒杀
+无敌
+游戏辅助
+游戏脚本
+按键精灵
+自动点击
+gg修改
+gameguardian
+lucky patcher
+烧饼
+八门
+葫芦侠
+叉叉助手
+ACEOF
+}
+
+# D 级：作弊 APK 包名。只收确认过的。
+ac_cheat_pkgs() {
+    cat <<'ACEOF'
+catch_.me_.if_.you_.can_|GameGuardian（内存修改器）
+com.gameguardian.android|GameGuardian（内存修改器）
+com.chelpus.luckypatcher|Lucky Patcher（破解工具）
+com.forpda.lp|Lucky Patcher（破解工具）
+cc.madkite.freedom|Freedom（内购破解）
+ACEOF
+}
+
+# ---- 白名单 ----
+# 反挂逻辑最容易犯的错是把自己人干掉。yypm 是 keybox 分发模块，它天然要跟一堆
+# 「伪装类」模块共存 —— tricky_store、playintegrityfix 这些名字里全是敏感词，
+# 按关键字扫第一个就会命中。删掉它们等于拆掉整个 keybox 基础设施，用户直接变砖。
+#
+# 所以白名单分三层，任何一层命中都放行，且在最底层生效（delete 模式也拦得住）：
+#   1) yypm 自己
+#   2) yypm 自己分发/安装的模块（服务端 package.json 里那 4 个）
+#   3) 任何 yypm 亲手装上去的模块（从下载缓存反推，以后加新包不用回来改这里）
+#   4) 常见的内核级 / 伪装类模块名模式（兜底）
+ac_is_allowed() { # $1 = 模块 id
+    local id=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
+
+    # 1) yypm 自己
+    [ "$id" = "yypm" ] && return 0
+
+    # 2) yypm 分发的模块 + 内核级依赖
+    case "$id" in
+        tricky_store|tricky-store|teesimulator|teesimulator-rs) return 0 ;;
+        playintegrityfix|playintegrity|pif|pif_json|pifjson) return 0 ;;
+        zygisksu|zygisk_su|zygisk-next) return 0 ;;
+        zygisk_lsposed|lsposed) return 0 ;;
+    esac
+
+    # 3) 兜底模式：内核 / 隐藏 / 完整性伪装类
+    case "$id" in
+        shamiko|susfs*|kernelsu*|kernel_su*|magisk|*lsposed*|*shamiko*|*susfs*|*integrity*) return 0 ;;
+    esac
+
+    # 4) yypm 亲手装过的（缓存包里的 module.prop 反推）
+    local bid
+    for bid in $(ac_installed_ids); do
+        [ "$(printf '%s' "$bid" | tr 'A-Z' 'a-z')" = "$id" ] && return 0
+    done
+    return 1
+}
+
+# yypm 装过的模块 id：直接读下载缓存里的 module.prop，不维护第二份名单。
+# 以后往服务端 package/ 加新模块，白名单自动跟上。
+ac_installed_ids() {
+    local d="${DATA_DIR:-/data/adb/yypm}/packages" z id
+    [ -d "$d" ] || return 0
+    for z in "$d"/*.zip; do
+        [ -f "$z" ] || continue
+        id=$(zip_id "$z" 2>/dev/null)
+        [ -n "$id" ] && printf '%s\n' "$id"
+    done
+    return 0
+}
+
+# 通用：在【换行分隔的 片段|说明】表里找 $1 是否出现在 $2（已转小写的全文）里。# 通用：在【换行分隔的 片段|说明】表里找 $1 是否出现在 $2（已转小写的全文）里。
+# 命中输出说明。$3=strong 时按 A 级处理，否则按 C 级。
+ac_match_table() { # $1=haystack(小写) $2=表内容
+    local hay="$1" entry frag why
+    local oldifs="$IFS"
+    IFS='
+'
+    for entry in $2; do
+        [ -n "$entry" ] || continue
+        frag="${entry%%|*}"; why="${entry#*|}"
+        case "$hay" in *"$frag"*) IFS="$oldifs"; printf '%s\n' "$why"; return 0 ;; esac
+    done
+    IFS="$oldifs"
+    return 1
+}
+
+ac_match_user() { # $1 = 模块 id
+    local id="$1" extra=$(cfg_get anti_cheat_ids "")
+    [ -n "$extra" ] || return 1
+    case ",$(printf '%s' "$extra" | tr -d ' ')," in *",$id,"*) return 0 ;; esac
+    return 1
+}
+
+# B 级扫描：看模块目录里有没有注入/内存工具的实体文件。
+# 只扫两层、只比文件名，避免在几百个文件上把时间耗光。
+ac_scan_payload() { # $1=模块目录 -> 命中则输出说明
+    local dir="$1" f names=""
+    [ -d "$dir" ] || return 1
+    names=$(find "$dir" -maxdepth 3 -type f 2>/dev/null | tr 'A-Z' 'a-z')
+    [ -n "$names" ] || return 1
+    ac_match_table "$names" "$(ac_payload_strong)"
+}
+
+ac_scan_payload_weak() { # $1=模块目录 -> 命中则输出说明
+    local dir="$1" names=""
+    [ -d "$dir" ] || return 1
+    names=$(find "$dir" -maxdepth 3 -type f 2>/dev/null | tr 'A-Z' 'a-z')
+    [ -n "$names" ] || return 1
+    ac_match_table "$names" "$(ac_payload_weak)"
+}
+
+# 扫描已安装模块。只读。
+ac_scan() {
+    local dir="$AC_MODDIR" total=0 block=0 warn=0 out=""
+    if [ -d "$dir" ]; then
+        for m in "$dir"/*; do
+            [ -d "$m" ] || continue
+            local id=$(basename "$m")
+            total=$((total + 1))
+            ac_is_allowed "$id" && continue
+            local name="" desc="" prop="$m/module.prop"
+            if [ -f "$prop" ]; then
+                name=$(sed -n 's/^name=//p' "$prop" 2>/dev/null | head -1)
+                desc=$(sed -n 's/^description=//p' "$prop" 2>/dev/null | head -1)
+            fi
+            local hay=$(printf '%s %s %s' "$id" "$name" "$desc" | tr 'A-Z' 'a-z')
+            local lvl="" why=""
+            # 用户自定义名单 -> 直接按 A 级
+            if ac_match_user "$id"; then
+                lvl=block; why="在你的自定义名单里"
+            # B 级：实体注入/内存工具文件（证据最硬）
+            elif why=$(ac_scan_payload "$m"); then
+                lvl=block; why="目录含 $why"
+            # C 级：ImGui/IL2CPP 之类线索 + 关键字，只警告
+            elif why=$(ac_scan_payload_weak "$m"); then
+                lvl=warn; why="目录含 $why"
+            elif why=$(ac_match_table "$hay" "$(ac_keywords)"); then
+                lvl=warn; why="名称/描述含关键字「$why」"
+            fi
+            [ -n "$lvl" ] || continue
+            if [ "$lvl" = "block" ]; then block=$((block + 1)); else warn=$((warn + 1)); fi
+            out="${out}${id}	${lvl}	${name}	${why}
+"
+        done
+    fi
+    echo "AC_MODE=$(cfg_get anti_cheat delete)"
+    echo "AC_LOCKED=$(ac_locked && echo 1 || echo 0)"
+    echo "AC_TOTAL=$total"
+    echo "AC_BLOCK=$block"
+    echo "AC_WARN=$warn"
+    echo "AC-BEGIN"
+    printf "$out"
+    echo "AC-END"
+}
+
+# D 级：已装的作弊 APK。只警告。
+ac_scan_pkgs() {
+    local list="" p entry pkg why
+    list=$(pm list packages 2>/dev/null | sed 's/^package://')
+    [ -n "$list" ] || { echo "AC_PKG_HIT=0"; return 0; }
+    local n=0
+    local oldifs="$IFS"
+    IFS='
+'
+    for entry in $(ac_cheat_pkgs); do
+        [ -n "$entry" ] || continue
+        pkg="${entry%%|*}"; why="${entry#*|}"
+        case "$list" in
+            *"$pkg"*) n=$((n + 1)); printf 'PKG\t%s\t%s\n' "$pkg" "$why" ;;
+        esac
+    done
+    IFS="$oldifs"
+    echo "AC_PKG_HIT=$n"
+}
+
+# ---- 自我锁定 ----
+# 策略（按需求定）：
+#   实锤（block 级）-> 强制删除该模块
+#   警告（warn 级）-> 不删，改为【锁定 yypm 自身】：
+#        禁用自身全部功能 + 界面全局变红 + 开机不加载 + 断网不加载。
+# 为什么警告不直接删：关键字命中误报率高，删错了不可挽回；锁定是可逆的，
+# 而且效果同样明确 —— 只要机器上有可疑游戏挂，yypm 就罢工。
+ac_locked() { [ -f "$AC_LOCK" ]; }
+
+ac_lock_reason() { sed -n 's/^reason=//p' "$AC_LOCK" 2>/dev/null | head -1; }
+
+ac_lock_set() { # $1 = 原因
+    mkdir -p "$(dirname "$AC_LOCK")" 2>/dev/null
+    {
+        echo "reason=$1"
+        echo "since=$(date '+%Y-%m-%d %H:%M:%S')"
+    } > "$AC_LOCK" 2>/dev/null
+    log "[✗] 反挂：已锁定自身全部功能 —— $1"
+}
+
+ac_lock_clear() {
+    [ -f "$AC_LOCK" ] || return 0
+    rm -f "$AC_LOCK" 2>/dev/null
+    log "[✓] 反挂：锁定已解除"
+}
+
+# 功能闸门：锁定后 yypm 不做任何事。
+# 注意是 fail-closed：断网时同样保持锁定，否则拔网线就能绕过检查。
+ac_guard() {
+    ac_locked || return 0
+    log "[✗] 反挂锁定中，拒绝执行（$(ac_lock_reason)）"
+    return 1
+}
+
+# 只读地汇报锁定状态，供 WebUI 用
+ac_lock_status() {
+    if ac_locked; then
+        echo "AC_LOCKED=1"
+        echo "AC_LOCK_REASON=$(ac_lock_reason)"
+        echo "AC_LOCK_SINCE=$(sed -n 's/^since=//p' "$AC_LOCK" 2>/dev/null | head -1)"
+    else
+        echo "AC_LOCKED=0"
+        echo "AC_LOCK_REASON="
+        echo "AC_LOCK_SINCE="
+    fi
+}
+
+# 把模块移到隔离区（可还原）。效果等同于删除：模块不再加载。
+ac_quarantine() { # $1 = 模块 id
+    local id="$1" src="$AC_MODDIR/$id"
+    local dst="$AC_QDIR/$(date +%Y%m%d-%H%M%S)/$id"
+    [ -d "$src" ] || return 1
+    mkdir -p "$(dirname "$dst")" || return 1
+    mv "$src" "$dst" 2>/dev/null || return 1
+    log "[!] 反挂：已隔离模块 $id -> $dst"
+    return 0
+}
+
+ac_restore() {
+    local q="$AC_QDIR" n=0
+    [ -d "$q" ] || { echo "AC_RESTORED=0"; return 0; }
+    for d in "$q"/*/; do
+        [ -d "$d" ] || continue
+        for m in "$d"*/; do
+            [ -d "$m" ] || continue
+            local id=$(basename "$m")
+            [ -e "$AC_MODDIR/$id" ] && continue
+            if mv "$m" "$AC_MODDIR/$id" 2>/dev/null; then
+                n=$((n + 1)); log "[✓] 反挂：已还原模块 $id"
+            fi
+        done
+    done
+    echo "AC_RESTORED=$n"
+}
+
+# 按策略执行：block 级强制删除（或隔离），warn 级锁定自身。
+ac_apply() {
+    local mode=$(cfg_get anti_cheat delete)
+    echo "AC_MODE=$mode"
+    if [ "$mode" = "off" ]; then
+        echo "AC_ACTED=0"
+        echo "AC_LOCKED=$(ac_locked && echo 1 || echo 0)"
+        return 0
+    fi
+    local scan=$(ac_scan)
+    local nb=$(printf '%s\n' "$scan" | sed -n 's/^AC_BLOCK=//p')
+    local nw=$(printf '%s\n' "$scan" | sed -n 's/^AC_WARN=//p')
+    echo "AC_BLOCK=$nb"
+    echo "AC_WARN=$nw"
+    local rows=$(printf '%s\n' "$scan" | sed -n '/^AC-BEGIN$/,/^AC-END$/p' | sed '1d;$d')
+    local acted=0 id lvl nm why
+
+    # 实锤 -> 强制处理
+    if [ "$nb" != "0" ]; then
+        printf '%s\n' "$rows" | while IFS="	" read -r id lvl nm why; do
+            [ "$lvl" = "block" ] || continue
+            if [ "$mode" = "quarantine" ]; then
+                ac_quarantine "$id" && log "[!] 反挂：已隔离 $id（$nm）— $why"
+            else
+                rm -rf "$AC_MODDIR/$id" 2>/dev/null && log "[!] 反挂：已强制删除 $id（$nm）— $why"
+            fi
+        done
+        acted=$nb
+    fi
+
+    # 警告 -> 锁定自身（不删，因为误报率高，删错不可挽回）
+    if [ "$nw" != "0" ]; then
+        ac_lock_set "发现 $nw 个可疑游戏挂模块（关键字命中），已停用 yypm 全部功能"
+        printf '%s\n' "$rows" | while IFS="	" read -r id lvl nm why; do
+            [ "$lvl" = "warn" ] && log "[!] 反挂可疑：$id（$nm）— $why"
+        done
+    else
+        ac_lock_clear
+    fi
+    echo "AC_ACTED=$acted"
+    echo "AC_LOCKED=$(ac_locked && echo 1 || echo 0)"
+    return 0
 }
