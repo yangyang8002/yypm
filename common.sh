@@ -397,14 +397,39 @@ clean_abnormal() {
 # 所以直接让系统替我们解析：把 appinfo.dex 跑在 app_process 里（TEESimulator 同款做法）。
 # v2.3.4 起 dex 不再依赖 ActivityThread.systemMain()（真机上它可能什么都不输出），
 # 改成 ActivityThread.getPackageManager() 拿服务 + 自己给每个 APK 建 Resources 解析 labelRes。
-APPINFO_DEX="$MODDIR/appinfo.dex"
-# 应用内更新（不重启）时，新文件先落在 modules_update，要等重启才被接管。
-# dex 不在生效目录就退到暂存区拿一份，否则"更新完功能不可用、必须重启"。
-[ -f "$APPINFO_DEX" ] || {
-    [ -f /data/adb/modules_update/yypm/appinfo.dex ] && APPINFO_DEX=/data/adb/modules_update/yypm/appinfo.dex
-}
 APPINFO_CLASS="com.yypm.appinfo.AppInfo"
 APPINFO_ICON_DIR="$MODDIR/webroot/icons"
+# 暂存区路径允许被测试覆盖（同 APPINFO_BIN 的做法）
+APPINFO_STAGE_DEX="${APPINFO_STAGE_DEX:-/data/adb/modules_update/yypm/appinfo.dex}"
+APPINFO_SHA_FILE="$MODDIR/appinfo.sha256"
+APPINFO_SHA=""
+[ -f "$APPINFO_SHA_FILE" ] && APPINFO_SHA=$(tr -d ' \t\r\n' < "$APPINFO_SHA_FILE" 2>/dev/null | tr 'A-Z' 'a-z')
+
+# 候选 dex 能不能用：存在 + 非空 +（有随包校验文件时）hash 对得上
+appinfo_dex_ok() { # $1 路径
+    [ -f "$1" ] && [ -s "$1" ] || return 1
+    [ -n "$APPINFO_SHA" ] || return 0
+    [ "$(sha256_of "$1")" = "$APPINFO_SHA" ]
+}
+
+# 挑一个"内容正确"的 appinfo.dex。
+# 只看文件在不在是不够的：v2.3.2/v2.3.3 的旧 dex 会一直躺在生效目录里
+# （自更新白名单漏了它，v2.3.6 才改成排除法），而旧 dex 是 systemMain() 版本，
+# 跑起来会卡死到被 timeout 掐掉 —— 表现是 stdout / stderr 全空、退出码非 0，
+# 特别容易被误判成"Android 16 不让跑 app_process"。所以这里按内容认，不按存在认。
+appinfo_pick_dex() {
+    local p
+    for p in "$MODDIR/appinfo.dex" "$APPINFO_STAGE_DEX"; do
+        appinfo_dex_ok "$p" && { printf '%s\n' "$p"; return 0; }
+    done
+    # 都不匹配（比如没带校验文件）：至少挑个非空的，别让功能彻底消失
+    for p in "$MODDIR/appinfo.dex" "$APPINFO_STAGE_DEX"; do
+        [ -f "$p" ] && [ -s "$p" ] && { printf '%s\n' "$p"; return 0; }
+    done
+    return 1
+}
+
+APPINFO_DEX=$(appinfo_pick_dex) || APPINFO_DEX="$MODDIR/appinfo.dex"
 
 # 跑 appinfo.dex；成功时输出 pkg<TAB>label<TAB>tags
 appinfo_run() {
@@ -448,11 +473,23 @@ apps_diag() {
     echo "DIAG_ABI=$(getprop ro.product.cpu.abi 2>/dev/null)"
     echo "DIAG_UID=$(id -u 2>/dev/null)"
     echo "DIAG_MODDIR=$MODDIR"
-    if [ -f "$APPINFO_DEX" ]; then
-        echo "DIAG_DEX=ok size=$(wc -c <"$APPINFO_DEX" 2>/dev/null | tr -d ' ')"
-    else
-        echo "DIAG_DEX=MISSING path=$APPINFO_DEX"
-    fi
+    # 两个候选都报出来。只报"最终用了哪个"是查不出问题的 ——
+    # 上一轮就是只看到 size=4908（正常是 9480），却不知道另一个候选是什么样。
+    local p h sz mark
+    for p in "$MODDIR/appinfo.dex" "$APPINFO_STAGE_DEX"; do
+        if [ -f "$p" ]; then
+            h=$(sha256_of "$p"); sz=$(wc -c <"$p" 2>/dev/null | tr -d ' ')
+            if [ -z "$APPINFO_SHA" ]; then mark="无校验文件"
+            elif [ "$h" = "$APPINFO_SHA" ]; then mark="OK"
+            else mark="过期!"
+            fi
+            echo "DIAG_DEX[$mark] $p size=$sz sha=$(printf '%s' "$h" | cut -c1-16)"
+        else
+            echo "DIAG_DEX[缺失] $p"
+        fi
+    done
+    echo "DIAG_DEX_USED=$APPINFO_DEX"
+    echo "DIAG_DEX_EXPECT=${APPINFO_SHA:-（包内没有 appinfo.sha256）}"
     local b
     for b in /system/bin/app_process64 /system/bin/app_process /system/bin/app_process32; do
         if [ -x "$b" ]; then echo "DIAG_BIN=$b ok"; else echo "DIAG_BIN=$b missing"; fi
@@ -505,13 +542,35 @@ apps_list_fallback() {
 }
 
 # 按需扫第三方 APK 里的 LSPosed 标记（慢，只在 appinfo 不可用时才需要）
+# APK 里有没有 LSPosed 标记（新式 META-INF/xposed/，旧式 assets/xposed_init）。
+# 只读 zip 中央目录，不解压。
+#
+# 这里刻意不套子 shell、不接 head：每包的真实开销就是「一次解包工具 + 一次 grep」。
+# 老实现走 zip_list 会多出子 shell 和 head，还要每包用 --list 加 grep -qx 探一遍 unzip，
+# 应用一多就贴着 ksu.exec 的 20s 上限。逐个试工具的代价可以忽略 —— command -v 是
+# shell 内建，不 fork。所以「先挑一个工具定死」是错的：unzip 存在但不好使时会断掉兜底链。
+apk_has_xposed_mark() { # $1 apk
+    local t
+    for t in unzip "busybox unzip" "toybox unzip"; do
+        case "$t" in
+            unzip)    command -v unzip   >/dev/null 2>&1 || continue ;;
+            busybox*) command -v busybox >/dev/null 2>&1 || continue ;;
+            toybox*)  command -v toybox  >/dev/null 2>&1 || continue ;;
+        esac
+        if $t -l "$1" 2>/dev/null | grep -qE 'META-INF/xposed/|assets/xposed_init'; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 apps_xposed_scan() {
     local pm; pm=$(pm_bin) || return 1
-    local line apk pkg n=0
+    local line apk pkg
     "$pm" list packages -f -3 2>/dev/null | while IFS= read -r line; do
         apk=${line#package:}; apk=${apk%=*}; pkg=${line##*=}
         [ -n "$pkg" ] || continue
-        apk_is_xposed "$apk" && printf '%s\n' "$pkg"
+        apk_has_xposed_mark "$apk" && printf '%s\n' "$pkg"
     done
 }
 

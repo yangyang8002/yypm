@@ -388,10 +388,13 @@ case "${1:-status}" in
         ;;
     apps-xposed)
         # 兜底模式下按需识别 LSPosed 模块（要扫 APK，慢）
-        n=$(apps_xposed_scan | wc -l | tr -d ' ')
+        # 以前这里把 apps_xposed_scan 调了两次（一次计数、一次输出），等于把最慢的
+        # 一步原封不动做了两遍 —— 本来就贴着 ksu.exec 的 20s 上限，翻倍后必然超时。
+        xp=$(apps_xposed_scan 2>/dev/null)
+        n=$(printf '%s\n' "$xp" | grep -c . 2>/dev/null)
         echo "APPS_XPOSED_COUNT=$n"
         printf '%s\n' '---XP-BEGIN---'
-        apps_xposed_scan
+        printf '%s\n' "$xp"
         printf '%s\n' '---XP-END---'
         ;;
     apps-list-clear)

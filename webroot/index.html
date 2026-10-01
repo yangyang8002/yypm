@@ -1119,11 +1119,18 @@ async function appsSelectXposed(){
     return;
   }
   // 兜底模式：没有标记，需要按需扫 APK（慢，所以不放在扫描应用里）
+  // 先把「要等」说出来 —— 以前这里默默开始扫，几十秒没动静，看起来就是点了没反应
+  log('appinfo 不可用，改为逐个解包 APK 找 LSPosed 标记；应用多的话要等一会儿','');
+  toast('正在解包 APK 找 LSPosed 标记，请稍候…');
   busy('btnAppsXposed',true,'识别中...');
   try{
     var r=await execT(MODDIR+'/webui.sh apps-xposed',60000);
     var out=r.stdout||'';
-    if(!out && r.errno<0){log('识别被中断或超时（errno '+r.errno+'）','err');busy('btnAppsXposed',false);return;}
+    if(!out && r.errno<0){
+      log('识别被中断或超时（errno '+r.errno+'）—— 应用太多，逐个解包来不及。先修好 appinfo 再用这个按钮。','err');
+      toast('扫描超时，没拿到结果');
+      busy('btnAppsXposed',false);return;
+    }
     var m=out.match(/---XP-BEGIN---\n([\s\S]*?)\n---XP-END---/);
     var set={};
     if(m){m[1].split('\n').forEach(function(p){if(p)set[p]=1;});}
