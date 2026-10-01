@@ -1932,15 +1932,27 @@ AC_PENDING="${AC_PENDING:-/data/adb/yypm/ac.pending}"
 
 # B 级：注入 / 内存工具的实体文件名特征。格式 文件名片段|说明。
 # 只收【在模块里出现就基本不可能是正经用途】的东西。
+# 强特征：只有游戏挂会用，正常模块不会带。
+# 曾经把 ceserver / cheatengine / frida-server 放在这里，结果 FreePPS、Scene、
+# uperf 这些【性能调优】模块全被判成实锤 —— 内存扫描工具是双用途的，
+# 调优模块也带。把双用途的东西当实锤，代价是删掉用户正常的模块。
+# 所以这里只留 GameGuardian 专属特征。
 ac_payload_strong() {
+    cat <<'ACEOF'
+libgameguardian|GameGuardian 核心库（游戏内存修改器）
+libgg.so|GameGuardian 核心库（游戏内存修改器）
+ACEOF
+}
+
+# 双用途特征：内存扫描 / 注入框架。游戏挂在用，性能调优、逆向工具也在用。
+# 单独命中只警告；如果这个模块的名字或描述同时带游戏挂关键字，才升级为实锤。
+ac_payload_dual() {
     cat <<'ACEOF'
 ceserver|Cheat Engine 服务端（内存扫描/修改）
 cheatengine|Cheat Engine（内存扫描/修改）
 frida-server|Frida 注入框架服务端
 frida-gadget|Frida 注入框架
-libgg.so|GameGuardian 核心库
-libgameguardian|GameGuardian 核心库
-libsubstrate|Substrate Hook 框架（游戏挂常用）
+libsubstrate|Substrate Hook 框架
 ACEOF
 }
 
@@ -2108,6 +2120,8 @@ ac_payload_hit() { # $1=模块目录 $2=特征表 -> 命中则输出说明
 
 ac_scan_payload() { ac_payload_hit "$1" "$(ac_payload_strong)"; }
 
+ac_scan_payload_dual() { ac_payload_hit "$1" "$(ac_payload_dual)"; }
+
 ac_scan_payload_weak() { # $1=模块目录 -> 命中则输出说明
     local dir="$1" names=""
     [ -d "$dir" ] || return 1
@@ -2135,10 +2149,19 @@ ac_scan() {
             # 用户自定义名单 -> 直接按 A 级
             if ac_match_user "$id"; then
                 lvl=block; why="在你的自定义名单里"
-            # B 级：实体注入/内存工具文件（证据最硬）
+            # B 级：GameGuardian 专属特征 —— 只有游戏挂会带，直接实锤
             elif why=$(ac_scan_payload "$m"); then
                 lvl=block; why="目录含 $why"
-            # C 级：ImGui/IL2CPP 之类线索 + 关键字，只警告
+            # C 级：双用途工具（内存扫描/注入）。单独命中只警告，
+            # 名字或描述里同时带游戏挂关键字才升级 —— 否则会误伤调优模块。
+            elif why=$(ac_scan_payload_dual "$m"); then
+                local kw2=""
+                if kw2=$(ac_match_table "$hay" "$(ac_keywords)"); then
+                    lvl=block; why="目录含 $why，且名称/描述含「$kw2」"
+                else
+                    lvl=warn; why="目录含 $why（内存/注入工具，可能是调优或逆向，需你确认）"
+                fi
+            # D 级：ImGui/IL2CPP 之类线索，只警告
             elif why=$(ac_scan_payload_weak "$m"); then
                 lvl=warn; why="目录含 $why"
             elif why=$(ac_match_table "$hay" "$(ac_keywords)"); then

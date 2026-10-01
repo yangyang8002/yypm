@@ -99,10 +99,16 @@ Android 的 `pm` / `dumpsys` **不输出应用显示名**，只给 `labelRes=0x7
 
 | 级别 | 依据 | 处置 |
 |---|---|---|
-| **A** | 模块目录里躺着注入 / 内存工具的**实体文件**（`ceserver`、`frida-server`、`libgg.so`、`libsubstrate` 等） | 按模式处理 |
+| **A** | GameGuardian 专属特征（`libgameguardian`、`libgg.so`） | 按模式处理 |
+| **A2** | 双用途内存 / 注入工具（`ceserver`、`cheatengine`、`frida-server`、`libsubstrate`）**且**名称/描述含游戏挂关键字 | 按模式处理 |
+| **A3** | 双用途工具单独命中 —— 调优、逆向模块也带 | **只警告** |
 | **B** | 模块 ID / 名称 / 描述命中游戏挂关键字 | **只警告** |
 | **C** | 已安装的作弊 APK（GameGuardian、Lucky Patcher、Freedom） | **只警告** |
 | **D** | 你在配置里精确点名的模块 id | 按模式处理 |
+
+**为什么双用途工具不直接判实锤**：`ceserver`（Cheat Engine 服务端）这类内存扫描工具，
+性能调优模块（FreePPS、Scene、uperf）也在用 —— 真机上它们曾被整批判成实锤。
+所以只有「双用途工具 + 游戏挂关键字」这种旁证成立时才算实锤，单独命中只警告。
 
 **为什么关键字只警告**：`tricky_store`、`playintegrityfix` 这些伪装类模块名字里全是敏感词，
 按关键字扫第一个就会命中它们，删掉等于拆掉整个 keybox 基础设施。所以只有**文件级证据**
@@ -320,7 +326,9 @@ Four signal levels, most to least reliable:
 
 | Level | Evidence | Action |
 |---|---|---|
-| **A** | Actual injection / memory tool **binaries** in a module directory (`ceserver`, `frida-server`, `libgg.so`, `libsubstrate`, ...) | Act per mode |
+| **A** | GameGuardian-specific artifacts (`libgameguardian`, `libgg.so`) | Act per mode |
+| **A2** | Dual-use memory / injection tool (`ceserver`, `cheatengine`, `frida-server`, `libsubstrate`) **plus** a cheat keyword in the name/description | Act per mode |
+| **A3** | A dual-use tool on its own — tuning and reverse-engineering modules ship these too | **Warn only** |
 | **B** | Module id / name / description matches a game-cheat keyword | **Warn only** |
 | **C** | Installed cheat APKs (GameGuardian, Lucky Patcher, Freedom) | **Warn only** |
 | **D** | Module ids you name explicitly in config | Act per mode |
