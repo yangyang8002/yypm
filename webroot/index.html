@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>yypm</title>
+<script>
+/* 配色和深浅必须在首次绘制前就定下来，否则会先闪一下默认紫、再跳成你选的颜色。
+   放在 <style> 之前，属性在样式解析前就已就位。 */
+(function(){try{
+  var d=document.documentElement,p=localStorage.getItem('yypm_palette'),t=localStorage.getItem('yypm_theme');
+  if(p)d.setAttribute('data-palette',p);
+  if(t)d.setAttribute('data-theme',t);
+}catch(e){}})();
+</script>
 <style>
 /* ===== Material You (M3) —— Shizuku 同款主题 =====
    设计要点：surface 层级代替边框描边、primary 单色代替渐变、
@@ -27,6 +36,52 @@ html[data-theme="dark"]{
 --on-surface:#E6E0E9;--on-surface-variant:#CAC4D0;--outline:#938F99;--outline-variant:#49454F;
 --ok:#7ADFA0;--ok-container:#1F4A2C;--warn:#F0C048;--warn-container:#4A3A00;
 --code-bg:#0F0D13;--code-sub:#CAC4D0}
+
+/* ===== 常用配色（data-palette）=====
+   只覆盖 6 个「有颜色倾向」的变量：主色、次级容器、四级 surface。
+   surface 跟着主色微微偏色是 M3 的做法，纯灰会显得脏。
+   上面 :root 里那套是紫色，也是没选过时的默认值。 */
+html[data-palette="purple"]{
+--primary:#6750A4;--on-primary:#FFFFFF;--secondary-container:#E8DEF8;--on-secondary-container:#1D192B;
+--surface:#FEF7FF;--surface-container:#F3EDF7;--surface-container-high:#ECE6F0;--surface-container-highest:#E6E0E9}
+html[data-theme="dark"][data-palette="purple"]{
+--primary:#D0BCFF;--on-primary:#381E72;--secondary-container:#4A4458;--on-secondary-container:#E8DEF8;
+--surface:#141218;--surface-container:#211F26;--surface-container-high:#2B2930;--surface-container-highest:#36343B}
+
+html[data-palette="blue"]{
+--primary:#0B57D0;--on-primary:#FFFFFF;--secondary-container:#D3E3FD;--on-secondary-container:#041E49;
+--surface:#F8F9FF;--surface-container:#EEF0F8;--surface-container-high:#E8EAF2;--surface-container-highest:#E2E4EC}
+html[data-theme="dark"][data-palette="blue"]{
+--primary:#A8C7FA;--on-primary:#062E6F;--secondary-container:#0842A0;--on-secondary-container:#D3E3FD;
+--surface:#101418;--surface-container:#1C2024;--surface-container-high:#262A2E;--surface-container-highest:#313539}
+
+html[data-palette="green"]{
+--primary:#146C2E;--on-primary:#FFFFFF;--secondary-container:#C4EED0;--on-secondary-container:#072711;
+--surface:#F6FBF4;--surface-container:#EBF1E8;--surface-container-high:#E5EBE2;--surface-container-highest:#DFE5DC}
+html[data-theme="dark"][data-palette="green"]{
+--primary:#8BD5A5;--on-primary:#00391A;--secondary-container:#0A5228;--on-secondary-container:#A6F2BE;
+--surface:#101410;--surface-container:#1C211C;--surface-container-high:#262B26;--surface-container-highest:#313631}
+
+html[data-palette="teal"]{
+--primary:#006A6A;--on-primary:#FFFFFF;--secondary-container:#CCE8E7;--on-secondary-container:#002020;
+--surface:#F5FBF9;--surface-container:#EAF1EF;--surface-container-high:#E4EBE9;--surface-container-highest:#DEE5E3}
+html[data-theme="dark"][data-palette="teal"]{
+--primary:#80D4D4;--on-primary:#003737;--secondary-container:#005050;--on-secondary-container:#9CF1F0;
+--surface:#0F1414;--surface-container:#1B2121;--surface-container-high:#252B2B;--surface-container-highest:#303636}
+
+html[data-palette="orange"]{
+--primary:#8B5000;--on-primary:#FFFFFF;--secondary-container:#FFDCC2;--on-secondary-container:#2E1500;
+--surface:#FFF8F4;--surface-container:#F8EFE9;--surface-container-high:#F2E9E3;--surface-container-highest:#ECE3DD}
+html[data-theme="dark"][data-palette="orange"]{
+--primary:#FFB86B;--on-primary:#4A2800;--secondary-container:#6A3C00;--on-secondary-container:#FFDCC2;
+--surface:#17120D;--surface-container:#221C16;--surface-container-high:#2C2620;--surface-container-highest:#37312B}
+
+html[data-palette="red"]{
+--primary:#B3261E;--on-primary:#FFFFFF;--secondary-container:#F9DEDC;--on-secondary-container:#410E0B;
+--surface:#FFF8F7;--surface-container:#F8EFEE;--surface-container-high:#F2E9E8;--surface-container-highest:#ECE3E2}
+html[data-theme="dark"][data-palette="red"]{
+--primary:#F2B8B5;--on-primary:#601410;--secondary-container:#8C1D18;--on-secondary-container:#F9DEDC;
+--surface:#171211;--surface-container:#221C1B;--surface-container-high:#2C2625;--surface-container-highest:#373130}
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html{-webkit-text-size-adjust:100%}
 body{background:var(--surface);color:var(--on-surface);
@@ -54,12 +109,22 @@ word-break:break-all;overflow-wrap:anywhere;text-align:right;max-width:62%;min-w
 .switch-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0}
 .switch-row .lab{font-size:14px;color:var(--on-surface)}
 .switch-row .hint{font-size:12px;color:var(--on-surface-variant);margin-top:2px}
-.switch{position:relative;width:52px;height:32px;background:var(--surface-container-highest);
-border:2px solid var(--outline);border-radius:16px;cursor:pointer;transition:background-color .2s,border-color .2s;flex-shrink:0}
-.switch.on{background:var(--primary);border-color:var(--primary)}
-.switch::after{content:'';position:absolute;top:50%;left:6px;width:16px;height:16px;background:var(--outline);
-border-radius:50%;transform:translateY(-50%);transition:left .2s,width .2s,height .2s,background-color .2s}
-.switch.on::after{left:26px;width:24px;height:24px;background:var(--on-primary)}
+/* 开关（M3 Switch）。原来有两个问题：
+   1) 描边是用 border 画的，而绝对定位的偏移量是相对「内边距框」算的 —— 52px 的轨道
+      去掉左右各 2px 边框只剩 48px，可 .on 却写 left:26px + width:24px = 50px，
+      手柄直接顶出右边缘压在描边上，这就是「开启时圆跑到最右边」的原因。
+      改成 inset 阴影画描边，盒子就是干净的 52×32，位移量可以照 MD3 的数值直接写。
+   2) 位移改用 transform 而不是 left：left 走布局，每帧重排；transform 走合成，滑动更顺。
+   MD3：关 = 16px 手柄 / 左边距 6px；开 = 24px 手柄 / 右边距 4px（52-24-4 = 24）。 */
+.switch{position:relative;width:52px;height:32px;flex-shrink:0;border:none;border-radius:16px;
+background:var(--surface-container-highest);box-shadow:inset 0 0 0 2px var(--outline);
+cursor:pointer;transition:background-color .2s,box-shadow .2s}
+.switch.on{background:var(--primary);box-shadow:inset 0 0 0 2px var(--primary)}
+.switch::after{content:'';position:absolute;top:50%;left:0;width:16px;height:16px;background:var(--outline);
+border-radius:50%;transform:translate(6px,-50%);
+transition:transform .22s cubic-bezier(.2,0,0,1),width .22s cubic-bezier(.2,0,0,1),
+height .22s cubic-bezier(.2,0,0,1),background-color .2s}
+.switch.on::after{width:24px;height:24px;background:var(--on-primary);transform:translate(24px,-50%)}
 .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:13px 24px;
 border:none;border-radius:var(--r-btn);font-family:inherit;font-size:14px;font-weight:600;
 background:var(--primary);color:var(--on-primary);cursor:pointer;transition:filter .15s,background-color .2s;margin-top:10px}
@@ -186,6 +251,47 @@ html[data-theme="dark"] .dlg-btn.danger{color:#F2B8B5}
 /* 顶栏吸顶，滚动时标题不丢 */
 .appbar{position:sticky;top:0;z-index:30;background:var(--surface);
   padding:14px 16px 12px;margin:-20px -16px 14px}
+
+/* ===== 配色选择器 ===== */
+.swatches{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px}
+.swatch{flex:0 0 auto;width:58px;display:flex;flex-direction:column;align-items:center;gap:5px;
+  border:none;background:transparent;cursor:pointer;font-family:inherit;padding:7px 0 5px;border-radius:12px}
+.swatch i{width:30px;height:30px;border-radius:50%;display:block;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.10);transition:box-shadow .18s}
+.swatch span{font-size:11px;color:var(--on-surface-variant);transition:color .18s}
+.swatch.on i{box-shadow:inset 0 0 0 1px rgba(0,0,0,.10),0 0 0 2px var(--surface-container),0 0 0 4px var(--primary)}
+.swatch.on span{color:var(--primary);font-weight:600}
+.swatch:active{background:var(--surface-container-high)}
+
+/* ===== 横屏 / 宽屏适配 =====
+   竖屏手机是唯一目标时，一行一张卡是对的；横过来之后左右全是空白，反而更难读。分两层：
+     - 宽 ≥600px：卡片改多列（auto-fill，放得下几列就几列），正文限宽居中。
+       内容型卡片（应用列表、日志、操作记录）加 .wide 占满整行，它们本来就不适合分栏。
+     - 横屏且矮 ≤600px：底部导航吃掉的高度太奢侈（59/360 ≈ 16%），
+       换成 M3 的侧边导航栏（navigation rail）竖在左边，把竖向空间全还给内容。 */
+@media (min-width:600px){
+  body{max-width:1000px;margin:0 auto;padding-bottom:44px}
+  .navbar{left:50%;right:auto;transform:translateX(-50%);width:min(100%,1000px);
+    border-left:1px solid var(--outline-variant);border-right:1px solid var(--outline-variant);
+    border-radius:20px 20px 0 0}
+  .panel.on{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px;
+    align-items:start;animation:fadeUp .18s ease}
+  .panel.on>.card{margin-bottom:0}
+  .panel.on>.card.wide{grid-column:1/-1}
+}
+@media (orientation:landscape) and (max-height:600px){
+  body{padding:12px 16px 20px 96px;max-width:none;margin:0}
+  .appbar{margin:0 0 12px;padding:0}
+  .appbar h1{font-size:19px}
+  .sub{font-size:12px}
+  .navbar{top:0;bottom:0;left:0;right:auto;width:80px;transform:none;
+    flex-direction:column;justify-content:flex-start;gap:2px;
+    padding:10px 6px;border:none;border-right:1px solid var(--outline-variant);border-radius:0}
+  .navbar button{flex:0 0 auto;padding:8px 0}
+  .navbar .pillwrap{width:56px;height:30px;border-radius:15px}
+  .snackbar{left:96px;right:16px;bottom:16px}
+  .overlay{padding:16px 16px 16px 96px}
+}
 
 </style>
 </head>
@@ -341,7 +447,7 @@ html[data-theme="dark"] .dlg-btn.danger{color:#F2B8B5}
 
 </div>
 
-<div class="card">
+<div class="card wide">
   <h2>应用选择器</h2>
   <div class="row"><span class="k">扫描结果</span><span class="v" id="appsSrc">未扫描</span></div>
   <div class="row2">
@@ -411,10 +517,16 @@ html[data-theme="dark"] .dlg-btn.danger{color:#F2B8B5}
   <textarea class="cfg" id="cfgBox" placeholder="点「导出」把当前配置显示在这里；粘贴配置后点「导入」即可恢复"></textarea>
   <p class="note">导出的就是 config.prop 内容，可直接复制保存；换机或重置后粘贴回来即可。</p>
 </div>
+
+<div class="card">
+  <h2>外观</h2>
+  <div class="sub" style="margin-bottom:10px">配色只改界面，不影响功能；选择会记住。</div>
+  <div class="swatches" id="swatches"></div>
+</div>
 </div>
 
 <div class="panel" data-tab="logs">
-<div class="card">
+<div class="card wide">
   <h2>运行日志</h2>
   <div class="row2">
     <button class="btn ghost" id="btnLogLoad"><span>↻</span> 加载日志</button>
@@ -424,7 +536,7 @@ html[data-theme="dark"] .dlg-btn.danger{color:#F2B8B5}
   <div class="note" id="logMeta"></div>
 </div>
 
-<div class="card">
+<div class="card wide">
   <h2>操作记录</h2>
   <div class="output" id="output"></div>
 </div>
@@ -468,6 +580,37 @@ function toggleTheme(){
   var cur=document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light';
   applyTheme(cur==='dark'?'light':'dark');
 }
+
+/* ===== 配色 ===== */
+var PAL_KEY='yypm_palette';
+var PALETTES=[['purple','紫','#6750A4'],['blue','蓝','#0B57D0'],['green','绿','#146C2E'],
+  ['teal','青','#006A6A'],['orange','橙','#8B5000'],['red','红','#B3261E']];
+function applyPalette(name){
+  document.documentElement.setAttribute('data-palette',name);
+  try{localStorage.setItem(PAL_KEY,name);}catch(e){}
+  var bs=document.querySelectorAll('.swatch');
+  for(var i=0;i<bs.length;i++)bs[i].classList.toggle('on',bs[i].getAttribute('data-pal')===name);
+}
+(function(){
+  var box=document.getElementById('swatches');
+  if(!box)return;
+  var h='';
+  for(var i=0;i<PALETTES.length;i++){
+    h+='<button type="button" class="swatch" data-pal="'+PALETTES[i][0]+'">'
+      +'<i style="background:'+PALETTES[i][2]+'"></i><span>'+PALETTES[i][1]+'</span></button>';
+  }
+  box.innerHTML=h;
+  var bs=box.querySelectorAll('.swatch');
+  for(var j=0;j<bs.length;j++){
+    bs[j].onclick=(function(b){return function(){
+      applyPalette(b.getAttribute('data-pal'));
+      toast('配色已切换：'+b.querySelector('span').textContent);
+    };})(bs[j]);
+  }
+  var cur='purple';
+  try{cur=localStorage.getItem(PAL_KEY)||'purple';}catch(e){}
+  applyPalette(cur);
+})();
 var out=document.getElementById('output');
 var overlay=document.getElementById('overlay');
 
