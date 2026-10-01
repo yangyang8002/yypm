@@ -204,6 +204,37 @@ textarea.cfg{width:100%;box-sizing:border-box;margin-top:10px;padding:12px;borde
 </div>
 
 <div class="card">
+  <h2>环境对抗</h2>
+  <div class="row"><span class="k"><span id="haDot" class="dot off"></span>隐藏应用列表</span><span class="v" id="haState">-</span></div>
+  <div class="switch-row">
+    <div><div class="lab">自动应用隐藏列表</div><div class="hint">开机与每轮检查时自动摘掉下面这些包</div></div>
+    <div class="switch" id="hideAppsSwitch"></div>
+  </div>
+  <textarea class="cfg" id="hideAppsBox" placeholder="每行一个包名，例如：&#10;bin.mt.plus&#10;com.eza.hyperglow&#10;com.kiminonawa.HyperLight"></textarea>
+  <div class="row2">
+    <button class="btn ghost" id="btnHideAppsSave"><span>✓</span> 保存列表</button>
+    <button class="btn ghost" id="btnHideAppsApply"><span>🫥</span> 立即隐藏</button>
+  </div>
+  <button class="btn ghost" id="btnHideAppsRestore"><span>↺</span> 还原隐藏</button>
+  <p class="note">用系统自带的 pm hide 把这些包从「其它应用可见的包列表」里摘掉，可随时还原。
+  比 HMA（隐藏应用列表）粒度粗，但不需要 LSPosed；两者可以并存。</p>
+
+  <div class="row" style="margin-top:12px"><span class="k"><span id="dbDot" class="dot off"></span>深度伪装启动状态</span><span class="v" id="deepBlState">-</span></div>
+  <div class="row"><span class="k">挂载隐藏支撑</span><span class="v" id="hiderState">-</span></div>
+  <div class="switch-row">
+    <div><div class="lab">自动深度伪装</div><div class="hint">连同 /proc/cmdline、/proc/bootconfig 一起伪装</div></div>
+    <div class="switch" id="deepBlSwitch"></div>
+  </div>
+  <button class="btn ghost" id="btnDeepBl"><span>🛡</span> 立即深度伪装</button>
+  <p class="note">resetprop 改不了内核提供的 /proc/cmdline 与 /proc/bootconfig。没有 SUSFS 内核或
+  Shamiko 支撑时不会硬改——bind mount 会在 mountinfo 里留下劫持痕迹，反而更容易被检出。</p>
+
+  <div class="row" style="margin-top:12px"><span class="k">异常文件清理</span><span class="v" id="cleanState">-</span></div>
+  <button class="btn ghost" id="btnClean"><span>🧹</span> 清理 MT2 等落地目录</button>
+  <p class="note" id="abnPaths">-</p>
+</div>
+
+<div class="card">
   <h2>附属模块更新</h2>
   <div class="row"><span class="k"><span id="modDot" class="dot off"></span>待更新</span><span class="v" id="modCount">未检查</span></div>
   <div class="row"><span class="k">上次检查</span><span class="v" id="modTime">-</span></div>
@@ -339,6 +370,25 @@ async function refresh(){
   document.getElementById('dbgDot').className='dot '+(dbgClosed?'on':'off');
   document.getElementById('dbgState').textContent=dbgClosed?'已关闭':'未关闭';
   document.getElementById('autoDebugSwitch').classList.toggle('on',s.AUTO_DEBUG==='on');
+
+  // ---- 环境对抗 ----
+  var haCount=parseInt(s.HIDE_APPS_COUNT||'0',10)||0;
+  var haApplied=parseInt(s.HIDE_APPS_APPLIED||'0',10)||0;
+  document.getElementById('haDot').className='dot '+(haApplied>0?'on':'off');
+  document.getElementById('haState').textContent=haCount?(('列表 '+haCount+' 个，已隐藏 '+haApplied+' 个')):'未设置';
+  document.getElementById('hideAppsSwitch').classList.toggle('on',s.HIDE_APPS_ENABLE==='on');
+  var haBox=document.getElementById('hideAppsBox');
+  if(document.activeElement!==haBox){
+    haBox.value=(s.HIDE_APPS_LIST||'').split(/[\s,;]+/).filter(function(x){return x;}).join('\n');
+  }
+  var dbOn=(s.DEEP_BL==='on');
+  document.getElementById('dbDot').className='dot '+(dbOn?'on':'off');
+  document.getElementById('deepBlState').textContent=dbOn?'已开启':'未开启';
+  document.getElementById('deepBlSwitch').classList.toggle('on',dbOn);
+  var mh=s.MOUNT_HIDER||'none';
+  document.getElementById('hiderState').textContent=(mh==='none')?'无（深度伪装不可用）':mh;
+  document.getElementById('abnPaths').textContent='清理范围：'+(s.ABNORMAL_PATHS||'-');
+
   // 附属模块更新检查结果
   var need=parseInt(s.UPDATE_NEED||'0',10)||0;
   var checked=s.UPDATE_CHECKED||'未检查';
@@ -733,6 +783,77 @@ async function cfgImport(){
   await refresh();
 }
 
+// ================= 环境对抗 =================
+function haListText(){
+  return (document.getElementById('hideAppsBox').value||'').split(/[\s,;]+/).filter(function(x){return x;}).join('\n');
+}
+async function hideAppsSave(){
+  var txt=haListText();
+  if(!txt){log('列表为空；如要清空请直接保存空列表','info');}
+  var b64=btoa(unescape(encodeURIComponent(txt)));
+  busy('btnHideAppsSave',true,'保存中...');
+  try{
+    var r=await exec(MODDIR+'/webui.sh hide-apps-set '+b64);
+    var out=r.stdout||'';
+    if(out.indexOf('HIDE_APPS_SET=OK')>=0){
+      log('隐藏列表已保存（'+((out.match(/HIDE_APPS_COUNT=(\d+)/)||[])[1]||'0')+' 个包）','ok');
+    }else{
+      log('保存失败：'+((out.match(/HIDE_APPS_SET=FAIL\((.*?)\)/)||[])[1]||out.trim()||'未知错误'),'err');
+    }
+  }catch(e){log('保存异常: '+e.message,'err');}
+  busy('btnHideAppsSave',false);
+  await refresh();
+}
+async function hideAppsApply(){
+  log('正在隐藏应用...','info');
+  busy('btnHideAppsApply',true,'隐藏中...');
+  try{
+    var s=parseKv((await exec(MODDIR+'/webui.sh hide-apps-apply')).stdout);
+    log('已隐藏 '+(s.HIDE_APPS_APPLIED||'0')+' 个包','ok');
+  }catch(e){log('隐藏异常: '+e.message,'err');}
+  busy('btnHideAppsApply',false);
+  await refresh();
+}
+async function hideAppsRestore(){
+  log('正在还原隐藏的应用...','info');
+  try{await exec(MODDIR+'/webui.sh hide-apps-restore');log('已还原','ok');}catch(e){log('还原异常: '+e.message,'err');}
+  await refresh();
+}
+async function toggleHideApps(){
+  var on=!document.getElementById('hideAppsSwitch').classList.contains('on');
+  try{await exec(MODDIR+'/webui.sh hide-apps-auto '+(on?'on':'off'));}catch(e){}
+  await refresh();
+  log('自动应用隐藏列表已'+(on?'开启':'关闭'),'info');
+}
+async function deepBlNow(){
+  log('正在深度伪装启动状态...','info');
+  busy('btnDeepBl',true,'执行中...');
+  try{
+    var out=(await exec(MODDIR+'/webui.sh deep-bl')).stdout||'';
+    var res=(out.match(/DEEP_BL_RESULT=(\d+)/)||[])[1];
+    if(res==='0')log('深度伪装完成','ok');
+    else if(res==='2')log('未执行：没有 SUSFS/Shamiko 支撑，详见运行日志','err');
+    else log('深度伪装失败','err');
+  }catch(e){log('深度伪装异常: '+e.message,'err');}
+  busy('btnDeepBl',false);
+  await refresh();
+}
+async function toggleDeepBl(){
+  var on=!document.getElementById('deepBlSwitch').classList.contains('on');
+  try{await exec(MODDIR+'/webui.sh deep-bl-auto '+(on?'on':'off'));}catch(e){}
+  await refresh();
+  log('自动深度伪装已'+(on?'开启':'关闭'),'info');
+}
+async function cleanAbnormal(){
+  log('正在清理异常文件...','info');
+  busy('btnClean',true,'清理中...');
+  try{
+    var s=parseKv((await exec(MODDIR+'/webui.sh clean-abnormal')).stdout);
+    log('已清理 '+(s.CLEAN_ABNORMAL||'0')+' 个目录','ok');
+  }catch(e){log('清理异常: '+e.message,'err');}
+  busy('btnClean',false);
+}
+
 document.getElementById('themeBtn').onclick=toggleTheme;
 document.getElementById('autoSwitch').onclick=toggleAuto;
 document.getElementById('btnFetch').onclick=manualFetch;
@@ -752,6 +873,13 @@ document.getElementById('autoBlSwitch').onclick=toggleBl;
 document.getElementById('autoDebugSwitch').onclick=toggleDebug;
 document.getElementById('btnBl').onclick=manualBl;
 document.getElementById('btnDebug').onclick=manualDebug;
+document.getElementById('btnHideAppsSave').onclick=hideAppsSave;
+document.getElementById('btnHideAppsApply').onclick=hideAppsApply;
+document.getElementById('btnHideAppsRestore').onclick=hideAppsRestore;
+document.getElementById('hideAppsSwitch').onclick=toggleHideApps;
+document.getElementById('btnDeepBl').onclick=deepBlNow;
+document.getElementById('deepBlSwitch').onclick=toggleDeepBl;
+document.getElementById('btnClean').onclick=cleanAbnormal;
 
 // 检查间隔分段按钮
 (function(){

@@ -25,11 +25,15 @@ run_cycle() {
     fi
     [ "$(cfg_get auto_bl off)" = "on" ] && hide_bl
     [ "$(cfg_get auto_debug off)" = "on" ] && close_debug
+    # 环境对抗：深度伪装启动状态（需要 SUSFS/Shamiko 支撑，否则只记日志不动手）
+    [ "$(cfg_get deep_bl off)" = "on" ] && hide_bl_deep
+    # 环境对抗：把隐藏应用列表同步到系统（列表没变时是空操作）
+    hide_apps_sync
     return 0
 }
 
 log "========== 服务启动 =========="
-log "fetch=$(get_auto) wifi_only=$(cfg_get wifi_only off) bl=$(cfg_get auto_bl off) debug=$(cfg_get auto_debug off) 间隔=$(($(get_interval) / 3600))h"
+log "fetch=$(get_auto) wifi_only=$(cfg_get wifi_only off) bl=$(cfg_get auto_bl off) debug=$(cfg_get auto_debug off) deep_bl=$(cfg_get deep_bl off) hide_apps=$(cfg_get hide_apps_enable off) 间隔=$(($(get_interval) / 3600))h"
 
 # 启动时执行一次（网络可能尚未就绪，失败会自动进入短期重试）
 run_cycle

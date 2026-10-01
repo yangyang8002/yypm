@@ -225,7 +225,7 @@ case "${1:-status}" in
         while IFS= read -r line; do
             local k=${line%%=*} v=${line#*=}
             case "$k" in
-                auto_fetch|auto_bl|auto_debug|check_interval|pubkey_use|wifi_only)
+                auto_fetch|auto_bl|auto_debug|check_interval|pubkey_use|wifi_only|hide_apps_enable|hide_apps|deep_bl|abnormal_paths)
                     [ "$line" = "$k" ] && continue      # 没有 = 的裸键跳过
                     printf '%s=%s\n' "$k" "$v" >> "$TMP/cfg_clean.txt"
                     ;;
@@ -318,6 +318,58 @@ case "${1:-status}" in
         echo "NET_WIFI=$(net_is_wifi)"
         echo "WIFI_ONLY=$(cfg_get wifi_only off)"
         ;;
+
+    # ---- 环境对抗 ----
+    hide-apps)
+        # 列出当前隐藏应用列表与执行状态
+        echo "HIDE_APPS_ENABLE=$(cfg_get hide_apps_enable off)"
+        echo "HIDE_APPS_LIST=$(cfg_get hide_apps '')"
+        echo "HIDE_APPS_COUNT=$(hide_apps_list | wc -l | tr -d ' ')"
+        echo "HIDE_APPS_APPLIED=$(hide_apps_applied)"
+        echo "PM_BIN=$(pm_bin 2>/dev/null || echo none)"
+        ;;
+    hide-apps-set)
+        # 参数是 base64 编码的包名列表（换行/空格/逗号都可能出现）
+        [ -n "${2:-}" ] || { echo "HIDE_APPS_SET=FAIL(无内容)"; exit 1; }
+        mkdir -p "$TMP" 2>/dev/null
+        if ! echo "$2" | base64 -d > "$TMP/hide_apps_in.txt" 2>/dev/null; then
+            echo "HIDE_APPS_SET=FAIL(base64 解码失败)"
+            exit 1
+        fi
+        V=$(hide_apps_normalize < "$TMP/hide_apps_in.txt" | tr '\n' ' ')
+        V=${V% }   # 去掉 tr 留下的结尾空格
+        cfg_set hide_apps "$V"
+        log "[·] 隐藏应用列表已更新（$(printf '%s' "$V" | wc -w | tr -d ' ') 个）"
+        echo "HIDE_APPS_SET=OK"
+        echo "HIDE_APPS_COUNT=$(hide_apps_list | wc -l | tr -d ' ')"
+        ;;
+    hide-apps-auto)
+        case "${2:-}" in on|off) cfg_set hide_apps_enable "$2" ;; *) echo "用法: hide-apps-auto on|off"; exit 1 ;; esac
+        log "[·] 自动应用隐藏列表已设为 ${2}"
+        echo "HIDE_APPS_ENABLE=$2"
+        ;;
+    hide-apps-apply)
+        hide_apps_apply
+        echo "HIDE_APPS_APPLIED=$(hide_apps_applied)"
+        ;;
+    hide-apps-restore)
+        hide_apps_restore
+        echo "HIDE_APPS_APPLIED=$(hide_apps_applied)"
+        ;;
+    clean-abnormal)
+        clean_abnormal
+        ;;
+    deep-bl)
+        hide_bl_deep
+        echo "DEEP_BL_RESULT=$?"
+        echo "MOUNT_HIDER=$(mount_hider_present 2>/dev/null || echo none)"
+        ;;
+    deep-bl-auto)
+        case "${2:-}" in on|off) cfg_set deep_bl "$2" ;; *) echo "用法: deep-bl-auto on|off"; exit 1 ;; esac
+        log "[·] 自动深度伪装已设为 ${2}"
+        echo "DEEP_BL=$2"
+        ;;
+
     status|*)
         echo_status
         ;;

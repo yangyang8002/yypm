@@ -161,14 +161,26 @@ get_resetprop() {
     return 1
 }
 
-# 隐藏 BL：伪造 bootloader 为锁定状态
-hide_bl() {
-    local rp; rp=$(get_resetprop) || { log "[✗] 未找到 resetprop"; return 1; }
+# 隐藏 BL 的属性层：伪造 bootloader 为锁定状态
+hide_bl_props() {
+    local rp; rp=$(get_resetprop) || return 1
+    # 基础 5 项
     "$rp" ro.boot.verifiedbootstate green 2>/dev/null
     "$rp" ro.boot.flash.locked 1 2>/dev/null
     "$rp" ro.boot.vbmeta.device_state locked 2>/dev/null
     "$rp" ro.boot.warranty_bit 0 2>/dev/null
     "$rp" ro.boot.veritymode enforcing 2>/dev/null
+    # 检测方还会读下面这几个键。不一起补的话，属性面自相矛盾，
+    # 反而会被判成「启动状态异常」（属性说 locked、别的键说 unlocked）。
+    "$rp" vendor.boot.verifiedbootstate green 2>/dev/null
+    "$rp" vendor.boot.vbmeta.device_state locked 2>/dev/null
+    "$rp" sys.oem_unlock_allowed 0 2>/dev/null
+    return 0
+}
+
+# 隐藏 BL：伪造 bootloader 为锁定状态
+hide_bl() {
+    hide_bl_props || { log "[✗] 未找到 resetprop"; return 1; }
     log "[✓] 已隐藏 BL（bootloader 伪装为锁定）"
     return 0
 }
@@ -183,6 +195,198 @@ close_debug() {
     "$rp" ro.adb.secure 1 2>/dev/null
     "$rp" ro.force.debuggable 0 2>/dev/null
     log "[✓] 已关闭调试模式"
+    return 0
+}
+
+# =========================================================
+# 环境对抗（对抗「春秋检测」这类环境检测）
+# ---------------------------------------------------------
+# 检测方是分层判断的：
+#   1) 应用列表：装了 MT 管理器、风控敏感应用
+#   2) 异常文件：MT2 之类的落地目录
+#   3) getprop：ro.boot.verifiedbootstate 等        -> hide_bl 覆盖
+#   4) 内核原始痕迹：/proc/cmdline、/proc/bootconfig -> resetprop 覆盖不到
+#      而且属性与内核命令行对不上，本身就会被判「启动状态异常」
+#
+# 取舍：resetprop 改不到的，只有内核级（SUSFS）或 Zygisk 钩子（Shamiko）
+# 能覆盖。没有这类支撑时**不硬来**——bind mount 会在 /proc/self/mountinfo
+# 里留下劫持痕迹，反而让检测更容易命中。
+# =========================================================
+
+# ---- 4. 深度伪装启动状态 ----
+# 有没有能"隐藏 mount 劫持痕迹"的支撑（Shamiko / SUSFS）
+mount_hider_present() {
+    [ -d /data/adb/modules/zygisk_shamiko ] && { echo shamiko; return 0; }
+    [ -d /data/adb/modules/shamiko ]        && { echo shamiko; return 0; }
+    [ -d /data/adb/modules/susfs4ksu ]      && { echo susfs;   return 0; }
+    [ -e /proc/susfs ]                      && { echo susfs;   return 0; }
+    [ -x /data/adb/ksu/bin/susfs ]          && { echo susfs;   return 0; }
+    return 1
+}
+
+# 把内核命令行里的解锁特征改成锁定特征（单行、空格分隔）
+spoof_cmdline_text() { # stdin -> stdout
+    tr ' ' '\n' | sed \
+        -e 's/^androidboot\.verifiedbootstate=.*/androidboot.verifiedbootstate=green/' \
+        -e 's/^androidboot\.flash\.locked=.*/androidboot.flash.locked=1/' \
+        -e 's/^androidboot\.vbmeta\.device_state=.*/androidboot.vbmeta.device_state=locked/' \
+        -e 's/^androidboot\.warranty_bit=.*/androidboot.warranty_bit=0/' \
+        -e 's/^androidboot\.veritymode=.*/androidboot.veritymode=enforcing/'
+}
+
+spoof_cmdline_file() { # $1 源  $2 目标
+    [ -r "$1" ] || return 1
+    # 先无条件补上两个关键键，再按「同名键只留第一条」去重：
+    # 原命令行里已有的键被 sed 改写过、排在最前，所以留下的就是改写后的值；
+    # 原本没有的键则由这里补上（键不存在同样会被判异常）。
+    # 注意不能逐条 grep 后再 >> 追加：文件末尾没有换行时两条会粘成一条。
+    {
+        spoof_cmdline_text < "$1"
+        echo
+        echo androidboot.verifiedbootstate=green
+        echo androidboot.flash.locked=1
+    } > "$2.tmp" 2>/dev/null || return 1
+    awk -F= '!seen[$1]++' "$2.tmp" 2>/dev/null | tr '\n' ' ' > "$2" 2>/dev/null
+    rm -f "$2.tmp" 2>/dev/null
+    return 0
+}
+
+# bootconfig 是「key = value」逐行格式，单独处理
+spoof_bootconfig_file() { # $1 源  $2 目标
+    [ -r "$1" ] || return 1
+    sed \
+        -e 's/^\(androidboot\.verifiedbootstate\)[[:space:]]*=.*/\1 = green/' \
+        -e 's/^\(androidboot\.flash\.locked\)[[:space:]]*=.*/\1 = 1/' \
+        -e 's/^\(androidboot\.vbmeta\.device_state\)[[:space:]]*=.*/\1 = locked/' \
+        -e 's/^\(androidboot\.warranty_bit\)[[:space:]]*=.*/\1 = 0/' \
+        -e 's/^\(androidboot\.veritymode\)[[:space:]]*=.*/\1 = enforcing/' \
+        < "$1" > "$2" 2>/dev/null || return 1
+    return 0
+}
+
+hide_bl_deep() {
+    hide_bl_props || { log "[✗] 未找到 resetprop"; return 1; }
+    local hider; hider=$(mount_hider_present) || hider=""
+    if [ -z "$hider" ]; then
+        log "[!] 深度伪装未执行：没有 SUSFS 内核支持，也没装 Shamiko。"
+        log "    /proc/cmdline、/proc/bootconfig 由内核提供，resetprop 改不了；"
+        log "    直接 bind mount 会在 mountinfo 里留下劫持痕迹，反而更易被检出。"
+        log "    请换带 SUSFS 的内核，或装 Shamiko（Zygisk）后再开本项。"
+        return 2
+    fi
+    local sp="$DATA_DIR/spoof"
+    mkdir -p "$sp" 2>/dev/null
+    local n=0
+    if spoof_cmdline_file /proc/cmdline "$sp/cmdline" && mount --bind "$sp/cmdline" /proc/cmdline 2>/dev/null; then
+        n=$((n + 1)); log "[✓] 已伪装 /proc/cmdline（支撑：$hider）"
+    else
+        log "[!] /proc/cmdline 伪装失败"
+    fi
+    if [ -e /proc/bootconfig ] && spoof_bootconfig_file /proc/bootconfig "$sp/bootconfig" \
+       && mount --bind "$sp/bootconfig" /proc/bootconfig 2>/dev/null; then
+        n=$((n + 1)); log "[✓] 已伪装 /proc/bootconfig（支撑：$hider）"
+    fi
+    log "[✓] 深度伪装完成（$n 项，支撑：$hider）"
+    return 0
+}
+
+# ---- 1. 可定制隐藏应用列表 ----
+# 用系统自带 pm hide 把指定包从「其它应用可见的包列表」里摘掉。
+# 与 HMA（隐藏应用列表）的分工：pm hide 是系统级、对所有应用生效但粒度粗；
+# HMA 按应用定制可见性、更精细。两者可以并存。
+HIDE_APPS_MARK="$DATA_DIR/hide_apps.applied"
+
+hide_apps_enabled() { [ "$(cfg_get hide_apps_enable off)" = "on" ]; }
+
+# 归一化：逗号/分号/空白分隔 -> 每行一个包名
+hide_apps_normalize() { # stdin -> stdout
+    tr ',;' '\n\n' | tr ' \t' '\n\n' \
+        | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+        | grep -E '^[A-Za-z0-9_][A-Za-z0-9_.]*$' | sort -u
+}
+
+hide_apps_list() { printf '%s\n' "$(cfg_get hide_apps '')" | hide_apps_normalize; }
+
+pm_bin() {
+    if [ -x /system/bin/pm ]; then echo /system/bin/pm; return 0; fi
+    if command -v pm >/dev/null 2>&1; then echo pm; return 0; fi
+    return 1
+}
+
+# 已隐藏的包数（以本模块的记录为准）
+hide_apps_applied() {
+    [ -f "$HIDE_APPS_MARK" ] || { echo 0; return 0; }
+    grep -cv '^#' "$HIDE_APPS_MARK" 2>/dev/null
+}
+
+hide_apps_apply() {
+    local pm; pm=$(pm_bin) || { log "[✗] 未找到 pm，无法隐藏应用"; return 1; }
+    local list; list=$(hide_apps_list)
+    [ -n "$list" ] || { log "[!] 隐藏应用列表为空，跳过"; return 1; }
+    mkdir -p "$DATA_DIR" 2>/dev/null
+    printf '#%s\n' "$(printf '%s' "$list" | tr '\n' ',')" > "$HIDE_APPS_MARK"
+    local n=0 ok=0 p
+    for p in $list; do
+        n=$((n + 1))
+        if "$pm" hide "$p" >/dev/null 2>&1; then
+            ok=$((ok + 1)); echo "$p" >> "$HIDE_APPS_MARK"
+        else
+            log "[!] 隐藏失败：$p（未安装或系统不允许）"
+        fi
+    done
+    log "[✓] 隐藏应用列表已应用：$ok/$n"
+    return 0
+}
+
+hide_apps_restore() {
+    local pm; pm=$(pm_bin) || return 1
+    [ -f "$HIDE_APPS_MARK" ] || { log "[·] 没有已隐藏的应用"; return 0; }
+    local n=0 p
+    while read -r p; do
+        case "$p" in ''|'#'*) continue ;; esac
+        "$pm" unhide "$p" >/dev/null 2>&1 && n=$((n + 1))
+    done < "$HIDE_APPS_MARK"
+    rm -f "$HIDE_APPS_MARK" 2>/dev/null
+    log "[✓] 已还原 $n 个应用"
+    return 0
+}
+
+# 列表没变就不重复执行（重复 pm hide 会报 already hidden，白刷日志）
+hide_apps_sync() {
+    hide_apps_enabled || return 0
+    # 指纹要和 hide_apps_apply 写进标记文件首行的格式完全一致
+    # （命令替换会吃掉结尾换行，直接用管道会多出一个逗号，导致每轮都重来）
+    local fp; fp="#$(printf '%s' "$(hide_apps_list)" | tr '\n' ',')"
+    local cur=""
+    [ -f "$HIDE_APPS_MARK" ] && cur=$(head -n 1 "$HIDE_APPS_MARK" 2>/dev/null)
+    [ "$fp" = "$cur" ] && return 0
+    hide_apps_restore >/dev/null 2>&1
+    hide_apps_apply
+}
+
+# ---- 2. 异常文件清理 ----
+# 默认只清 MT 管理器留下的工作目录，可用 abnormal_paths 覆盖（空格分隔）。
+# 安全限制：只允许 /sdcard/ 与 /storage/emulated/0/ 下的路径。
+ABNORMAL_DEFAULT="/sdcard/MT2 /storage/emulated/0/MT2 /sdcard/MT"
+
+clean_abnormal() {
+    local list; list=$(cfg_get abnormal_paths "$ABNORMAL_DEFAULT")
+    local n=0 p
+    for p in $list; do
+        [ -n "$p" ] || continue
+        case "$p" in
+            /sdcard/*|/storage/emulated/0/*) ;;
+            *) log "[!] 跳过不在 /sdcard 下的路径：$p"; continue ;;
+        esac
+        [ -e "$p" ] || continue
+        if rm -rf "$p" 2>/dev/null; then
+            n=$((n + 1)); log "[✓] 已清理：$p"
+        else
+            log "[!] 清理失败：$p"
+        fi
+    done
+    [ "$n" = "0" ] && log "[·] 没有需要清理的目录"
+    echo "CLEAN_ABNORMAL=$n"
     return 0
 }
 
@@ -702,6 +906,17 @@ echo_status() {
     # 关闭调试状态
     echo "AUTO_DEBUG=$(cfg_get auto_debug off)"
     [ "$(getprop ro.debuggable 2>/dev/null)" = "0" ] && echo "DEBUG_CLOSED=1" || echo "DEBUG_CLOSED=0"
+
+    # ---- 环境对抗：隐藏应用列表 / 深度伪装 / 异常文件 ----
+    echo "HIDE_APPS_ENABLE=$(cfg_get hide_apps_enable off)"
+    echo "HIDE_APPS_COUNT=$(hide_apps_list | wc -l | tr -d ' ')"
+    echo "HIDE_APPS_APPLIED=$(hide_apps_applied)"
+    echo "HIDE_APPS_LIST=$(cfg_get hide_apps '')"
+    echo "DEEP_BL=$(cfg_get deep_bl off)"
+    local _mh; _mh=$(mount_hider_present) || _mh="none"
+    echo "MOUNT_HIDER=$_mh"
+    echo "ABNORMAL_PATHS=$(cfg_get abnormal_paths "$ABNORMAL_DEFAULT")"
+
     # 附属模块更新检查结果（由 webui.sh check-packages 写入缓存）
     echo "UPDATE_CHECKED=$(update_state_field checked_at 未检查)"
     echo "UPDATE_NEED=$(update_state_field need 0)"
