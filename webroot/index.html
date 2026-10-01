@@ -1580,9 +1580,17 @@ function renderAc(out){
   if(!lines.length){
     h+='<p class="note">'+acTag('干净','ok')+' 没有发现游戏挂模块。</p>';
   } else {
+    var shown=0;
     for(var i=0;i<lines.length;i++){
       var c=lines[i].split('\t');
-      if(c.length<4)continue;
+      if(c.length<4){
+        // 解析不了就把原始行摆出来。曾经这里直接 continue，结果汇总说「实锤 1」
+        // 而下面一行都没有，用户只看到一个空面板 —— 静默吞掉比报错难查得多。
+        h+='<div class="appempty" style="text-align:left;white-space:pre-wrap;word-break:break-all">'+esc(lines[i])+'</div>';
+        shown++;
+        continue;
+      }
+      shown++;
       var hard=(c[1]==='block');
       h+='<div style="border-left:2px solid '+(hard?'#B3261E':'#8B5000')+';padding:2px 0 2px 10px;margin:6px 0">';
       h+='<div style="font-size:13px;font-weight:600">'+esc(c[0])+' '+acTag(hard?'实锤':'可疑',hard?'err':'warn')+'</div>';

@@ -2189,7 +2189,7 @@ ac_scan() {
     echo "AC_BLOCK=$block"
     echo "AC_WARN=$warn"
     echo "AC-BEGIN"
-    printf "$out"
+    printf '%s' "$out"
     echo "AC-END"
 }
 
