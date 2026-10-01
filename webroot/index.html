@@ -549,6 +549,16 @@ html[data-lockdown="1"] #acBanner{
     <button class="btn ghost" id="btnAcRestore"><span>↩</span> 还原隔离的模块</button>
   </div>
   <div id="acLockBox"></div>
+  <div id="acDecide" style="display:none">
+    <div style="border:2px solid #B3261E;border-radius:14px;padding:12px;margin:10px 0">
+      <div style="font-weight:700;color:#B3261E;margin-bottom:6px">⚠ 需要你做出选择</div>
+      <p class="note">下面这些模块带有游戏挂的实体特征（注入/内存工具的实体文件）。
+      yypm 不会替你决定 —— 但游戏挂和它不能共存：反作弊一旦标记本机，
+      依赖硬件认证的应用会跟着一起失效。</p>
+      <button class="btn" id="btnAcKeepModule" style="margin-top:6px">继续使用本模块（删除这些挂模块）</button>
+      <button class="btn ghost" id="btnAcKeepCheats" style="color:#B3261E;margin-top:8px">仍然继续用挂（yypm 会卸载自己）</button>
+    </div>
+  </div>
   <div class="row2">
     <button class="btn ghost" id="btnAcUnlock" style="display:none"><span>🔓</span> 解除锁定</button>
   </div>
@@ -1378,6 +1388,34 @@ async function sdkLoad(){
     }
   }catch(e){}
 }
+// ---- 实锤处置：强制二选一 ----
+// 实锤不自动删。用挂与否由用户自己承担后果，模块只负责把代价说清楚。
+function acDecideUI(on){
+  var d=document.getElementById('acDecide');
+  if(d)d.style.display=on?'':'none';
+}
+function acDecide(choice){
+  var keep=choice==='keep_module';
+  var title=keep?'删除这些挂模块？':'保留游戏挂，卸载 yypm？';
+  var body=keep
+    ?'会立刻删除上面列出的实锤挂模块，yypm 继续正常工作。'
+    :'yypm 会删除自己下载过的所有模块，然后卸载自身。这个操作不可撤销 —— '
+     +'卸载后 yypm 不再运行，也没法再从这里恢复。你的游戏挂会原样保留。';
+  ask(title,body,async function(){
+    var act=keep?'anti-cheat-decide-keep-module':'anti-cheat-decide-keep-cheats';
+    busy(keep?'btnAcKeepModule':'btnAcKeepCheats',true,'处理中...');
+    try{
+      var r=await execT(MODDIR+'/webui.sh '+act,60000);
+      log('===== 反挂处置 =====','info');
+      var ls=(r.stdout||'').split('\n');
+      for(var i=0;i<ls.length;i++)if(ls[i])log(ls[i],'info');
+      log('===== 处置结束 =====','ok');
+    }catch(e){log('处置异常: '+e.message,'err');}
+    busy(keep?'btnAcKeepModule':'btnAcKeepCheats',false);
+    if(keep){ await acScan(); }
+    else { toast('yypm 已卸载，重启后完全移除'); }
+  });
+}
 // ---- 反挂反馈（邮件） ----
 // 锁定/警告时用户最需要的是「把情况发出去」。正文自动带上设备、版本、锁定原因和
 // 完整检测结果，用户只需要补一句说明，省得来回问。
@@ -1555,6 +1593,7 @@ async function acScan(){
     if(!out){box.innerHTML='<div class="appempty">没有输出（errno '+esc(String(r.errno))+'）</div>';busy('btnAcScan',false);return;}
     var m=(out.match(/^AC_MODE=(.*)$/m)||[])[1];
     if(m)acSetMode(m.replace(/\r$/,''),true);
+    acDecideUI(acG(out,'AC_PENDING')==='1');
     box.innerHTML=renderAc(out);
   }catch(e){box.innerHTML='<div class="appempty">扫描异常: '+esc(e.message)+'</div>';}
   busy('btnAcScan',false);

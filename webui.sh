@@ -423,6 +423,14 @@ case "${1:-status}" in
     anti-cheat-lock-status)
         ac_lock_status
         ;;
+    anti-cheat-decide-keep-module)
+        # 用户选择：留下 yypm，删掉实锤挂模块
+        ac_decide keep_module
+        ;;
+    anti-cheat-decide-keep-cheats)
+        # 用户选择：保留游戏挂，yypm 删掉下载过的模块并卸载自己
+        ac_decide keep_cheats
+        ;;
     anti-cheat-unlock)
         # 手动解锁：仅在确认误报时用。下次扫描若仍有 warn 级命中会再次锁定。
         ac_lock_clear

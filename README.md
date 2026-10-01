@@ -108,10 +108,13 @@ Android 的 `pm` / `dumpsys` **不输出应用显示名**，只给 `labelRes=0x7
 按关键字扫第一个就会命中它们，删掉等于拆掉整个 keybox 基础设施。所以只有**文件级证据**
 和**用户精确点名**才允许动手。
 
-**处置策略**：
+**处置策略**：命中实锤时**不自动删**，只锁定自身并弹出一个强制选择：
 
-- **实锤** → 强制删除该模块（默认），或移到隔离区（可一键还原）
-- **可疑** → **锁定 yypm 自身**：停用全部功能、界面全局转红、开机不加载、断网不加载
+- **继续使用本模块** → 立刻删掉那些挂模块
+- **仍然继续用挂** → yypm 删掉自己下载过的所有模块，**并卸载自身**
+
+用挂与否由用户自己承担后果，模块只负责把代价说清楚。不选，yypm 就一直不工作。
+命中可疑（关键字）时同样锁定自身，但不给选择 —— 误报率高，不值得让用户为它做决定。
 
 锁定是 fail-closed 的：断网同样保持锁定，拔网线绕不过去。可疑模块消失后自动解锁。
 
@@ -323,12 +326,16 @@ full of sensitive words in their names; a keyword scan hits them first, and dele
 tears down the entire keybox infrastructure. So only **file-level evidence** and **explicit
 user listing** are allowed to trigger action.
 
-**Policy**:
+**Policy**: hard evidence is **not deleted automatically**. The module locks itself and forces
+a choice:
 
-- **Hard evidence** → force-delete that module (default), or move it to quarantine (one-tap
-  restore)
-- **Suspicious** → **lock yypm itself down**: all features disabled, UI turns red globally,
-  no loading at boot, no loading while offline
+- **Keep using this module** → the cheat modules are deleted immediately
+- **Keep using the cheats** → yypm deletes every module it downloaded, **and uninstalls itself**
+
+Whether to run cheats is the user's call and their consequence; the module only makes the price
+explicit. Until a choice is made, yypm does not work at all.
+Suspicious (keyword) hits lock the module down too, but present no choice — the false-positive
+rate is too high to make the user decide.
 
 The lockdown is fail-closed: it stays locked while offline, so pulling the network cable does
 not bypass it. It clears automatically once the suspicious modules are gone.
@@ -422,6 +429,96 @@ webroot/index.html   WebUI frontend (MD3)
 | `?action=pubkey` | public key |
 | `?action=revocation` | revocation list |
 | `?action=keyboxreport` | keybox self-check report (chain / validity / revocation) |
+
+### 鸣谢
+
+这个模块几乎全部建立在别人的工作上。按用途分类：
+
+**keybox 上游源**（服务端拉取并解码的来源）
+
+- [yurikey](https://github.com/yurikey) —— 主力源
+- [integritybox](https://github.com/integritybox)
+- [shall0e/KeyboxHub](https://github.com/shall0e/KeyboxHub)
+- [SSM-FX/KeyboxStatus](https://github.com/SSM-FX/KeyboxStatus)
+- megatron
+
+**吊销名单源**（keybox 自检用）
+
+- [purainity](https://github.com/purainity)
+- [KimmyXYC](https://github.com/KimmyXYC)
+- Google 官方 CRL
+
+**分发 / 依赖的模块**
+
+- [Enginex0/TEESimulator-RS](https://github.com/Enginex0/TEESimulator-RS) —— keybox 的宿主，
+  `app_process` 跑 dex 的做法也是从这里学的
+- [5ec1cff/TrickyStore](https://github.com/5ec1cff/TrickyStore)
+- [PlayIntegrityFix](https://github.com/chiteroman/PlayIntegrityFix)
+- [Dr-TSNG/Zygisk-Next](https://github.com/Dr-TSNG/Zygisk-Next)
+- [LSPosed/LSPosed](https://github.com/LSPosed/LSPosed)
+
+**框架**
+
+- [tiann/KernelSU](https://github.com/tiann/KernelSU)
+- [topjohnwu/Magisk](https://github.com/topjohnwu/Magisk)
+
+**反挂调研时参考的项目**
+
+- [arvinjangid/LSPosed-Detector](https://github.com/arvinjangid/LSPosed-Detector)
+- [LSPosed/NativeDetector](https://github.com/LSPosed/NativeDetector)
+- [gmh5225/awesome-game-security](https://github.com/gmh5225/awesome-game-security)
+
+**工具链**
+
+- [r8 / D8](https://r8.googlesource.com/r8) —— 把 `AppInfo.java` 编成 10 KB 的 dex
+- [Go](https://go.dev/) —— `verify_tool` 交叉编译 arm64
+
+如果这里漏了你的项目，开个 issue 或直接发邮件，我补上。
+
+### Credits
+
+This module is built almost entirely on other people's work. Grouped by purpose:
+
+**Keybox upstream sources** (what the server pulls and decodes)
+
+- [yurikey](https://github.com/yurikey) — primary source
+- [integritybox](https://github.com/integritybox)
+- [shall0e/KeyboxHub](https://github.com/shall0e/KeyboxHub)
+- [SSM-FX/KeyboxStatus](https://github.com/SSM-FX/KeyboxStatus)
+- megatron
+
+**Revocation list sources** (used by the keybox self-check)
+
+- [purainity](https://github.com/purainity)
+- [KimmyXYC](https://github.com/KimmyXYC)
+- Google's official CRL
+
+**Distributed / depended-on modules**
+
+- [Enginex0/TEESimulator-RS](https://github.com/Enginex0/TEESimulator-RS) — host for the keybox;
+  the trick of running a dex under `app_process` was learned from it
+- [5ec1cff/TrickyStore](https://github.com/5ec1cff/TrickyStore)
+- [PlayIntegrityFix](https://github.com/chiteroman/PlayIntegrityFix)
+- [Dr-TSNG/Zygisk-Next](https://github.com/Dr-TSNG/Zygisk-Next)
+- [LSPosed/LSPosed](https://github.com/LSPosed/LSPosed)
+
+**Frameworks**
+
+- [tiann/KernelSU](https://github.com/tiann/KernelSU)
+- [topjohnwu/Magisk](https://github.com/topjohnwu/Magisk)
+
+**Projects consulted while researching the anti-cheat check**
+
+- [arvinjangid/LSPosed-Detector](https://github.com/arvinjangid/LSPosed-Detector)
+- [LSPosed/NativeDetector](https://github.com/LSPosed/NativeDetector)
+- [gmh5225/awesome-game-security](https://github.com/gmh5225/awesome-game-security)
+
+**Toolchain**
+
+- [r8 / D8](https://r8.googlesource.com/r8) — compiles `AppInfo.java` into a 10 KB dex
+- [Go](https://go.dev/) — cross-compiles `verify_tool` for arm64
+
+If your project is missing here, open an issue or send an email and I will add it.
 
 ### License
 

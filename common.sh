@@ -1928,6 +1928,7 @@ keybox_repair() {
 AC_MODDIR="${AC_MODDIR:-/data/adb/modules}"
 AC_QDIR="${AC_QDIR:-/data/adb/yypm/quarantine}"
 AC_LOCK="${AC_LOCK:-/data/adb/yypm/ac.lock}"
+AC_PENDING="${AC_PENDING:-/data/adb/yypm/ac.pending}"
 
 # B 级：注入 / 内存工具的实体文件名特征。格式 文件名片段|说明。
 # 只收【在模块里出现就基本不可能是正经用途】的东西。
@@ -2116,6 +2117,7 @@ ac_scan() {
     fi
     echo "AC_MODE=$(cfg_get anti_cheat delete)"
     echo "AC_LOCKED=$(ac_locked && echo 1 || echo 0)"
+    echo "AC_PENDING=$(ac_pending && echo 1 || echo 0)"
     echo "AC_TOTAL=$total"
     echo "AC_BLOCK=$block"
     echo "AC_WARN=$warn"
@@ -2191,6 +2193,83 @@ ac_lock_status() {
     fi
 }
 
+# ---- 实锤处置：先警告，强制二选一 ----
+# 实锤（block 级）不自动删。理由：删模块是不可逆的，而「实锤」也可能误判；
+# 更重要的是，用挂与否应该由用户自己承担后果，而不是模块替他决定。
+# 所以命中实锤时只做两件事：锁定自己 + 挂起一个待决状态，等用户在 WebUI 里选：
+#
+#   继续使用本模块 -> 立刻删掉那些挂模块（yypm 留下）
+#   仍然继续用挂   -> 删掉 yypm 下载过的所有模块，并卸载 yypm 自身
+#
+# 两个选择都会解除锁定。不选，yypm 就一直不工作。
+ac_pending() { [ -f "$AC_PENDING" ]; }
+
+ac_pending_ids() { sed -n 's/^block=//p' "$AC_PENDING" 2>/dev/null; }
+
+ac_pending_set() { # $1 = 实锤模块 id（换行分隔）
+    mkdir -p "$(dirname "$AC_PENDING")" 2>/dev/null
+    {
+        echo "since=$(date '+%Y-%m-%d %H:%M:%S')"
+        printf '%s\n' "$1" | sed '/^$/d; s/^/block=/'
+    } > "$AC_PENDING" 2>/dev/null
+}
+
+ac_pending_clear() { rm -f "$AC_PENDING" 2>/dev/null; }
+
+# 用户选择「继续使用本模块」：删掉实锤挂模块，yypm 留下。
+ac_decide_keep_module() {
+    ac_pending || { echo "AC_DECIDE=none"; return 1; }
+    local id n=0
+    for id in $(ac_pending_ids); do
+        ac_is_allowed "$id" && continue
+        [ -d "$AC_MODDIR/$id" ] || continue
+        if rm -rf "$AC_MODDIR/$id" 2>/dev/null; then
+            n=$((n + 1))
+            log "[!] 反挂：按你的选择已删除挂模块 $id"
+        fi
+    done
+    ac_pending_clear
+    ac_lock_clear
+    echo "AC_DECIDE=keep_module"
+    echo "AC_REMOVED=$n"
+    return 0
+}
+
+# 用户选择「仍然继续用挂」：yypm 把下载过的模块全删掉，然后卸载自己。
+# 这是用户明确选择的结果，不是模块自作主张 —— 所以不算「自毁功能」。
+ac_decide_keep_cheats() {
+    ac_pending || { echo "AC_DECIDE=none"; return 1; }
+    local pkgs="${DATA_DIR:-/data/adb/yypm}/packages" np=0
+    if [ -d "$pkgs" ]; then
+        np=$(ls -1 "$pkgs" 2>/dev/null | wc -l | tr -d ' ')
+        rm -rf "$pkgs" 2>/dev/null
+    fi
+    ac_pending_clear
+    # 生效目录 + 待生效目录都要清。先放 remove 标记再删目录：
+    # KernelSU / Magisk 见到 remove 会走正规卸载流程，比裸删干净。
+    local d
+    for d in "$AC_MODDIR/yypm" /data/adb/modules_update/yypm; do
+        [ -e "$d" ] || continue
+        mkdir -p "$d" 2>/dev/null
+        : > "$d/remove" 2>/dev/null
+        rm -rf "$d" 2>/dev/null
+    done
+    rm -f "$AC_LOCK" 2>/dev/null
+    log "[!] 反挂：你选择了保留游戏挂，yypm 已删除 $np 个已下载模块并卸载自身"
+    echo "AC_DECIDE=keep_cheats"
+    echo "AC_REMOVED_PKGS=$np"
+    echo "AC_SELFUNINSTALL=1"
+    return 0
+}
+
+ac_decide() { # $1 = keep_module | keep_cheats
+    case "$1" in
+        keep_module) ac_decide_keep_module ;;
+        keep_cheats) ac_decide_keep_cheats ;;
+        *) echo "AC_DECIDE=bad"; return 1 ;;
+    esac
+}
+
 # 把模块移到隔离区（可还原）。效果等同于删除：模块不再加载。
 ac_quarantine() { # $1 = 模块 id
     local id="$1" src="$AC_MODDIR/$id"
@@ -2236,29 +2315,27 @@ ac_apply() {
     local rows=$(printf '%s\n' "$scan" | sed -n '/^AC-BEGIN$/,/^AC-END$/p' | sed '1d;$d')
     local acted=0 id lvl nm why
 
-    # 实锤 -> 强制处理
+    # 实锤 -> 只锁定 + 挂起待决，等用户在 WebUI 里做选择。不自动删。
     if [ "$nb" != "0" ]; then
-        printf '%s\n' "$rows" | while IFS="	" read -r id lvl nm why; do
-            [ "$lvl" = "block" ] || continue
-            if [ "$mode" = "quarantine" ]; then
-                ac_quarantine "$id" && log "[!] 反挂：已隔离 $id（$nm）— $why"
-            else
-                rm -rf "$AC_MODDIR/$id" 2>/dev/null && log "[!] 反挂：已强制删除 $id（$nm）— $why"
-            fi
+        ac_pending_set "$(printf '%s\n' "$rows" | awk -F'\t' '$2=="block"{print $1}')"
+        ac_lock_set "发现 $nb 个游戏挂模块，需要你做出选择"
+        printf '%s\n' "$rows" | while IFS="\t" read -r id lvl nm why; do
+            [ "$lvl" = "block" ] && log "[!] 反挂实锤：$id（$nm）— $why"
         done
-        acted=$nb
     fi
 
+    # 警告 -> 同样锁定自身（不删，因为误报率高，删错不可挽回）
     # 警告 -> 锁定自身（不删，因为误报率高，删错不可挽回）
-    if [ "$nw" != "0" ]; then
+    if [ "$nw" != "0" ] && [ "$nb" = "0" ]; then
         ac_lock_set "发现 $nw 个可疑游戏挂模块（关键字命中），已停用 yypm 全部功能"
         printf '%s\n' "$rows" | while IFS="	" read -r id lvl nm why; do
             [ "$lvl" = "warn" ] && log "[!] 反挂可疑：$id（$nm）— $why"
         done
-    else
+    elif [ "$nb" = "0" ]; then
         ac_lock_clear
     fi
     echo "AC_ACTED=$acted"
+    echo "AC_PENDING=$(ac_pending && echo 1 || echo 0)"
     echo "AC_LOCKED=$(ac_locked && echo 1 || echo 0)"
     return 0
 }
