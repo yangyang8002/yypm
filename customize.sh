@@ -10,6 +10,8 @@ d="$MODDIR"
 [ -d "$UPDATE_DIR" ] && d="$UPDATE_DIR"
 
 chmod 755 "$d/service.sh" "$d/webui.sh" "$d/common.sh" "$d/action.sh" "$d/verify_tool" 2>/dev/null
+# appinfo.dex 是给 app_process 当 classpath 读的，不需要 +x，但必须可读
+chmod 644 "$d/appinfo.dex" 2>/dev/null
 mkdir -p /data/adb/yypm/packages /data/adb/yypm/tmp 2>/dev/null
 
 echo "  [✓] yypm 本体已安装"

@@ -46,13 +46,26 @@ sync_live() {
     L=/data/adb/modules/yypm
     [ -d "$S" ] || return 0
     mkdir -p "$L" "$L/webroot" 2>/dev/null
-    for f in module.prop action.sh service.sh webui.sh common.sh pubkey.b64 verify_tool; do
-        [ -f "$S/$f" ] && cat "$S/$f" > "$L/$f" 2>/dev/null
+    # 用「排除法」而不是白名单。白名单每次加新文件都会漏：v2.3.2 加了 appinfo.dex，
+    # 这里没跟着加，结果应用内更新完 dex 一直不在生效目录，应用名/图标始终出不来，
+    # 直到重启才被 KernelSU 接管。改成"除了安装期文件，其余全同步"。
+    local f base
+    for f in "$S"/*; do
+        [ -f "$f" ] || continue
+        base="${f##*/}"
+        case "$base" in
+            customize.sh|update|remove|uninstall.sh|disable) continue ;;
+        esac
+        cat "$f" > "$L/$base" 2>/dev/null
     done
-    [ -f "$S/webroot/index.html" ] && cat "$S/webroot/index.html" > "$L/webroot/index.html" 2>/dev/null
-    # customize.sh 是安装期脚本，不参与运行，故意不同步
+    if [ -d "$S/webroot" ]; then
+        for f in "$S/webroot"/*; do
+            [ -f "$f" ] || continue
+            cat "$f" > "$L/webroot/${f##*/}" 2>/dev/null
+        done
+    fi
     chmod 755 "$L"/*.sh "$L/verify_tool" 2>/dev/null
-    chmod 644 "$L/module.prop" "$L/pubkey.b64" "$L/webroot/index.html" 2>/dev/null
+    chmod 644 "$L"/*.dex "$L/module.prop" "$L/pubkey.b64" "$L/pubkey.fp" "$L/webroot"/*.html 2>/dev/null
     rm -f "$L/update" 2>/dev/null
     return 0
 }

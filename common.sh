@@ -398,6 +398,11 @@ clean_abnormal() {
 # v2.3.4 起 dex 不再依赖 ActivityThread.systemMain()（真机上它可能什么都不输出），
 # 改成 ActivityThread.getPackageManager() 拿服务 + 自己给每个 APK 建 Resources 解析 labelRes。
 APPINFO_DEX="$MODDIR/appinfo.dex"
+# 应用内更新（不重启）时，新文件先落在 modules_update，要等重启才被接管。
+# dex 不在生效目录就退到暂存区拿一份，否则"更新完功能不可用、必须重启"。
+[ -f "$APPINFO_DEX" ] || {
+    [ -f /data/adb/modules_update/yypm/appinfo.dex ] && APPINFO_DEX=/data/adb/modules_update/yypm/appinfo.dex
+}
 APPINFO_CLASS="com.yypm.appinfo.AppInfo"
 APPINFO_ICON_DIR="$MODDIR/webroot/icons"
 
@@ -510,17 +515,32 @@ apps_xposed_scan() {
     done
 }
 
+# 失败时把 app_process 的第一条报错带进日志，省得还要单独去取 appinfo.err
+appinfo_err_hint() {
+    [ -s "$TMP/appinfo.err" ] || return 0
+    local l
+    l=$(grep -v '^#diag' "$TMP/appinfo.err" 2>/dev/null | grep -v '^[[:space:]]*$' | head -n 2 | tr '\n' ' ')
+    [ -n "$l" ] && log "[!] appinfo 报错: $l"
+    return 0
+}
+
 # 输出：APPS_SOURCE / APPS_COUNT + ---APPS-BEGIN--- 与 ---APPS-END--- 之间的 TSV
 apps_list() {
-    local out
-    if out=$(appinfo_run); then
-        printf 'APPS_SOURCE=appinfo\n'
-        out=$(printf '%s\n' "$out" | grep -v '^#mode=')
-    else
-        log "[!] appinfo 不可用（app_process 或 dex 缺失），退回包名列表"
-        printf 'APPS_SOURCE=fallback\n'
-        out=$(apps_list_fallback)
+    local out src="appinfo"
+    if [ ! -f "$APPINFO_DEX" ]; then
+        src="fallback"
+        log "[!] appinfo.dex 不在模块目录（$APPINFO_DEX）—— 应用内更新后新文件先落在 modules_update，重启才生效"
+    elif ! out=$(appinfo_run); then
+        src="fallback"
+        log "[!] appinfo 跑不起来（app_process 或 dex 有问题），退回包名列表"
+        appinfo_err_hint
     fi
+    if [ "$src" = "fallback" ]; then
+        out=$(apps_list_fallback)
+    else
+        out=$(printf '%s\n' "$out" | grep -v '^#mode=')
+    fi
+    printf 'APPS_SOURCE=%s\n' "$src"
     printf 'APPS_COUNT=%s\n' "$(printf '%s\n' "$out" | grep -c .)"
     printf '%s\n' '---APPS-BEGIN---'
     printf '%s\n' "$out"
@@ -880,6 +900,19 @@ export_diag() {
         echo "构建类型: $(getprop ro.build.type 2>/dev/null)"
         echo "时间: $(date '+%Y-%m-%d %H:%M:%S')"
     } > "$stage/info.txt" 2>/dev/null
+
+    # 3.5) appinfo 排障：dex 在不在、app_process 能不能跑、报什么错
+    #      （上一次的包里没有这一段，结果只能靠猜）
+    {
+        echo "=== 模块目录 ==="
+        ls -l "$MODDIR" 2>/dev/null
+        echo
+        echo "=== 暂存区 ==="
+        ls -l /data/adb/modules_update/yypm 2>/dev/null
+        echo
+        echo "=== appinfo 自检 ==="
+        apps_diag 2>&1
+    } > "$stage/appinfo.txt" 2>/dev/null
 
     # 4) 服务端 manifest 快照 + 校验结果
     [ -f "$TMP/manifest.json" ] && cp -f "$TMP/manifest.json" "$stage/manifest.json" 2>/dev/null
