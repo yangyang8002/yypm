@@ -126,16 +126,94 @@ input.appsearch:focus{border-color:var(--primary)}
 .approw:last-child{border-bottom:none}
 .approw input{width:18px;height:18px;flex-shrink:0;accent-color:var(--primary)}
 .approw .ico{width:34px;height:34px;border-radius:9px;flex-shrink:0;object-fit:contain;
-  background:var(--surface-variant);padding:2px}
+  background:var(--surface-container-high);padding:2px}
 .approw .txt{flex:1;min-width:0}
 .approw .nm{display:block;font-size:13.5px;color:var(--on-surface);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .approw .pk{display:block;font-family:ui-monospace,monospace;font-size:11px;color:var(--on-surface-variant);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .approw .tag{font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:6px;flex-shrink:0;
   background:var(--secondary-container);color:var(--on-secondary-container)}
 .appempty{padding:14px 12px;font-size:12.5px;color:var(--on-surface-variant);text-align:center}
+
+/* ===== 分栏导航（M3 Navigation Bar） ===== */
+body{padding-bottom:104px}
+.panel{display:none}
+.panel.on{display:block;animation:fadeUp .18s ease}
+@keyframes fadeUp{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+.navbar{position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;gap:2px;
+  background:var(--surface-container);border-top:1px solid var(--outline-variant);
+  padding:6px 6px calc(6px + env(safe-area-inset-bottom,0px))}
+.navbar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;
+  border:none;background:transparent;color:var(--on-surface-variant);font-family:inherit;
+  font-size:11px;font-weight:600;padding:0;cursor:pointer;transition:color .2s}
+.navbar .pillwrap{display:flex;align-items:center;justify-content:center;width:56px;height:28px;
+  border-radius:14px;transition:background-color .2s}
+.navbar button.on{color:var(--on-secondary-container)}
+.navbar button.on .pillwrap{background:var(--secondary-container)}
+.navbar button:active .pillwrap{background:var(--surface-container-highest)}
+
+/* 图标：统一用 currentColor，按钮里的 emoji 会被脚本换成这些 */
+.i{width:18px;height:18px;flex-shrink:0;fill:currentColor;display:block}
+.navbar .i{width:21px;height:21px}
+
+/* 应用选择器：已选条 */
+.pickbar{display:flex;align-items:center;gap:8px;margin-top:10px}
+.pickbar .sel{flex:1;font-size:12.5px;font-weight:600;color:var(--on-surface-variant)}
+.mini{border:1px solid var(--outline);background:transparent;color:var(--on-surface-variant);
+  font-family:inherit;font-size:12px;font-weight:600;padding:6px 13px;border-radius:14px;cursor:pointer}
+.mini:active{background:var(--surface-container-high)}
+
+/* 底部提示条（M3 Snackbar） */
+.snackbar{position:fixed;left:16px;right:16px;bottom:88px;z-index:60;display:flex;align-items:center;
+  background:var(--on-surface);color:var(--surface);border-radius:12px;padding:13px 16px;font-size:13px;
+  box-shadow:0 4px 14px rgba(0,0,0,.3);opacity:0;transform:translateY(12px);
+  transition:opacity .2s,transform .2s;pointer-events:none}
+.snackbar.show{opacity:1;transform:none}
+
+/* 确认对话框 */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:70;display:none;
+  align-items:center;justify-content:center;padding:24px}
+.scrim.show{display:flex}
+.dialog{background:var(--surface-container-high);border-radius:28px;padding:24px;width:100%;max-width:340px}
+.dialog h3{font-size:19px;font-weight:600;margin-bottom:10px;color:var(--on-surface)}
+.dialog p{font-size:13.5px;color:var(--on-surface-variant);line-height:1.65}
+.dlg-btns{display:flex;justify-content:flex-end;gap:6px;margin-top:20px}
+.dlg-btn{border:none;background:transparent;color:var(--primary);font-family:inherit;font-size:14px;
+  font-weight:600;padding:10px 16px;border-radius:20px;cursor:pointer}
+.dlg-btn:active{background:var(--surface-container-highest)}
+.dlg-btn.danger{color:#B3261E}
+html[data-theme="dark"] .dlg-btn.danger{color:#F2B8B5}
+
+/* 顶栏吸顶，滚动时标题不丢 */
+.appbar{position:sticky;top:0;z-index:30;background:var(--surface);
+  padding:14px 16px 12px;margin:-20px -16px 14px}
+
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 1 3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11z"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4z"/></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></symbol>
+<symbol id="i-list" viewBox="0 0 24 24"><path d="M3 13h2v-2H3zm0 4h2v-2H3zm0-8h2V7H3zm4 4h14v-2H7zm0 4h14v-2H7zM7 7v2h14V7z"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M5 20h14v-2H5zM19 9h-4V3H9v6H5l7 7z"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="M3.9 12A3.1 3.1 0 0 1 7 8.9h4V7H7a5 5 0 0 0 0 10h4v-1.9H7A3.1 3.1 0 0 1 3.9 12zM8 13h8v-2H8zm9-6h-4v1.9h4a3.1 3.1 0 0 1 0 6.2h-4V17h4a5 5 0 0 0 0-10z"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><path d="M18 8h-1V6a5 5 0 0 0-10 0v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2zM9 6a3 3 0 0 1 6 0v2H9zm9 14H6V10h12zm-6-3a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></symbol>
+<symbol id="i-undo" viewBox="0 0 24 24"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62A7.9 7.9 0 0 1 12.5 10.5c3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></symbol>
+<symbol id="i-eyeoff" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5c0 .65-.13 1.26-.36 1.83l2.92 2.92A11.8 11.8 0 0 0 23 12c-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46A11.8 11.8 0 0 0 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65a3 3 0 0 0 3 3c.22 0 .44-.03.65-.08l1.55 1.55A5 5 0 0 1 7.53 9.8z"/></symbol>
+<symbol id="i-puzzle" viewBox="0 0 24 24"><path d="M20.5 11H19V7a2 2 0 0 0-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4a2 2 0 0 0-2 2v3.8h1.5a2.7 2.7 0 0 1 0 5.4H2V20a2 2 0 0 0 2 2h3.8v-1.5a2.7 2.7 0 0 1 5.4 0V22H17a2 2 0 0 0 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z"/></symbol>
+<symbol id="i-health" viewBox="0 0 24 24"><path d="M19 8h-2v3h-3v2h3v3h2v-3h3v-2h-3zM4 6h9v2H4zm0 5h6v2H4zm0 5h9v2H4z"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/></symbol>
+<symbol id="i-target" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm0-13a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0 8a3 3 0 1 1 0-6 3 3 0 0 1 0 6z"/></symbol>
+<symbol id="i-broom" viewBox="0 0 24 24"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6zM19 4h-3.5l-1-1h-5l-1 1H5v2h14z"/></symbol>
+<symbol id="i-wifi" viewBox="0 0 24 24"><path d="m1 9 2 2a13.03 13.03 0 0 1 18 0l2-2A15.94 15.94 0 0 0 1 9zm8 8 3 3 3-3a4.24 4.24 0 0 0-6 0zm-4-4 2 2a7.07 7.07 0 0 1 10 0l2-2a9.9 9.9 0 0 0-14 0z"/></symbol>
+<symbol id="i-box" viewBox="0 0 24 24"><path d="M20 8h-3V4H3a2 2 0 0 0-2 2v11h2a2 2 0 0 0 4 0h6a2 2 0 0 0 4 0h2v-5zM6 18.5A1.5 1.5 0 1 1 7.5 17 1.5 1.5 0 0 1 6 18.5zm13 0A1.5 1.5 0 1 1 20.5 17 1.5 1.5 0 0 1 19 18.5zM17 12V9.5h2.5l1.96 2.5z"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11z"/></symbol>
+<symbol id="i-upload" viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6zM19 4h-3.5l-1-1h-5l-1 1H5v2h14z"/></symbol>
+<symbol id="i-up" viewBox="0 0 24 24"><path d="M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8z"/></symbol>
+</defs></svg>
 <div class="overlay" id="overlay"><div class="spin"></div></div>
 
 <div class="appbar">
@@ -157,6 +235,7 @@ input.appsearch:focus{border-color:var(--primary)}
   <div class="grow">有更新已安装但<b>尚未重启生效</b>：<span id="restartItems"></span></div>
 </div>
 
+<div class="panel" data-tab="overview">
 <div class="card">
   <h2>Keybox 状态</h2>
   <div class="row"><span class="k">挂载状态</span><span class="v" id="kbMount">-</span></div>
@@ -179,6 +258,14 @@ input.appsearch:focus{border-color:var(--primary)}
   <p class="note">服务端会校验 keybox 里证书链的有效期与吊销状态；判定失效时模块会自动回滚到本地池中已验签的备份。</p>
 </div>
 
+<div class="card">
+  <h2>操作</h2>
+  <button class="btn" id="btnFetch"><span>⬇</span> 手动获取并挂载 keybox</button>
+  <button class="btn ghost" id="btnMount"><span>🔗</span> 挂载到 TEESimulator</button>
+</div>
+</div>
+
+<div class="panel" data-tab="update">
 <div class="card">
   <h2>自动获取</h2>
   <div class="switch-row">
@@ -204,6 +291,23 @@ input.appsearch:focus{border-color:var(--primary)}
 </div>
 
 <div class="card">
+  <h2>附属模块更新</h2>
+  <div class="row"><span class="k"><span id="modDot" class="dot off"></span>待更新</span><span class="v" id="modCount">未检查</span></div>
+  <div class="row"><span class="k">上次检查</span><span class="v" id="modTime">-</span></div>
+  <button class="btn" id="btnCheckMods"><span>⟳</span> 检查附属模块更新</button>
+  <button class="btn ghost" id="btnInstallAll"><span>⤓</span> 一键安装可更新的模块</button>
+  <p class="note">只检查不安装；「一键安装」会把可更新的附属模块交给 ksud 安装（重启后生效）</p>
+</div>
+
+<div class="card">
+  <h2>下载源连通性</h2>
+  <div id="healthBox"><div class="note">点下面的按钮检测各下载源的可达性与延迟</div></div>
+  <button class="btn ghost" id="btnHealth"><span>📶</span> 开始检测</button>
+</div>
+</div>
+
+<div class="panel" data-tab="env">
+<div class="card">
   <h2>隐藏与伪装</h2>
   <div class="row"><span class="k"><span id="blDot" class="dot off"></span>隐藏 BL</span><span class="v" id="blState">-</span></div>
   <div class="switch-row">
@@ -220,8 +324,8 @@ input.appsearch:focus{border-color:var(--primary)}
 </div>
 
 <div class="card">
-  <h2>环境对抗</h2>
-  <div class="row"><span class="k"><span id="haDot" class="dot off"></span>隐藏应用列表</span><span class="v" id="haState">-</span></div>
+  <h2>隐藏应用列表</h2>
+  <div class="row"><span class="k"><span id="haDot" class="dot off"></span>当前状态</span><span class="v" id="haState">-</span></div>
   <div class="switch-row">
     <div><div class="lab">自动应用隐藏列表</div><div class="hint">开机与每轮检查时自动摘掉下面这些包</div></div>
     <div class="switch" id="hideAppsSwitch"></div>
@@ -235,13 +339,22 @@ input.appsearch:focus{border-color:var(--primary)}
   <p class="note">用系统自带的 pm hide 把这些包从「其它应用可见的包列表」里摘掉，可随时还原。
   比 HMA（隐藏应用列表）粒度粗，但不需要 LSPosed；两者可以并存。</p>
 
-  <div class="row" style="margin-top:14px"><span class="k">应用选择器</span><span class="v" id="appsSrc">未扫描</span></div>
+</div>
+
+<div class="card">
+  <h2>应用选择器</h2>
+  <div class="row"><span class="k">扫描结果</span><span class="v" id="appsSrc">未扫描</span></div>
   <div class="row2">
     <button class="btn ghost" id="btnAppsLoad"><span>🔍</span> 扫描应用</button>
-    <button class="btn ghost" id="btnAppsXposed"><span>🧩</span> 只选 LSPosed 模块</button>
-    <button class="btn ghost" id="btnAppsDiag"><span>🩺</span> 诊断 appinfo</button>
+    <button class="btn ghost" id="btnAppsXposed"><span>🧩</span> 只选 LSPosed</button>
+    <button class="btn ghost" id="btnAppsDiag"><span>🩺</span> 诊断</button>
   </div>
   <input class="appsearch" id="appSearch" placeholder="搜索应用名或包名…">
+  <div class="pickbar">
+    <span class="sel" id="pickCount">已选 0 个</span>
+    <button type="button" class="mini" id="btnAppsAll">全选</button>
+    <button type="button" class="mini" id="btnAppsNone">清空</button>
+  </div>
   <div class="applist" id="appList"><div class="appempty">点「扫描应用」列出已安装应用</div></div>
   <div class="row2" style="margin-top:10px">
     <button class="btn ghost" id="btnAppsToHide"><span>🫥</span> 加入隐藏列表</button>
@@ -252,7 +365,11 @@ input.appsearch:focus{border-color:var(--primary)}
   拿不到时退回包名。注意两个按钮方向相反：<b>加入隐藏列表</b>是让检测方看不见它，
   <b>追加到 target.txt</b> 是把它加进 TEESimulator 的目标清单、让密钥认证走模拟。</p>
 
-  <div class="row" style="margin-top:12px"><span class="k"><span id="dbDot" class="dot off"></span>深度伪装启动状态</span><span class="v" id="deepBlState">-</span></div>
+</div>
+
+<div class="card">
+  <h2>深度伪装与异常清理</h2>
+  <div class="row"><span class="k"><span id="dbDot" class="dot off"></span>启动状态伪装</span><span class="v" id="deepBlState">-</span></div>
   <div class="row"><span class="k">挂载隐藏支撑</span><span class="v" id="hiderState">-</span></div>
   <div class="switch-row">
     <div><div class="lab">自动深度伪装</div><div class="hint">连同 /proc/cmdline、/proc/bootconfig 一起伪装</div></div>
@@ -266,28 +383,9 @@ input.appsearch:focus{border-color:var(--primary)}
   <button class="btn ghost" id="btnClean"><span>🧹</span> 清理 MT2 等落地目录</button>
   <p class="note" id="abnPaths">-</p>
 </div>
-
-<div class="card">
-  <h2>附属模块更新</h2>
-  <div class="row"><span class="k"><span id="modDot" class="dot off"></span>待更新</span><span class="v" id="modCount">未检查</span></div>
-  <div class="row"><span class="k">上次检查</span><span class="v" id="modTime">-</span></div>
-  <button class="btn" id="btnCheckMods"><span>⟳</span> 检查附属模块更新</button>
-  <button class="btn ghost" id="btnInstallAll"><span>⤓</span> 一键安装可更新的模块</button>
-  <p class="note">只检查不安装；「一键安装」会把可更新的附属模块交给 ksud 安装（重启后生效）</p>
 </div>
 
-<div class="card">
-  <h2>操作</h2>
-  <button class="btn" id="btnFetch"><span>⬇</span> 手动获取并挂载 keybox</button>
-  <button class="btn ghost" id="btnMount"><span>🔗</span> 挂载到 TEESimulator</button>
-</div>
-
-<div class="card">
-  <h2>下载源连通性</h2>
-  <div id="healthBox"><div class="note">点下面的按钮检测各下载源的可达性与延迟</div></div>
-  <button class="btn ghost" id="btnHealth"><span>📶</span> 开始检测</button>
-</div>
-
+<div class="panel" data-tab="tools">
 <div class="card">
   <h2>安全</h2>
   <div class="row"><span class="k"><span id="pkDot" class="dot off"></span>公钥指纹</span><span class="v" id="pkState">-</span></div>
@@ -313,7 +411,9 @@ input.appsearch:focus{border-color:var(--primary)}
   <textarea class="cfg" id="cfgBox" placeholder="点「导出」把当前配置显示在这里；粘贴配置后点「导入」即可恢复"></textarea>
   <p class="note">导出的就是 config.prop 内容，可直接复制保存；换机或重置后粘贴回来即可。</p>
 </div>
+</div>
 
+<div class="panel" data-tab="logs">
 <div class="card">
   <h2>运行日志</h2>
   <div class="row2">
@@ -328,6 +428,25 @@ input.appsearch:focus{border-color:var(--primary)}
   <h2>操作记录</h2>
   <div class="output" id="output"></div>
 </div>
+</div>
+
+<nav class="navbar" id="navbar">
+  <button type="button" data-tab="overview" class="on"><span class="pillwrap"><svg class="i"><use href="#i-home"/></svg></span><span>概览</span></button>
+  <button type="button" data-tab="env"><span class="pillwrap"><svg class="i"><use href="#i-shield"/></svg></span><span>环境对抗</span></button>
+  <button type="button" data-tab="update"><span class="pillwrap"><svg class="i"><use href="#i-refresh"/></svg></span><span>更新</span></button>
+  <button type="button" data-tab="tools"><span class="pillwrap"><svg class="i"><use href="#i-settings"/></svg></span><span>工具</span></button>
+  <button type="button" data-tab="logs"><span class="pillwrap"><svg class="i"><use href="#i-list"/></svg></span><span>日志</span></button>
+</nav>
+
+<div class="snackbar" id="snackbar"></div>
+<div class="scrim" id="scrim"><div class="dialog">
+  <h3 id="dlgTitle">确认</h3>
+  <p id="dlgText"></p>
+  <div class="dlg-btns">
+    <button type="button" class="dlg-btn" id="dlgNo">取消</button>
+    <button type="button" class="dlg-btn danger" id="dlgYes">确定</button>
+  </div>
+</div></div>
 
 <script>
 var MODDIR='/data/adb/modules/yypm';
@@ -352,7 +471,11 @@ function toggleTheme(){
 var out=document.getElementById('output');
 var overlay=document.getElementById('overlay');
 
-function log(line,cls){var d=document.createElement('div');if(cls)d.className=cls;d.textContent=line;out.appendChild(d);out.scrollTop=out.scrollHeight;}
+function log(line,cls){
+  var d=document.createElement('div');if(cls)d.className=cls;d.textContent=line;out.appendChild(d);out.scrollTop=out.scrollHeight;
+  // 操作记录现在在「日志」分栏里，别的分栏看不到 —— 成功/失败用提示条兜住，免得点了没反应
+  if((cls==='ok'||cls==='err') && !document.querySelector('.panel[data-tab="logs"]').classList.contains('on'))toast(line);
+}
 
 function exec(cmd){
   if (typeof window.ksu !== 'undefined' && typeof window.ksu.exec === 'function') {
@@ -911,6 +1034,8 @@ function appsRender(){
     if(!q)return true;
     return (a.label||'').toLowerCase().indexOf(q)>=0 || a.pkg.toLowerCase().indexOf(q)>=0;
   });
+  APPS_VIEW=list;
+  updatePick();
   if(!list.length){
     box.innerHTML='<div class="appempty">'+(APPS.length?'没有匹配的应用':'点「扫描应用」列出已安装应用')+'</div>';
     return;
@@ -1052,7 +1177,9 @@ document.getElementById('btnCheckMods').onclick=modCheck;
 document.getElementById('btnInstallAll').onclick=installAll;
 document.getElementById('btnHealth').onclick=healthCheck;
 document.getElementById('btnLogLoad').onclick=loadLog;
-document.getElementById('btnLogClear').onclick=clearLog;
+document.getElementById('btnLogClear').onclick=function(){
+  ask('清空运行日志？','只删模块自己的日志文件，不影响系统日志。',clearLog);
+};
 document.getElementById('btnCfgExport').onclick=cfgExport;
 document.getElementById('btnCfgImport').onclick=cfgImport;
 document.getElementById('wifiOnlySwitch').onclick=toggleWifiOnly;
@@ -1064,11 +1191,15 @@ document.getElementById('btnBl').onclick=manualBl;
 document.getElementById('btnDebug').onclick=manualDebug;
 document.getElementById('btnHideAppsSave').onclick=hideAppsSave;
 document.getElementById('btnHideAppsApply').onclick=hideAppsApply;
-document.getElementById('btnHideAppsRestore').onclick=hideAppsRestore;
+document.getElementById('btnHideAppsRestore').onclick=function(){
+  ask('还原隐藏的应用？','这些应用会重新出现在其它应用可见的包列表里。',hideAppsRestore);
+};
 document.getElementById('hideAppsSwitch').onclick=toggleHideApps;
 document.getElementById('btnDeepBl').onclick=deepBlNow;
 document.getElementById('deepBlSwitch').onclick=toggleDeepBl;
-document.getElementById('btnClean').onclick=cleanAbnormal;
+document.getElementById('btnClean').onclick=function(){
+  ask('清理异常文件？','会删除 MT2 等工具在存储里留下的落地目录，删掉后不可恢复。',cleanAbnormal);
+};
 document.getElementById('btnAppsLoad').onclick=appsLoad;
 document.getElementById('btnAppsXposed').onclick=appsSelectXposed;
 document.getElementById('btnAppsDiag').onclick=appsDiag;
@@ -1080,6 +1211,7 @@ document.getElementById('appList').addEventListener('change',function(e){
   if(!t||t.type!=='checkbox')return;
   var p=t.getAttribute('data-pkg');
   for(var i=0;i<APPS.length;i++){if(APPS[i].pkg===p){APPS[i].checked=t.checked;break;}}
+  updatePick();
 });
 
 // 检查间隔分段按钮
@@ -1087,6 +1219,81 @@ document.getElementById('appList').addEventListener('change',function(e){
   var seg=document.getElementById('intervalSeg');
   for(var i=0;i<seg.children.length;i++){
     (function(b){ b.onclick=function(){ setIntervalH(b.dataset.h); }; })(seg.children[i]);
+  }
+})();
+
+/* ===== 分栏导航 ===== */
+var TAB_KEY='yypm_tab';
+function showTab(name,keepScroll){
+  var ps=document.querySelectorAll('.panel'),i;
+  for(i=0;i<ps.length;i++){ps[i].classList.toggle('on',ps[i].getAttribute('data-tab')===name);}
+  var bs=document.querySelectorAll('.navbar button');
+  for(i=0;i<bs.length;i++){bs[i].classList.toggle('on',bs[i].getAttribute('data-tab')===name);}
+  try{localStorage.setItem(TAB_KEY,name);}catch(e){}
+  if(!keepScroll)window.scrollTo(0,0);
+}
+(function(){
+  var bs=document.querySelectorAll('.navbar button'),i;
+  for(i=0;i<bs.length;i++){
+    (function(b){b.onclick=function(){showTab(b.getAttribute('data-tab'));};})(bs[i]);
+  }
+  var t='overview';
+  try{t=localStorage.getItem(TAB_KEY)||'overview';}catch(e){}
+  if(!document.querySelector('.panel[data-tab="'+t+'"]'))t='overview';
+  showTab(t,true);
+})();
+
+/* ===== 底部提示条（比刷一屏日志克制得多） ===== */
+var snackTimer=null;
+function toast(msg){
+  var s=document.getElementById('snackbar');
+  s.textContent=msg;
+  s.classList.add('show');
+  if(snackTimer)clearTimeout(snackTimer);
+  snackTimer=setTimeout(function(){s.classList.remove('show');},2600);
+}
+
+/* ===== 确认框：破坏性操作不再一点就执行 ===== */
+function ask(title,text,onYes){
+  document.getElementById('dlgTitle').textContent=title;
+  document.getElementById('dlgText').textContent=text;
+  var scrim=document.getElementById('scrim');
+  scrim.classList.add('show');
+  document.getElementById('dlgYes').onclick=function(){scrim.classList.remove('show');onYes();};
+  document.getElementById('dlgNo').onclick=function(){scrim.classList.remove('show');};
+  scrim.onclick=function(e){if(e.target===scrim)scrim.classList.remove('show');};
+}
+
+/* ===== 选择器：已选计数 + 全选/清空（只作用于当前搜索结果） ===== */
+var APPS_VIEW=[];
+function updatePick(){
+  var n=0,i;
+  for(i=0;i<APPS.length;i++){if(APPS[i].checked)n++;}
+  var e=document.getElementById('pickCount');
+  if(e)e.textContent='已选 '+n+' 个'+(n&&APPS_VIEW.length!==APPS.length?'（当前筛选 '+APPS_VIEW.length+'）':'');
+}
+document.getElementById('btnAppsAll').onclick=function(){
+  if(!APPS_VIEW.length){toast('先点「扫描应用」');return;}
+  for(var i=0;i<APPS_VIEW.length;i++){APPS_VIEW[i].checked=true;}
+  appsRender();toast('已全选当前 '+APPS_VIEW.length+' 个');
+};
+document.getElementById('btnAppsNone').onclick=function(){
+  for(var i=0;i<APPS.length;i++){APPS[i].checked=false;}
+  appsRender();toast('已清空勾选');
+};
+
+/* ===== 按钮里的 emoji 统一换成矢量图标（MD3 是单色图标，emoji 太跳） ===== */
+(function(){
+  var ICO={'⬇':'download','⟳':'refresh','↻':'refresh','🔗':'link','🛡':'shield','🔒':'lock',
+    '↺':'undo','✓':'check','🫥':'eyeoff','🧩':'puzzle','🩺':'health','🔍':'search',
+    '🎯':'target','🧹':'broom','📶':'wifi','📦':'box','⧉':'copy','↥':'upload','⤓':'download',
+    '🗑':'trash','⬆':'up'};
+  var bs=document.querySelectorAll('.btn'),i;
+  for(i=0;i<bs.length;i++){
+    var s=bs[i].querySelector('span');
+    if(!s)continue;
+    var id=ICO[(s.textContent||'').trim()];
+    if(id)s.outerHTML='<svg class="i"><use href="#i-'+id+'"/></svg>';
   }
 })();
 
