@@ -1771,3 +1771,51 @@ check_module_update() {
         log "[!] 新模块已下载到 $TMP/update.zip，请手动安装"
     fi
 }
+
+# ============================================================
+# 密钥自检
+# ============================================================
+# 为什么需要：注入成功 != 证书有效。keybox 里的证书一旦过期或被 Google 吊销，
+# 注入照样成功、开机也正常，只有依赖硬件认证的 App（支付/银行）会静默失效，
+# 在手机上极难排查。这里把「本地这份 keybox 到底还能不能用」一次摊开。
+#
+# 分工：shell 里没有 JSON 解析器，让它去抠嵌套字段既脆弱又易错，所以服务端
+# 单独提供 ?action=keyboxreport 把要展示的部分原样吐出来，本函数只负责搬运，
+# 真正的解析交给 WebUI 的 JS。
+keybox_audit() {
+    local kb="$KEYBOX_DEST"
+    local exists=0 size="" sha="" devid="" certs="" keyalg=""
+
+    if [ -f "$kb" ]; then
+        exists=1
+        size=$(wc -c < "$kb" 2>/dev/null | tr -d ' \t')
+        sha=$(sha256_of "$kb")
+        devid=$(sed -n 's/.*DeviceID="\([^"]*\)".*/\1/p' "$kb" 2>/dev/null | head -1)
+        certs=$(grep -c 'BEGIN CERTIFICATE' "$kb" 2>/dev/null)
+        keyalg=$(sed -n 's/.*BEGIN \([A-Z0-9 ]*PRIVATE KEY\).*/\1/p' "$kb" 2>/dev/null | head -1)
+    fi
+
+    echo "KEYBOX_PATH=$kb"
+    echo "KEYBOX_EXISTS=$exists"
+    echo "KEYBOX_LOCAL_SIZE=$size"
+    echo "KEYBOX_LOCAL_SHA=$sha"
+    echo "KEYBOX_LOCAL_DEVICEID=$devid"
+    echo "KEYBOX_LOCAL_CERTS=$certs"
+    echo "KEYBOX_LOCAL_KEYALG=$keyalg"
+
+    mkdir -p "$TMP"
+    rm -f "$TMP/kbreport.json"
+    if download "$(api_url keyboxreport)" "$TMP/kbreport.json" && [ -s "$TMP/kbreport.json" ]; then
+        # 只取服务端报告的 sha256 用于比对；其余原样交给 WebUI 解析
+        echo "KEYBOX_SERVER_SHA=$(sed -n 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$TMP/kbreport.json" | head -1)"
+        echo "KEYBOX_JSON_BEGIN"
+        cat "$TMP/kbreport.json"
+        echo ""
+        echo "KEYBOX_JSON_END"
+    else
+        echo "KEYBOX_SERVER_SHA="
+        echo "KEYBOX_JSON_BEGIN"
+        echo '{"ok":false,"error":"服务端自检报告下载失败（检查网络或 BASE_URL）"}'
+        echo "KEYBOX_JSON_END"
+    fi
+}

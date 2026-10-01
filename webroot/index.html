@@ -473,6 +473,17 @@ html[data-theme="dark"] .dlg-btn.danger{color:#F2B8B5}
 
 </div>
 
+<div class="card wide">
+  <h2>密钥自检</h2>
+  <p class="note">注入成功不等于证书有效。keybox 里的证书一旦过期或被 Google 吊销，
+  注入照样成功、开机也正常，只有依赖硬件认证的应用（支付/银行）会静默失效，在手机上极难排查。
+  这里把设备上这份 keybox 与服务端算好的证书链、有效期、吊销结论对齐后一次摊开。</p>
+  <div class="row2">
+    <button class="btn ghost" id="btnKbAudit"><span>🔐</span> 开始自检</button>
+  </div>
+  <div id="kbReport"><div class="appempty">点「开始自检」查看证书链与吊销状态</div></div>
+</div>
+
 <div class="card">
   <h2>深度伪装与异常清理</h2>
   <div class="row"><span class="k"><span id="dbDot" class="dot off"></span>启动状态伪装</span><span class="v" id="deepBlState">-</span></div>
@@ -1199,6 +1210,123 @@ function appsRender(){
   box.innerHTML=h;
 }
 
+// ---- 密钥自检 ----
+// shell 只负责搬运字节（见 common.sh 的 keybox_audit），JSON 解析放在这里。
+function kbRow(k,v){
+  return '<div class="row"><span class="k">'+esc(k)+'</span><span class="v">'+esc(v==null||v===''?'-':String(v))+'</span></div>';
+}
+function kbTag(text,kind){
+  var bg = kind==='ok' ? 'var(--primary)' : (kind==='warn' ? '#8B5000' : '#B3261E');
+  var fg = kind==='ok' ? 'var(--on-primary)' : '#fff';
+  return '<span class="tag" style="background:'+bg+';color:'+fg+';font-weight:600">'+esc(text)+'</span>';
+}
+function renderKb(rep,g){
+  var h='';
+  var localSha=g('KEYBOX_LOCAL_SHA'), srvSha=g('KEYBOX_SERVER_SHA');
+  var exists=g('KEYBOX_EXISTS')==='1';
+  var match=(localSha && srvSha && localSha===srvSha);
+
+  h+='<h3 style="margin:14px 0 6px;font-size:14px">设备上的 keybox</h3>';
+  if(!exists){
+    h+='<p class="note">'+esc(g('KEYBOX_PATH')||'')+' 不存在 —— 还没有注入过 keybox。</p>';
+  } else {
+    h+=kbRow('路径',g('KEYBOX_PATH'));
+    h+=kbRow('大小',g('KEYBOX_LOCAL_SIZE')+' 字节');
+    h+=kbRow('DeviceID',g('KEYBOX_LOCAL_DEVICEID'));
+    h+=kbRow('证书数',g('KEYBOX_LOCAL_CERTS'));
+    h+=kbRow('私钥类型',g('KEYBOX_LOCAL_KEYALG'));
+    h+=kbRow('sha256',String(localSha).slice(0,32)+'…');
+  }
+
+  h+='<h3 style="margin:14px 0 6px;font-size:14px">与服务端比对</h3>';
+  if(!srvSha){
+    h+='<p class="note">取不到服务端报告，无法比对（检查网络或服务器地址）。</p>';
+  } else if(match){
+    h+='<p class="note">'+kbTag('一致','ok')+' 设备上这份就是服务端当前提供的那一份。</p>';
+  } else {
+    h+='<p class="note">'+kbTag('不一致','err')+' 设备上的 keybox 与服务端不同 —— '
+      +'可能是手动替换过，或服务端已更新而设备还没拉取。下面的证书链来自服务端，'
+      +'未必对应设备上这份。</p>';
+    h+=kbRow('服务端 sha256',String(srvSha).slice(0,32)+'…');
+  }
+
+  if(rep && rep.validity){
+    var v=rep.validity;
+    h+='<h3 style="margin:14px 0 6px;font-size:14px">有效性</h3>';
+    var lv=v.level||'invalid';
+    var tag=lv==='valid'?kbTag('有效','ok'):(lv==='warning'?kbTag('有警告','warn'):kbTag('无效','err'));
+    h+='<p class="note">'+tag+'　来源 '+esc(rep.source||'-')+'</p>';
+    h+=kbRow('剩余天数',v.days_remaining==null?'-':v.days_remaining+' 天');
+    h+=kbRow('最早到期',v.min_not_after||'-');
+    h+=kbRow('检查时间',v.checked_at||'-');
+
+    var rv=rep.revocation;
+    if(rv){
+      h+='<h3 style="margin:14px 0 6px;font-size:14px">吊销名单</h3>';
+      h+=kbRow('名单来源',rv.source||'-');
+      h+=kbRow('名单条数',rv.count);
+      h+=kbRow('参与比对',rv.checked);
+      h+=kbRow('是否最新',''+(rv.fresh?'是':'否（用了旧缓存）'));
+      h+='<p class="note">吊销名单来自 Google attestation/status 的镜像（服务器拉取后缓存），'
+        +'所以设备自己不需要能访问 Google。</p>';
+    }
+
+    var chains=v.chains||[];
+    if(chains.length){
+      h+='<h3 style="margin:14px 0 6px;font-size:14px">证书链</h3>';
+      for(var ci=0;ci<chains.length;ci++){
+        var cs=chains[ci].certs||[];
+        h+='<p class="note" style="margin:8px 0 4px"><b>链 '+(ci+1)+'</b>　共 '+cs.length+' 张</p>';
+        for(var i=0;i<cs.length;i++){
+          var c=cs[i];
+          var role=(i===cs.length-1)?'根':(i===0?'叶':'中间');
+          h+='<div style="border-left:2px solid var(--outline);padding:2px 0 2px 10px;margin:6px 0">';
+          h+='<div style="font-size:13px;font-weight:600">'+esc(role)+'　'+esc(c.serial||'-')+'</div>';
+          h+='<div style="font-size:12px;opacity:.75">'+esc(c.subject||'-')+'</div>';
+          h+='<div style="font-size:12px;opacity:.75">签发者 '+esc(c.issuer||'-')+'</div>';
+          h+='<div style="font-size:12px;opacity:.75">'+esc(c.not_before||'?')+' → '+esc(c.not_after||'?')+'</div>';
+          h+='</div>';
+        }
+      }
+    }
+
+    var rs=v.reasons||[], ws=v.warnings||[];
+    if(rs.length){
+      h+='<h3 style="margin:14px 0 6px;font-size:14px">问题</h3>';
+      for(var a=0;a<rs.length;a++) h+='<p class="note">'+kbTag('×','err')+' '+esc(rs[a])+'</p>';
+    }
+    if(ws.length){
+      h+='<h3 style="margin:14px 0 6px;font-size:14px">提示</h3>';
+      for(var b=0;b<ws.length;b++) h+='<p class="note">'+esc(ws[b])+'</p>';
+    }
+  } else if(rep && rep.error){
+    h+='<p class="note">'+kbTag('错误','err')+' '+esc(rep.error)+'</p>';
+  }
+  return h;
+}
+
+async function keyboxAudit(){
+  busy('btnKbAudit',true,'自检中...');
+  var box=document.getElementById('kbReport');
+  try{
+    var r=await execT(MODDIR+'/webui.sh keybox-audit',40000);
+    var out=(r.stdout||'');
+    if(!out){
+      box.innerHTML='<div class="appempty">没有输出（errno '+esc(String(r.errno))+'）'+(r.stderr?('<br>'+esc(r.stderr)):'')+'</div>';
+      busy('btnKbAudit',false);
+      return;
+    }
+    var g=function(k){var m=out.match(new RegExp('^'+k+'=(.*)$','m'));return m?m[1].replace(/\r$/,''):'';};
+    var jm=out.match(/KEYBOX_JSON_BEGIN\r?\n([\s\S]*?)\r?\nKEYBOX_JSON_END/);
+    var rep=null;
+    if(jm){ try{ rep=JSON.parse(jm[1]); }catch(e){ rep={error:'服务端报告解析失败: '+e.message}; } }
+    box.innerHTML=renderKb(rep,g);
+  }catch(e){
+    box.innerHTML='<div class="appempty">自检异常: '+esc(e.message)+'</div>';
+  }
+  busy('btnKbAudit',false);
+}
+
 // 一键诊断：把 app_process / dex / 报错全打出来，省得反复猜
 async function appsDiag(){
   busy('btnAppsDiag',true,'诊断中...');
@@ -1353,6 +1481,7 @@ document.getElementById('btnClean').onclick=function(){
 document.getElementById('btnAppsLoad').onclick=appsLoad;
 document.getElementById('btnAppsXposed').onclick=appsSelectXposed;
 document.getElementById('btnAppsDiag').onclick=appsDiag;
+document.getElementById('btnKbAudit').onclick=keyboxAudit;
 document.getElementById('btnAppsToHide').onclick=appsToHide;
 document.getElementById('btnAppsToTarget').onclick=appsToTarget;
 document.getElementById('appSearch').oninput=appsRender;

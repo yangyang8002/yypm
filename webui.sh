@@ -382,6 +382,11 @@ case "${1:-status}" in
         log "[·] 自动深度伪装已设为 ${2}"
         echo "DEEP_BL=$2"
         ;;
+    keybox-audit)
+        # 密钥自检：本地 keybox 的 sha256/DeviceID/证书数 + 服务端算好的证书链与
+        # 吊销结论。JSON 由 WebUI 解析，这里只负责搬运（见 common.sh 的 keybox_audit）。
+        keybox_audit
+        ;;
     apps-list)
         # 全部应用 + 本地化应用名 + LSPosed 模块标记（TSV，见 common.sh 的 apps_list）
         apps_list
