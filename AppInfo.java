@@ -82,12 +82,16 @@ public class AppInfo {
         Object ipm = ipm();
         diag("ipm=" + ipm.getClass().getName());
 
-        Object slice = ipm.getClass()
-                .getMethod("getInstalledPackages", int.class, int.class)
-                .invoke(ipm, Integer.valueOf(GET_META_DATA), Integer.valueOf(0));
+        Object slice = callIpm(ipm, "getInstalledPackages", GET_META_DATA, 0);
         diag("slice=" + slice.getClass().getName());
 
-        List<?> list = (List<?>) slice.getClass().getMethod("getList").invoke(slice);
+        // 有的版本直接返回 List，有的返回 ParceledListSlice，两种都认
+        List<?> list;
+        if (slice instanceof List) {
+            list = (List<?>) slice;
+        } else {
+            list = (List<?>) slice.getClass().getMethod("getList").invoke(slice);
+        }
         diag("count=" + (list == null ? -1 : list.size()));
         if (list == null) {
             throw new IllegalStateException("getInstalledPackages 返回 null");
@@ -199,6 +203,59 @@ public class AppInfo {
     }
 
     /** ActivityThread.getPackageManager() 走 ServiceManager，不需要 Context */
+    /**
+     * 调 IPackageManager 上「签名随版本变过」的方法。
+     *
+     * 踩过的坑：Android 16 (SDK 36) 把 getInstalledPackages 的 flags 参数从 int 改成了 long，
+     * 硬写 getMethod(name, int.class, int.class) 会直接 NoSuchMethodException —— 而且报错
+     * 长得像"方法不存在"，很容易误判成权限或 API 被砍。
+     *
+     * 所以这里不写死签名：按名字 + 参数形态（第 1 个是 int/long，可选第 2 个 int）去匹配，
+     * 匹配到谁就用谁，调用时按参数类型装箱。这样下次再改也不用跟着改代码。
+     */
+    static Object callIpm(Object ipm, String name, int flags, int userId) throws Exception {
+        Method best = null;
+        for (Method m : ipm.getClass().getMethods()) {
+            if (!m.getName().equals(name)) {
+                continue;
+            }
+            Class<?>[] p = m.getParameterTypes();
+            if (p.length < 1 || p.length > 2) {
+                continue;
+            }
+            if (p[0] != int.class && p[0] != long.class) {
+                continue;
+            }
+            if (p.length == 2 && p[1] != int.class) {
+                continue;
+            }
+            best = m;
+            break;
+        }
+        if (best == null) {
+            // 一个都没匹配上：把系统里真实存在的方法名列出来，下次就不用猜了
+            for (Method m : ipm.getClass().getMethods()) {
+                if (m.getName().toLowerCase().contains("installed")) {
+                    StringBuilder sb = new StringBuilder();
+                    for (Class<?> c : m.getParameterTypes()) {
+                        sb.append(sb.length() == 0 ? "" : ",").append(c.getName());
+                    }
+                    diag("avail " + m.getName() + "(" + sb + ")");
+                }
+            }
+            throw new NoSuchMethodException(name);
+        }
+        Class<?>[] p = best.getParameterTypes();
+        Object f = (p[0] == long.class) ? (Object) Long.valueOf(flags) : (Object) Integer.valueOf(flags);
+        Object[] argv = (p.length == 2) ? new Object[] { f, Integer.valueOf(userId) } : new Object[] { f };
+        StringBuilder sb = new StringBuilder();
+        for (Class<?> c : p) {
+            sb.append(sb.length() == 0 ? "" : ",").append(c.getName());
+        }
+        diag("call " + name + "(" + sb + ")");
+        return best.invoke(ipm, argv);
+    }
+
     static Object ipm() throws Exception {
         Class<?> cAT = Class.forName("android.app.ActivityThread");
         Object ipm = cAT.getMethod("getPackageManager").invoke(null);
