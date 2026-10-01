@@ -117,6 +117,20 @@ textarea.cfg{width:100%;box-sizing:border-box;margin-top:10px;padding:12px;borde
 .row2 .btn{flex:1}
 #logPanel{height:280px}
 .pill.warn2{background:var(--error-container);color:var(--on-error-container)}
+input.appsearch{width:100%;box-sizing:border-box;margin-top:10px;padding:11px 12px;border-radius:var(--r-in);
+  border:1px solid var(--outline);background:var(--surface-container-highest);color:var(--on-surface);
+  font-size:13.5px;font-family:inherit;outline:none}
+input.appsearch:focus{border-color:var(--primary)}
+.applist{margin-top:8px;max-height:280px;overflow:auto;border-radius:var(--r-in);background:var(--surface-container-highest)}
+.approw{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--outline-variant)}
+.approw:last-child{border-bottom:none}
+.approw input{width:18px;height:18px;flex-shrink:0;accent-color:var(--primary)}
+.approw .txt{flex:1;min-width:0}
+.approw .nm{display:block;font-size:13.5px;color:var(--on-surface);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.approw .pk{display:block;font-family:ui-monospace,monospace;font-size:11px;color:var(--on-surface-variant);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.approw .tag{font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:6px;flex-shrink:0;
+  background:var(--secondary-container);color:var(--on-secondary-container)}
+.appempty{padding:14px 12px;font-size:12.5px;color:var(--on-surface-variant);text-align:center}
 </style>
 </head>
 <body>
@@ -218,6 +232,22 @@ textarea.cfg{width:100%;box-sizing:border-box;margin-top:10px;padding:12px;borde
   <button class="btn ghost" id="btnHideAppsRestore"><span>↺</span> 还原隐藏</button>
   <p class="note">用系统自带的 pm hide 把这些包从「其它应用可见的包列表」里摘掉，可随时还原。
   比 HMA（隐藏应用列表）粒度粗，但不需要 LSPosed；两者可以并存。</p>
+
+  <div class="row" style="margin-top:14px"><span class="k">应用选择器</span><span class="v" id="appsSrc">未扫描</span></div>
+  <div class="row2">
+    <button class="btn ghost" id="btnAppsLoad"><span>🔍</span> 扫描应用</button>
+    <button class="btn ghost" id="btnAppsXposed"><span>🧩</span> 只选 LSPosed 模块</button>
+  </div>
+  <input class="appsearch" id="appSearch" placeholder="搜索应用名或包名…">
+  <div class="applist" id="appList"><div class="appempty">点「扫描应用」列出已安装应用</div></div>
+  <div class="row2" style="margin-top:10px">
+    <button class="btn ghost" id="btnAppsToHide"><span>🫥</span> 加入隐藏列表</button>
+    <button class="btn ghost" id="btnAppsToTarget"><span>🎯</span> 追加到 target.txt</button>
+  </div>
+  <div class="row"><span class="k">目标清单 target.txt</span><span class="v" id="ttState">-</span></div>
+  <p class="note">应用名由 appinfo.dex 借用系统自己的 PackageManager 解析（root 不受包可见性限制），
+  拿不到时退回包名。注意两个按钮方向相反：<b>加入隐藏列表</b>是让检测方看不见它，
+  <b>追加到 target.txt</b> 是把它加进 TEESimulator 的目标清单、让密钥认证走模拟。</p>
 
   <div class="row" style="margin-top:12px"><span class="k"><span id="dbDot" class="dot off"></span>深度伪装启动状态</span><span class="v" id="deepBlState">-</span></div>
   <div class="row"><span class="k">挂载隐藏支撑</span><span class="v" id="hiderState">-</span></div>
@@ -388,6 +418,8 @@ async function refresh(){
   var mh=s.MOUNT_HIDER||'none';
   document.getElementById('hiderState').textContent=(mh==='none')?'无（深度伪装不可用）':mh;
   document.getElementById('abnPaths').textContent='清理范围：'+(s.ABNORMAL_PATHS||'-');
+  var ttN=parseInt(s.TT_COUNT||'0',10)||0;
+  document.getElementById('ttState').textContent=(s.TT_EXISTS==='1')?(ttN+' 行'):'不存在（未装 TEESimulator？）';
 
   // 附属模块更新检查结果
   var need=parseInt(s.UPDATE_NEED||'0',10)||0;
@@ -854,6 +886,105 @@ async function cleanAbnormal(){
   busy('btnClean',false);
 }
 
+// ---- 应用选择器（appinfo.dex / 兜底包名）----
+var APPS=[];
+var APPS_SRC='';
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+
+function appsRender(){
+  var q=(document.getElementById('appSearch').value||'').trim().toLowerCase();
+  var box=document.getElementById('appList');
+  var list=APPS.filter(function(a){
+    if(!q)return true;
+    return (a.label||'').toLowerCase().indexOf(q)>=0 || a.pkg.toLowerCase().indexOf(q)>=0;
+  });
+  if(!list.length){
+    box.innerHTML='<div class="appempty">'+(APPS.length?'没有匹配的应用':'点「扫描应用」列出已安装应用')+'</div>';
+    return;
+  }
+  var h='';
+  for(var i=0;i<list.length;i++){
+    var a=list[i], tags=a.tags||'', tg='';
+    if(tags.indexOf('xposed')>=0)tg+='<span class="tag">LSPosed</span>';
+    if(tags.indexOf('system')>=0)tg+='<span class="tag">系统</span>';
+    h+='<label class="approw"><input type="checkbox" data-pkg="'+esc(a.pkg)+'"'+(a.checked?' checked':'')+'>'
+      +'<span class="txt"><span class="nm">'+esc(a.label||a.pkg)+'</span><span class="pk">'+esc(a.pkg)+'</span></span>'
+      +tg+'</label>';
+  }
+  box.innerHTML=h;
+}
+
+async function appsLoad(){
+  busy('btnAppsLoad',true,'扫描中...');
+  try{
+    var out=(await exec(MODDIR+'/webui.sh apps-list')).stdout||'';
+    var m=out.match(/---APPS-BEGIN---\n([\s\S]*?)\n---APPS-END---/);
+    APPS_SRC=(out.match(/APPS_SOURCE=(\w+)/)||[])[1]||'';
+    APPS=[];
+    if(m){
+      var lines=m[1].split('\n');
+      for(var i=0;i<lines.length;i++){
+        if(!lines[i])continue;
+        var p=lines[i].split('\t');
+        if(!p[0])continue;
+        APPS.push({pkg:p[0],label:p[1]||p[0],tags:p[2]||'',checked:false});
+      }
+    }
+    document.getElementById('appsSrc').textContent=APPS.length
+      ?(APPS.length+' 个'+(APPS_SRC==='fallback'?'（兜底：只有包名）':''))
+      :'未扫描';
+    appsRender();
+    log(APPS.length?('已扫描到 '+APPS.length+' 个应用'+(APPS_SRC==='fallback'?'（appinfo 不可用，退回包名）':'')):'没扫到应用','ok');
+  }catch(e){log('扫描异常: '+e.message,'err');}
+  busy('btnAppsLoad',false);
+}
+
+function appsSelected(){
+  return APPS.filter(function(a){return a.checked;}).map(function(a){return a.pkg;});
+}
+
+function appsSelectXposed(){
+  if(!APPS.length){log('先点「扫描应用」','err');return;}
+  var n=0;
+  APPS.forEach(function(a){
+    var x=(a.tags||'').indexOf('xposed')>=0;
+    a.checked=x;
+    if(x)n++;
+  });
+  appsRender();
+  log(n?('已勾选 '+n+' 个 LSPosed 模块'):'没发现 LSPosed 模块（或 appinfo 不可用）',n?'ok':'err');
+}
+
+async function appsToHide(){
+  var sel=appsSelected();
+  if(!sel.length){log('先在上面的列表里勾选应用','err');return;}
+  var box=document.getElementById('hideAppsBox');
+  var cur=box.value.split(/[\s,;]+/).filter(function(x){return x;});
+  var add=sel.filter(function(p){return cur.indexOf(p)<0;});
+  box.value=cur.concat(add).join('\n');
+  log('已把 '+add.length+' 个新包填进隐藏列表，正在保存…','info');
+  await hideAppsSave();
+}
+
+async function appsToTarget(){
+  var sel=appsSelected();
+  if(!sel.length){log('先在上面的列表里勾选应用','err');return;}
+  busy('btnAppsToTarget',true,'追加中...');
+  try{
+    var b64=btoa(unescape(encodeURIComponent(sel.join('\n'))));
+    var out=(await exec(MODDIR+'/webui.sh target-txt-add '+b64)).stdout||'';
+    var n=(out.match(/TT_ADD=(\d+)/)||[])[1];
+    if(n===undefined){
+      log('追加失败：'+((out.match(/TT_ADD=FAIL\((.*?)\)/)||[])[1]||out.trim()||'未知错误'),'err');
+    }else{
+      log('target.txt 追加 '+n+' 个包（现共 '+((out.match(/TT_COUNT=(\d+)/)||[])[1]||'?')+' 行）','ok');
+    }
+  }catch(e){log('追加异常: '+e.message,'err');}
+  busy('btnAppsToTarget',false);
+  await refresh();
+}
+
 document.getElementById('themeBtn').onclick=toggleTheme;
 document.getElementById('autoSwitch').onclick=toggleAuto;
 document.getElementById('btnFetch').onclick=manualFetch;
@@ -880,6 +1011,17 @@ document.getElementById('hideAppsSwitch').onclick=toggleHideApps;
 document.getElementById('btnDeepBl').onclick=deepBlNow;
 document.getElementById('deepBlSwitch').onclick=toggleDeepBl;
 document.getElementById('btnClean').onclick=cleanAbnormal;
+document.getElementById('btnAppsLoad').onclick=appsLoad;
+document.getElementById('btnAppsXposed').onclick=appsSelectXposed;
+document.getElementById('btnAppsToHide').onclick=appsToHide;
+document.getElementById('btnAppsToTarget').onclick=appsToTarget;
+document.getElementById('appSearch').oninput=appsRender;
+document.getElementById('appList').addEventListener('change',function(e){
+  var t=e.target;
+  if(!t||t.type!=='checkbox')return;
+  var p=t.getAttribute('data-pkg');
+  for(var i=0;i<APPS.length;i++){if(APPS[i].pkg===p){APPS[i].checked=t.checked;break;}}
+});
 
 // 检查间隔分段按钮
 (function(){

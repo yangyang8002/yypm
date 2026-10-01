@@ -390,6 +390,120 @@ clean_abnormal() {
     return 0
 }
 
+# ---- 3. 应用列表（借用系统自己的 PackageManager）----
+# 应用名只存在 APK 的 resources.arsc 里；pm / dumpsys 只给 labelRes=0x7f... 这种资源 id，
+# 纯 shell 解不出来。而 Android 11+ 的包可见性限制（<queries> / QUERY_ALL_PACKAGES）
+# 只约束普通应用，root 本来就无视它 —— 我们缺的从来不是"列表权限"，是"名字解析"。
+# 所以直接让系统替我们解析：把 appinfo.dex 跑在 app_process 里（TEESimulator 同款做法），
+# 一次 getInstalledPackages + getApplicationLabel 就拿到全部应用与本地化名称，几乎零 I/O。
+APPINFO_DEX="$MODDIR/appinfo.dex"
+
+# 跑 appinfo.dex；成功时输出 pkg<TAB>label<TAB>tags
+appinfo_run() {
+    [ -f "$APPINFO_DEX" ] || return 1
+    mkdir -p "$TMP" 2>/dev/null
+    local bin out
+    # APPINFO_BIN 只给测试用；留空则按 64/默认/32 位顺序找
+    for bin in ${APPINFO_BIN:-} /system/bin/app_process64 /system/bin/app_process /system/bin/app_process32; do
+        [ -x "$bin" ] || continue
+        out=$("$bin" -Djava.class.path="$APPINFO_DEX" "$MODDIR" --nice-name=yypm-appinfo AppInfo 2>"$TMP/appinfo.err")
+        # 认自家的结束标记，避免把 app_process 的告警当成结果
+        case "$out" in *'#mode='*) printf '%s\n' "$out"; return 0 ;; esac
+    done
+    return 1
+}
+
+# zip 条目列表（unzip -> busybox -> toybox，与 zip_prop 同一套兜底）
+zip_list() { # $1 zip file
+    local z="$1" out="" c
+    [ -f "$z" ] || return 1
+    if command -v unzip >/dev/null 2>&1; then
+        out=$(unzip -l "$z" 2>/dev/null | grep -E 'META-INF/xposed/|assets/xposed_init' | head -1)
+        [ -n "$out" ] && { printf '%s\n' "$out"; return 0; }
+    fi
+    for c in busybox toybox; do
+        command -v "$c" >/dev/null 2>&1 || continue
+        "$c" --list 2>/dev/null | grep -qx unzip || continue
+        out=$("$c" unzip -l "$z" 2>/dev/null | grep -E 'META-INF/xposed/|assets/xposed_init' | head -1)
+        [ -n "$out" ] && { printf '%s\n' "$out"; return 0; }
+    done
+    return 1
+}
+
+# LSPosed 模块的 APK 里有 META-INF/xposed/（新版）；旧式 Xposed 模块有 assets/xposed_init
+apk_is_xposed() {
+    zip_list "$1" >/dev/null 2>&1
+}
+
+# 兜底：拿不到 Context 时只剩包名，LSPosed 标记靠扫 zip（慢，且只看第三方应用）
+apps_list_fallback() {
+    local pm; pm=$(pm_bin) || return 1
+    local line apk pkg tags
+    "$pm" list packages -f -3 2>/dev/null | while IFS= read -r line; do
+        apk=${line#package:}; apk=${apk%=*}; pkg=${line##*=}
+        [ -n "$pkg" ] || continue
+        tags=""
+        apk_is_xposed "$apk" && tags="xposed"
+        printf '%s\t%s\t%s\n' "$pkg" "$pkg" "$tags"
+    done
+}
+
+# 输出：APPS_SOURCE / APPS_COUNT + ---APPS-BEGIN--- 与 ---APPS-END--- 之间的 TSV
+apps_list() {
+    local out
+    if out=$(appinfo_run); then
+        printf 'APPS_SOURCE=appinfo\n'
+        out=$(printf '%s\n' "$out" | grep -v '^#mode=')
+    else
+        log "[!] appinfo 不可用（app_process 或 dex 缺失），退回包名列表"
+        printf 'APPS_SOURCE=fallback\n'
+        out=$(apps_list_fallback)
+    fi
+    printf 'APPS_COUNT=%s\n' "$(printf '%s\n' "$out" | grep -c .)"
+    printf '%s\n' '---APPS-BEGIN---'
+    printf '%s\n' "$out"
+    printf '%s\n' '---APPS-END---'
+    return 0
+}
+
+# ---- 4. TEESimulator / TrickyStore 的目标清单 ----
+# TEESimulator-RS 没有 WebUI（包内搜不到 WebUI/webroot），"勾选"其实就是编辑这个文件：
+# 一行一个包名。列进去的应用，密钥认证请求才走模拟；不在清单里的直通真实 TEE。
+TT_FILE="/data/adb/tricky_store/target.txt"
+
+target_txt_show() {
+    if [ ! -f "$TT_FILE" ]; then
+        echo "TT_EXISTS=0"
+        echo "TT_COUNT=0"
+        return 0
+    fi
+    echo "TT_EXISTS=1"
+    echo "TT_COUNT=$(grep -cv '^[[:space:]]*$' "$TT_FILE" 2>/dev/null)"
+    printf '%s\n' '---TT-BEGIN---'
+    cat "$TT_FILE" 2>/dev/null
+    printf '%s\n' '---TT-END---'
+    return 0
+}
+
+# 只追加、不覆盖：已存在的行原样保留，改前备份
+target_txt_add() { # stdin: 包名列表（逗号/空白分隔都行）
+    local list; list=$(hide_apps_normalize)
+    [ -n "$list" ] || { echo "TT_ADD=EMPTY"; return 1; }
+    mkdir -p "$(dirname "$TT_FILE")" 2>/dev/null
+    if [ -f "$TT_FILE" ]; then
+        cp -f "$TT_FILE" "$TT_FILE.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null
+    fi
+    touch "$TT_FILE" 2>/dev/null
+    local n=0 p
+    for p in $list; do
+        grep -qxF "$p" "$TT_FILE" 2>/dev/null && continue
+        printf '%s\n' "$p" >> "$TT_FILE" && n=$((n + 1))
+    done
+    log "[✓] 目标清单追加 $n 个包（共 $(grep -cv '^[[:space:]]*$' "$TT_FILE" 2>/dev/null) 行）"
+    echo "TT_ADD=$n"
+    return 0
+}
+
 # ---- 获取并挂载 keybox（manifest -> 判断有无变化 -> 校验 -> 验签 -> 写 tricky_store）----
 # 省流量：manifest 里已带 keybox 的 sha256，先比 sha256；本地缓存已是同一份就
 # 跳过下载（12.6KB -> 0），签名仍会重验一遍（成本低且更安全）。
@@ -913,6 +1027,14 @@ echo_status() {
     echo "HIDE_APPS_APPLIED=$(hide_apps_applied)"
     echo "HIDE_APPS_LIST=$(cfg_get hide_apps '')"
     echo "DEEP_BL=$(cfg_get deep_bl off)"
+    # TEESimulator / TrickyStore 的目标清单（只读统计，别在这里改文件）
+    if [ -f "$TT_FILE" ]; then
+        echo "TT_EXISTS=1"
+        echo "TT_COUNT=$(grep -cv '^[[:space:]]*$' "$TT_FILE" 2>/dev/null)"
+    else
+        echo "TT_EXISTS=0"
+        echo "TT_COUNT=0"
+    fi
     local _mh; _mh=$(mount_hider_present) || _mh="none"
     echo "MOUNT_HIDER=$_mh"
     echo "ABNORMAL_PATHS=$(cfg_get abnormal_paths "$ABNORMAL_DEFAULT")"

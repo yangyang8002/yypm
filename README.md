@@ -22,6 +22,27 @@ WebUI 新增「环境对抗」卡片，用于应对「春秋检测」这类环�
 - **深度伪装启动状态**：伪装 `/proc/cmdline`、`/proc/bootconfig`；需要 Shamiko/SUSFS 支撑，
   没有支撑时不会硬改（bind mount 会在 mountinfo 里留下劫持痕迹）
 
+## 应用名解析（AppInfo.java）
+
+Android 的 `pm` / `dumpsys` **不输出应用显示名**，只给 `labelRes=0x7f...` 这种资源 id；
+而 Android 11+ 的包可见性限制只约束普通应用，root 不受限。所以这里让系统自己解析：
+把 `AppInfo.java` 编译成 `appinfo.dex`，用 `app_process` 跑起来（root），
+一次 `getInstalledPackages` + `getApplicationLabel` 就拿到全部应用与本地化名称。
+
+```bash
+javac --release 11 -d build/classes AppInfo.java
+java -cp r8.jar com.android.tools.r8.D8 --release --min-api 29 --output build/dex build/classes/AppInfo.class
+cp build/dex/classes.dex appinfo.dex
+```
+
+产出约 5 KB。运行：
+
+```bash
+app_process -Djava.class.path=/data/adb/modules/yypm/appinfo.dex /data/adb/modules/yypm --nice-name=yypm-appinfo AppInfo
+```
+
+拿不到系统 Context 时（个别 ROM）会退回只输出包名，调用方再退回 `pm list packages`。
+
 ## 目录
 
 ```

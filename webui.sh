@@ -369,6 +369,30 @@ case "${1:-status}" in
         log "[·] 自动深度伪装已设为 ${2}"
         echo "DEEP_BL=$2"
         ;;
+    apps-list)
+        # 全部应用 + 本地化应用名 + LSPosed 模块标记（TSV，见 common.sh 的 apps_list）
+        apps_list
+        ;;
+    apps-list-clear)
+        # 清掉 appinfo 的缓存（改了隐藏状态后强制重新枚举）
+        rm -f "$TMP/appinfo.cache" 2>/dev/null
+        echo "APPS_CACHE=CLEARED"
+        ;;
+    target-txt)
+        # 只读预览 TEESimulator / TrickyStore 的目标清单
+        target_txt_show
+        ;;
+    target-txt-add)
+        # 参数是 base64 编码的包名列表；只追加，不覆盖
+        [ -n "${2:-}" ] || { echo "TT_ADD=FAIL(无内容)"; exit 1; }
+        mkdir -p "$TMP" 2>/dev/null
+        if ! echo "$2" | base64 -d > "$TMP/tt_in.txt" 2>/dev/null; then
+            echo "TT_ADD=FAIL(base64 解码失败)"
+            exit 1
+        fi
+        target_txt_add < "$TMP/tt_in.txt"
+        echo "TT_COUNT=$(grep -cv '^[[:space:]]*$' "$TT_FILE" 2>/dev/null || echo 0)"
+        ;;
 
     status|*)
         echo_status
