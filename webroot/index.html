@@ -364,6 +364,15 @@ function exec(cmd){
   return import('kernelsu').then(function(m){return m.exec(cmd);}).catch(function(e){return {errno:-1,stdout:'',stderr:String(e&&e.message||e)};});
 }
 
+// exec 的客户端超时兜底：服务端已经加了 timeout，但万一 su 这条链路本身不返回，
+// 也不能让按钮永远卡在"扫描中"（上一版就是这样把界面卡死的）。
+function execT(cmd,ms){
+  return Promise.race([
+    exec(cmd),
+    new Promise(function(res){setTimeout(function(){res({errno:-3,stdout:'',stderr:'timeout'});},ms||30000);})
+  ]);
+}
+
 function parseKv(t){var m={};(t||'').split('\n').forEach(function(l){var i=l.indexOf('=');if(i>0)m[l.slice(0,i).trim()]=l.slice(i+1).trim();});return m;}
 
 // 版本号可能已经自带 v（module.prop 里就是 v2.1.4），避免显示成 vv2.1.4
@@ -918,7 +927,14 @@ function appsRender(){
 async function appsLoad(){
   busy('btnAppsLoad',true,'扫描中...');
   try{
-    var out=(await exec(MODDIR+'/webui.sh apps-list')).stdout||'';
+    var r=await execT(MODDIR+'/webui.sh apps-list',30000);
+    var out=r.stdout||'';
+    if(!out && r.errno<0){
+      log('扫描被中断或超时（errno '+r.errno+'），已放弃；界面可以继续用','err');
+      log('诊断：/data/adb/yypm/tmp/appinfo.err 和「运行日志」','info');
+      busy('btnAppsLoad',false);
+      return;
+    }
     var m=out.match(/---APPS-BEGIN---\n([\s\S]*?)\n---APPS-END---/);
     APPS_SRC=(out.match(/APPS_SOURCE=(\w+)/)||[])[1]||'';
     APPS=[];
@@ -930,6 +946,8 @@ async function appsLoad(){
         if(!p[0])continue;
         APPS.push({pkg:p[0],label:p[1]||p[0],tags:p[2]||'',checked:false});
       }
+      // 防御：万一输出被污染成超长列表，别把 WebView 渲染到假死
+      if(APPS.length>3000){log('应用数异常（'+APPS.length+'），只显示前 3000 个','err');APPS=APPS.slice(0,3000);}
     }
     document.getElementById('appsSrc').textContent=APPS.length
       ?(APPS.length+' 个'+(APPS_SRC==='fallback'?'（兜底：只有包名）':''))
@@ -944,16 +962,35 @@ function appsSelected(){
   return APPS.filter(function(a){return a.checked;}).map(function(a){return a.pkg;});
 }
 
-function appsSelectXposed(){
+async function appsSelectXposed(){
   if(!APPS.length){log('先点「扫描应用」','err');return;}
-  var n=0;
-  APPS.forEach(function(a){
-    var x=(a.tags||'').indexOf('xposed')>=0;
-    a.checked=x;
-    if(x)n++;
-  });
-  appsRender();
-  log(n?('已勾选 '+n+' 个 LSPosed 模块'):'没发现 LSPosed 模块（或 appinfo 不可用）',n?'ok':'err');
+  // appinfo 模式：标记已经在列表里，直接用
+  if(APPS_SRC==='appinfo'){
+    var n=0;
+    APPS.forEach(function(a){var x=(a.tags||'').indexOf('xposed')>=0;a.checked=x;if(x)n++;});
+    appsRender();
+    log(n?('已勾选 '+n+' 个 LSPosed 模块'):'没发现 LSPosed 模块',n?'ok':'err');
+    return;
+  }
+  // 兜底模式：没有标记，需要按需扫 APK（慢，所以不放在扫描应用里）
+  busy('btnAppsXposed',true,'识别中...');
+  try{
+    var r=await execT(MODDIR+'/webui.sh apps-xposed',60000);
+    var out=r.stdout||'';
+    if(!out && r.errno<0){log('识别被中断或超时（errno '+r.errno+'）','err');busy('btnAppsXposed',false);return;}
+    var m=out.match(/---XP-BEGIN---\n([\s\S]*?)\n---XP-END---/);
+    var set={};
+    if(m){m[1].split('\n').forEach(function(p){if(p)set[p]=1;});}
+    var n2=0;
+    APPS.forEach(function(a){
+      var x=!!set[a.pkg];
+      if(x){a.tags='xposed';a.checked=true;n2++;}
+      else{a.checked=false;}
+    });
+    appsRender();
+    log(n2?('已勾选 '+n2+' 个 LSPosed 模块（兜底扫描）'):'没发现 LSPosed 模块',n2?'ok':'err');
+  }catch(e){log('识别异常: '+e.message,'err');}
+  busy('btnAppsXposed',false);
 }
 
 async function appsToHide(){

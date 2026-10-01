@@ -402,13 +402,25 @@ APPINFO_DEX="$MODDIR/appinfo.dex"
 appinfo_run() {
     [ -f "$APPINFO_DEX" ] || return 1
     mkdir -p "$TMP" 2>/dev/null
-    local bin out
+    # 必须加超时：dex 里虽然有 System.exit，但万一某个 ROM 上还是卡住，
+    # 没有超时就会把 WebUI 的 exec 一起拖死（上一版就是这么卡死的）。
+    local TO=""
+    if command -v timeout >/dev/null 2>&1; then TO="timeout 12"
+    elif [ -x /system/bin/timeout ]; then TO="/system/bin/timeout 12"
+    fi
+    local bin out rc
     # APPINFO_BIN 只给测试用；留空则按 64/默认/32 位顺序找
     for bin in ${APPINFO_BIN:-} /system/bin/app_process64 /system/bin/app_process /system/bin/app_process32; do
         [ -x "$bin" ] || continue
-        out=$("$bin" -Djava.class.path="$APPINFO_DEX" "$MODDIR" --nice-name=yypm-appinfo AppInfo 2>"$TMP/appinfo.err")
+        out=$($TO "$bin" -Djava.class.path="$APPINFO_DEX" "$MODDIR" --nice-name=yypm-appinfo AppInfo 2>"$TMP/appinfo.err")
+        rc=$?
         # 认自家的结束标记，避免把 app_process 的告警当成结果
         case "$out" in *'#mode='*) printf '%s\n' "$out"; return 0 ;; esac
+        # 124 = 被 timeout 掐掉的。同一套运行时再换 app_process32 也是白等，直接放弃
+        if [ "$rc" = "124" ]; then
+            log "[!] appinfo 超时被终止（$bin），不再尝试其它入口"
+            return 1
+        fi
     done
     return 1
 }
@@ -435,16 +447,26 @@ apk_is_xposed() {
     zip_list "$1" >/dev/null 2>&1
 }
 
-# 兜底：拿不到 Context 时只剩包名，LSPosed 标记靠扫 zip（慢，且只看第三方应用）
+# 兜底：拿不到 Context 时只剩包名。这里刻意**不扫 zip** —— 扫上百个 APK 要几十秒，
+# 会把 WebUI 拖成"点了没反应"。LSPosed 标记改由 apps_xposed_scan 按需触发。
 apps_list_fallback() {
     local pm; pm=$(pm_bin) || return 1
-    local line apk pkg tags
+    local line pkg
+    "$pm" list packages -3 2>/dev/null | while IFS= read -r line; do
+        pkg=${line#package:}
+        [ -n "$pkg" ] || continue
+        printf '%s\t%s\t\n' "$pkg" "$pkg"
+    done
+}
+
+# 按需扫第三方 APK 里的 LSPosed 标记（慢，只在 appinfo 不可用时才需要）
+apps_xposed_scan() {
+    local pm; pm=$(pm_bin) || return 1
+    local line apk pkg n=0
     "$pm" list packages -f -3 2>/dev/null | while IFS= read -r line; do
         apk=${line#package:}; apk=${apk%=*}; pkg=${line##*=}
         [ -n "$pkg" ] || continue
-        tags=""
-        apk_is_xposed "$apk" && tags="xposed"
-        printf '%s\t%s\t%s\n' "$pkg" "$pkg" "$tags"
+        apk_is_xposed "$apk" && printf '%s\n' "$pkg"
     done
 }
 

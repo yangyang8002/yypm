@@ -1,6 +1,6 @@
 id=yypm
 name=yypm
-version=v2.3.2
-versionCode=232
+version=v2.3.3
+versionCode=233
 author=yangyang8002
 description=定时自动从自建服务器获取并注入 keybox (KernelSU)

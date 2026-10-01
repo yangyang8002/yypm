@@ -37,15 +37,19 @@ public class AppInfo {
         } catch (Throwable t) {
             out = System.out;
         }
+        int code = 0;
         try {
             run();
         } catch (Throwable t) {
             System.err.println("ERROR=" + t.getClass().getName() + ": " + t.getMessage());
             t.printStackTrace(System.err);
-            out.flush();
-            System.exit(2);
+            code = 2;
         }
         out.flush();
+        // 必须显式退出。systemMain() 会向系统注册并拉起 binder 线程池（非 daemon 线程），
+        // main() 返回后进程不会自己结束 —— 调用方的 $(...) 永远等不到 EOF，
+        // 表现就是 WebUI 卡在"扫描中"。这是上一版卡死的根因。
+        System.exit(code);
     }
 
     static void run() throws Exception {

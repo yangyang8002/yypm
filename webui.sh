@@ -373,6 +373,14 @@ case "${1:-status}" in
         # 全部应用 + 本地化应用名 + LSPosed 模块标记（TSV，见 common.sh 的 apps_list）
         apps_list
         ;;
+    apps-xposed)
+        # 兜底模式下按需识别 LSPosed 模块（要扫 APK，慢）
+        n=$(apps_xposed_scan | wc -l | tr -d ' ')
+        echo "APPS_XPOSED_COUNT=$n"
+        printf '%s\n' '---XP-BEGIN---'
+        apps_xposed_scan
+        printf '%s\n' '---XP-END---'
+        ;;
     apps-list-clear)
         # 清掉 appinfo 的缓存（改了隐藏状态后强制重新枚举）
         rm -f "$TMP/appinfo.cache" 2>/dev/null
