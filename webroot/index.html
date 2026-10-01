@@ -125,6 +125,8 @@ input.appsearch:focus{border-color:var(--primary)}
 .approw{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--outline-variant)}
 .approw:last-child{border-bottom:none}
 .approw input{width:18px;height:18px;flex-shrink:0;accent-color:var(--primary)}
+.approw .ico{width:34px;height:34px;border-radius:9px;flex-shrink:0;object-fit:contain;
+  background:var(--surface-variant);padding:2px}
 .approw .txt{flex:1;min-width:0}
 .approw .nm{display:block;font-size:13.5px;color:var(--on-surface);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .approw .pk{display:block;font-family:ui-monospace,monospace;font-size:11px;color:var(--on-surface-variant);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -237,6 +239,7 @@ input.appsearch:focus{border-color:var(--primary)}
   <div class="row2">
     <button class="btn ghost" id="btnAppsLoad"><span>🔍</span> 扫描应用</button>
     <button class="btn ghost" id="btnAppsXposed"><span>🧩</span> 只选 LSPosed 模块</button>
+    <button class="btn ghost" id="btnAppsDiag"><span>🩺</span> 诊断 appinfo</button>
   </div>
   <input class="appsearch" id="appSearch" placeholder="搜索应用名或包名…">
   <div class="applist" id="appList"><div class="appempty">点「扫描应用」列出已安装应用</div></div>
@@ -915,13 +918,31 @@ function appsRender(){
   var h='';
   for(var i=0;i<list.length;i++){
     var a=list[i], tags=a.tags||'', tg='';
+    var lbl=a.label||a.pkg, same=(lbl===a.pkg);
     if(tags.indexOf('xposed')>=0)tg+='<span class="tag">LSPosed</span>';
     if(tags.indexOf('system')>=0)tg+='<span class="tag">系统</span>';
+    // 图标由 appinfo.dex 渲染成 PNG 落在 webroot/icons/ 下；取不到就淡出，不留破图
     h+='<label class="approw"><input type="checkbox" data-pkg="'+esc(a.pkg)+'"'+(a.checked?' checked':'')+'>'
-      +'<span class="txt"><span class="nm">'+esc(a.label||a.pkg)+'</span><span class="pk">'+esc(a.pkg)+'</span></span>'
+      +'<img class="ico" src="icons/'+esc(a.pkg)+'.png" alt="" onerror="this.style.opacity=0">'
+      +'<span class="txt"><span class="nm">'+esc(lbl)+'</span>'
+      +(same?'':'<span class="pk">'+esc(a.pkg)+'</span>')+'</span>'
       +tg+'</label>';
   }
   box.innerHTML=h;
+}
+
+// 一键诊断：把 app_process / dex / 报错全打出来，省得反复猜
+async function appsDiag(){
+  busy('btnAppsDiag',true,'诊断中...');
+  try{
+    var r=await execT(MODDIR+'/webui.sh apps-diag',40000);
+    var out=(r.stdout||'')+(r.stderr?('\n'+r.stderr):'');
+    log('===== appinfo 诊断开始 =====','info');
+    var ls=out.split('\n');
+    for(var i=0;i<ls.length && i<80;i++){ if(ls[i]) log(ls[i],'info'); }
+    log('===== appinfo 诊断结束（把上面这段发给我）=====','ok');
+  }catch(e){log('诊断异常: '+e.message,'err');}
+  busy('btnAppsDiag',false);
 }
 
 async function appsLoad(){
@@ -1050,6 +1071,7 @@ document.getElementById('deepBlSwitch').onclick=toggleDeepBl;
 document.getElementById('btnClean').onclick=cleanAbnormal;
 document.getElementById('btnAppsLoad').onclick=appsLoad;
 document.getElementById('btnAppsXposed').onclick=appsSelectXposed;
+document.getElementById('btnAppsDiag').onclick=appsDiag;
 document.getElementById('btnAppsToHide').onclick=appsToHide;
 document.getElementById('btnAppsToTarget').onclick=appsToTarget;
 document.getElementById('appSearch').oninput=appsRender;

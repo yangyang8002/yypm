@@ -394,16 +394,19 @@ clean_abnormal() {
 # 应用名只存在 APK 的 resources.arsc 里；pm / dumpsys 只给 labelRes=0x7f... 这种资源 id，
 # 纯 shell 解不出来。而 Android 11+ 的包可见性限制（<queries> / QUERY_ALL_PACKAGES）
 # 只约束普通应用，root 本来就无视它 —— 我们缺的从来不是"列表权限"，是"名字解析"。
-# 所以直接让系统替我们解析：把 appinfo.dex 跑在 app_process 里（TEESimulator 同款做法），
-# 一次 getInstalledPackages + getApplicationLabel 就拿到全部应用与本地化名称，几乎零 I/O。
+# 所以直接让系统替我们解析：把 appinfo.dex 跑在 app_process 里（TEESimulator 同款做法）。
+# v2.3.4 起 dex 不再依赖 ActivityThread.systemMain()（真机上它可能什么都不输出），
+# 改成 ActivityThread.getPackageManager() 拿服务 + 自己给每个 APK 建 Resources 解析 labelRes。
 APPINFO_DEX="$MODDIR/appinfo.dex"
+APPINFO_CLASS="com.yypm.appinfo.AppInfo"
+APPINFO_ICON_DIR="$MODDIR/webroot/icons"
 
 # 跑 appinfo.dex；成功时输出 pkg<TAB>label<TAB>tags
 appinfo_run() {
     [ -f "$APPINFO_DEX" ] || return 1
     mkdir -p "$TMP" 2>/dev/null
     # 必须加超时：dex 里虽然有 System.exit，但万一某个 ROM 上还是卡住，
-    # 没有超时就会把 WebUI 的 exec 一起拖死（上一版就是这么卡死的）。
+    # 没有超时就会把 WebUI 的 exec 一起拖死（v2.3.2 就是这么卡死的）。
     local TO=""
     if command -v timeout >/dev/null 2>&1; then TO="timeout 12"
     elif [ -x /system/bin/timeout ]; then TO="/system/bin/timeout 12"
@@ -412,17 +415,54 @@ appinfo_run() {
     # APPINFO_BIN 只给测试用；留空则按 64/默认/32 位顺序找
     for bin in ${APPINFO_BIN:-} /system/bin/app_process64 /system/bin/app_process /system/bin/app_process32; do
         [ -x "$bin" ] || continue
-        out=$($TO "$bin" -Djava.class.path="$APPINFO_DEX" "$MODDIR" --nice-name=yypm-appinfo AppInfo 2>"$TMP/appinfo.err")
+        # 1) -Djava.class.path（TEESimulator 同款）
+        out=$($TO "$bin" -Djava.class.path="$APPINFO_DEX" "$MODDIR" --nice-name=yypm-appinfo "$APPINFO_CLASS" --icons "$APPINFO_ICON_DIR" 2>"$TMP/appinfo.err")
         rc=$?
         # 认自家的结束标记，避免把 app_process 的告警当成结果
         case "$out" in *'#mode='*) printf '%s\n' "$out"; return 0 ;; esac
         # 124 = 被 timeout 掐掉的。同一套运行时再换 app_process32 也是白等，直接放弃
         if [ "$rc" = "124" ]; then
-            log "[!] appinfo 超时被终止（$bin），不再尝试其它入口"
+            log "[!] appinfo 超时被终止（$bin / -D 方式），不再尝试其它入口"
+            return 1
+        fi
+        # 2) CLASSPATH 环境变量（系统自带的 am / pm 就是这么起的，多留一条路）
+        out=$(CLASSPATH="$APPINFO_DEX" $TO "$bin" "$MODDIR" --nice-name=yypm-appinfo "$APPINFO_CLASS" --icons "$APPINFO_ICON_DIR" 2>"$TMP/appinfo.err")
+        rc=$?
+        case "$out" in *'#mode='*) printf '%s\n' "$out"; return 0 ;; esac
+        if [ "$rc" = "124" ]; then
+            log "[!] appinfo 超时被终止（$bin / CLASSPATH 方式），不再尝试其它入口"
             return 1
         fi
     done
     return 1
+}
+
+# 一次把诊断信息打全，省得反复猜
+apps_diag() {
+    echo "DIAG_SDK=$(getprop ro.build.version.sdk 2>/dev/null)"
+    echo "DIAG_ABI=$(getprop ro.product.cpu.abi 2>/dev/null)"
+    echo "DIAG_UID=$(id -u 2>/dev/null)"
+    echo "DIAG_MODDIR=$MODDIR"
+    if [ -f "$APPINFO_DEX" ]; then
+        echo "DIAG_DEX=ok size=$(wc -c <"$APPINFO_DEX" 2>/dev/null | tr -d ' ')"
+    else
+        echo "DIAG_DEX=MISSING path=$APPINFO_DEX"
+    fi
+    local b
+    for b in /system/bin/app_process64 /system/bin/app_process /system/bin/app_process32; do
+        if [ -x "$b" ]; then echo "DIAG_BIN=$b ok"; else echo "DIAG_BIN=$b missing"; fi
+    done
+    if command -v timeout >/dev/null 2>&1; then echo "DIAG_TIMEOUT=$(command -v timeout)"
+    elif [ -x /system/bin/timeout ]; then echo "DIAG_TIMEOUT=/system/bin/timeout"
+    else echo "DIAG_TIMEOUT=none"; fi
+    echo "DIAG_CLASS=$APPINFO_CLASS"
+    echo "---DIAG-OUT-BEGIN---"
+    appinfo_run || echo "(appinfo_run 返回非 0)"
+    echo "---DIAG-OUT-END---"
+    echo "---DIAG-ERR-BEGIN---"
+    [ -f "$TMP/appinfo.err" ] && head -c 4000 "$TMP/appinfo.err" 2>/dev/null
+    echo ""
+    echo "---DIAG-ERR-END---"
 }
 
 # zip 条目列表（unzip -> busybox -> toybox，与 zip_prop 同一套兜底）

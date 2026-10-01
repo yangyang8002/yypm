@@ -382,9 +382,13 @@ case "${1:-status}" in
         printf '%s\n' '---XP-END---'
         ;;
     apps-list-clear)
-        # 清掉 appinfo 的缓存（改了隐藏状态后强制重新枚举）
-        rm -f "$TMP/appinfo.cache" 2>/dev/null
+        # 清掉 appinfo 的图标缓存（改了隐藏状态后强制重新枚举）
+        rm -rf "$TMP/appinfo.cache" "$APPINFO_ICON_DIR" 2>/dev/null
         echo "APPS_CACHE=CLEARED"
+        ;;
+    apps-diag)
+        # 一键诊断：app_process 能不能起、dex 在不在、报什么错，全打出来
+        apps_diag
         ;;
     target-txt)
         # 只读预览 TEESimulator / TrickyStore 的目标清单
