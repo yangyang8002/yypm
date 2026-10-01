@@ -13,6 +13,15 @@ KernelSU 模块：自动获取 keybox 并挂载到 TEESimulator，附带隐藏 B
 - 从 GitHub Release 检查并下载更新
 - 自动下载服务端 `package.json` 清单里的所有模块
 
+## 环境对抗（v2.3.1）
+
+WebUI 新增「环境对抗」卡片，用于应对「春秋检测」这类环境检测：
+
+- **隐藏应用列表（可定制）**：`pm hide` 把指定包从其它应用可见的包列表里摘掉，可一键还原
+- **异常文件清理**：清掉 `/sdcard/MT2` 等落地目录，路径可配置
+- **深度伪装启动状态**：伪装 `/proc/cmdline`、`/proc/bootconfig`；需要 Shamiko/SUSFS 支撑，
+  没有支撑时不会硬改（bind mount 会在 mountinfo 里留下劫持痕迹）
+
 ## 目录
 
 ```
