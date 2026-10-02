@@ -2100,8 +2100,8 @@ ac_match_user() { # $1 = 模块 id
 # 原来的写法是把整个文件清单（find | tr）拉进变量再逐条子串匹配 —— 模块的
 # system/ 动辄上万个文件，这一步在真机上能把 WebUI 的 20 秒预算吃光，
 # 用户看到的就是「点了扫描没反应 / 没有输出」。
-ac_payload_hit() { # $1=模块目录 $2=特征表 -> 命中则输出说明
-    local dir="$1" table="$2" entry frag why hits f pat=""
+ac_payload_hit() { # $1=模块目录 $2=特征表 -> 命中则输出「说明 ← 文件名」
+    local dir="$1" table="$2" entry frag why hits f fb pat="" ok=""
     [ -d "$dir" ] || return 1
     local oldifs="$IFS"
     IFS='
@@ -2109,6 +2109,11 @@ ac_payload_hit() { # $1=模块目录 $2=特征表 -> 命中则输出说明
     for entry in $table; do
         [ -n "$entry" ] || continue
         frag="${entry%%|*}"
+        # 空片段会让 find 的模式退化成 **，也就是匹配一切。真机上就是它把
+        # module.prop 报成了「含 GameGuardian 核心库」。片段里带空白同理，
+        # 因为模式串是按空白分词后交给 find 的，一拆就散。
+        [ -n "$frag" ] || continue
+        case "$frag" in *" "*|*"	"*) continue ;; esac
         pat="$pat -o -iname *$frag*"
     done
     IFS="$oldifs"
@@ -2117,14 +2122,25 @@ ac_payload_hit() { # $1=模块目录 $2=特征表 -> 命中则输出说明
     # 关掉路径展开：否则 *ceserver* 这种会被当前目录里的同名文件顶掉
     local hadf=0; case "$- " in *f*) hadf=1 ;; esac
     set -f
-    hits=$(find "$dir" -maxdepth 3 -type f \( $pat \) 2>/dev/null | head -3)
+    hits=$(find "$dir" -maxdepth 3 -type f \( $pat \) 2>/dev/null | head -8)
     [ "$hadf" = "0" ] && set +f
     [ -n "$hits" ] || return 1
-    f=$(printf '%s\n' "$hits" | head -1 | tr 'A-Z' 'a-z')
-    why=$(ac_match_table "$f" "$table") || return 1
-    # 把真正命中的文件名一起带上。只报「目录含 GameGuardian 核心库」没法定位误报，
-    # 到底是哪个文件命中的必须看得见 —— 真机上就是靠这个才发现误判的。
-    printf '%s\n' "$why ← $(basename "$f")"
+    # find 只当粗筛，真正的判定在这里：拿【文件名】逐条比对特征串。
+    # 之前直接采信 find 的结果，模式串一旦被拆散就会退化成匹配一切，
+    # 于是 module.prop 这种文件也被报成实锤 —— 这一步是那个 bug 的根治。
+    IFS='
+'
+    for f in $hits; do
+        fb=$(basename "$f" | tr 'A-Z' 'a-z')
+        for entry in $table; do
+            frag="${entry%%|*}"
+            [ -n "$frag" ] || continue
+            case "$fb" in *"$frag"*) why="${entry#*|}"; ok="$f"; break 2 ;; esac
+        done
+    done
+    IFS="$oldifs"
+    [ -n "$ok" ] || return 1
+    printf '%s\n' "$why ← $(basename "$ok")"
 }
 
 ac_scan_payload() { ac_payload_hit "$1" "$(ac_payload_strong)"; }
