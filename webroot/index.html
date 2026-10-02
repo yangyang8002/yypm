@@ -479,12 +479,12 @@ html[data-lockdown="1"] #acBanner{
   <div class="row"><span class="k">上次检查</span><span class="v" id="modTime">-</span></div>
   <button class="btn" id="btnCheckMods"><svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg> 检查附属模块更新</button>
   <button class="btn ghost" id="btnInstallAll"><svg class="i" aria-hidden="true"><use href="#i-download"/></svg> 一键安装可更新的模块</button>
-  <p class="note">「检查」只检查不安装；标了自动装的组件（FuseFixer / HMA-OSS / Zygisk-Next）巡检时会自动装。「一键安装」把可更新与未安装的条目都装上：模块交给 ksud（重启生效）、应用交给 pm（立即生效）</p>
+  <p class="note">「检查」只检查不安装；标了自动装的组件（FuseFixer / HMA-OSS / Zygisk-Next）巡检时会自动装。「一键安装」把可更新与未安装的条目都装上：模块交给 ksud（重启生效）、应用交给 pm（立即生效）。HMA-OSS 装上后自动写好默认隐藏配置（对春秋等检测应用隐藏 MT/Scene/NP/Shizuku/各管理器/反挂作弊包，管理 App 里可查看修改）；旧组件 hma-uidfake 会被自动标记移除（重启清理）</p>
 </div>
 
 <div class="card">
   <h2>下载源连通性</h2>
-  <div id="healthBox"><div class="note">按实际取用顺序探测：镜像（jsDelivr 各边缘 + raw，下载前自动测速选最快）→ 主源 → GitHub API；点下面的按钮开始</div></div>
+  <div id="healthBox"><div class="note">按实际取用顺序探测：主源（清单必须新鲜）→ 镜像兜底（jsDelivr 各边缘 + raw，主源不可用时按测速顺序接管）→ GitHub API；点下面的按钮开始</div></div>
   <button class="btn ghost" id="btnHealth"><svg class="i" aria-hidden="true"><use href="#i-wifi"/></svg> 开始检测</button>
 </div>
 </div>

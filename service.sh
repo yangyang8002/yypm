@@ -47,6 +47,10 @@ run_cycle() {
     # 放在巡检末尾：fetch_keybox 已跑完，TrickyStore 目录与 keybox 都已就绪；
     # 与是否自动拉取无关（拉取关了清单也要维护），函数内部会自行判断目录是否存在。
     auto_target_known_apps
+    # HMA-OSS 自动配置（装完即用，不用打开管理 App 手配；名单变化自动跟进）
+    hma_oss_autocfg
+    # 清退被 HMA-OSS 取代的旧组件（hma-uidfake：打了 remove 标记，重启后由 KernelSU 清理）
+    cleanup_replaced_mods
     return 0
 }
 

@@ -146,8 +146,11 @@ api_url() { # $1 = action 名
 # 这就是敢用免费公共 CDN 的底气。镜像由 GitHub Actions 定时从主源拉取、
 # 验签后发布（.github/workflows/mirror.yml）：主源被攻击 / 宕机 / 被封时，
 # 客户端自动切镜像继续工作，自建服务器只剩 acreport 一个轻量职责。
-# 顺序：镜像在前（分担流量）-> 主源兜底（最新）。mirror_urls=off 整体关闭；
-# mirror_url_list="..." 自定义镜像列表（空格分隔，目录级 URL，不测速照单全收）。
+# 取用顺序（v2.8.3）：主源在前（清单必须新鲜；jsDelivr 分支解析缓存可达 12h 且
+# 实测钉在旧提交、purge 刷不掉 —— v2.8.2「更新了却毫无作用」的实锤根因）->
+# 镜像按测速顺序兜底（主源被攻击/宕机/被封时接管）-> GitHub API 最后。
+# 重载荷（模块 zip/组件包）直走 GitHub release/raw，镜像只兜小体量签名 JSON。
+# mirror_urls=off 整体关闭；mirror_url_list="..." 自定义镜像列表（不测速照单全收）。
 #
 # 镜像节点测速（v2.8.3）：不再写死 cdn.jsdelivr.net 一个边缘。jsDelivr 的公共边缘
 # （gcore / cdn / fastly / testingcf）+ raw 全部列为候选，拉取前对每个节点实测一次
@@ -245,6 +248,17 @@ mirror_file_of() { # $1=action
 # 依次尝试 镜像 -> 主源 下载某个 action。$1=action  $2=dest
 # stdout = 实际供源的 base；全部失败返回 1。内容可信度由调用方验签保证。
 api_fetch_any() {
+    # 顺序（v2.8.3 改）：主源在前 —— 清单/组件表这类小体量签名 JSON 必须新鲜。
+    # jsDelivr 对分支的解析缓存可达 12 小时、且会钉在旧提交上（实测：purge 只刷
+    # 文件层缓存，@mirror-data 仍解析到上一个 commit，v2.8.2「更新了却毫无作用」
+    # 的实锤根因）。重载荷（模块 zip / 组件包）本来就直走 GitHub release / raw，
+    # 不占镜像带宽；主源每轮只承担 ~20KB 的 JSON，挂前面换新鲜性稳赚。
+    # 主源被攻击/宕机/被封时，镜像按测速顺序接管兜底。
+    if download "$(api_url "$1")" "$2" >/dev/null 2>&1 && [ -s "$2" ]; then
+        dbg "api_fetch_any $1 <- 主源"
+        printf '%s\n' "${BASE_URL%/}"; return 0
+    fi
+    dbg "api_fetch_any $1: 主源不通，转镜像"
     local m f=""
     f=$(mirror_file_of "$1" 2>/dev/null)
     if [ -n "$f" ]; then
@@ -255,10 +269,6 @@ api_fetch_any() {
             fi
             dbg "api_fetch_any $1: 镜像 $m 不通"
         done
-    fi
-    if download "$(api_url "$1")" "$2" >/dev/null 2>&1 && [ -s "$2" ]; then
-        dbg "api_fetch_any $1 <- 主源"
-        printf '%s\n' "${BASE_URL%/}"; return 0
     fi
     dbg "api_fetch_any $1: 全部来源失败"
     return 1
@@ -588,6 +598,116 @@ risk_apps_autohide() {
     [ "$(cfg_get hide_apps_enable off)" = "on" ] || cfg_set hide_apps_enable on
     log "[!] 检测到风险应用（$(echo $added)）→ 已自动并入隐藏应用列表并生效（WebUI 可一键还原）"
     hide_apps_sync
+    return 0
+}
+
+# ---- 1.7 HMA-OSS 自动配置（v2.8.4：装完即用，不用打开管理 App 手配）----
+# 背景：HMA-OSS 的 zygisk 服务开机时读 /data/misc/hide_my_applist_<随机>/config.json
+# （HMAService.loadConfig；管理 App 只是编辑器）。装完没人打开管理 App 的话，配置
+# 永远是空的 —— 检测对抗等于没开。这里自动写一份够用的默认配置：对检测类应用
+# （默认春秋，hma_scope 可扩）隐藏风险应用（MT/Scene/NP/Shizuku/各管理器 +
+# 反挂 D 级作弊包 + 用户隐藏列表里的应用）。
+# 归属规则：配置里有我们的模板名（yypm-auto）才算我们写的；用户自己配过
+# （文件非空且无标记）绝不覆盖；用户删掉我们的模板后视为用户接管，不再重写。
+# configVersion 必须与服务端构建一致（oss-173 = 93），不符会被整份拒收。
+HMA_MOD_ID="hma_oss_zygisk"           # HMA-OSS 的模块 id（其 module.prop）
+HMA_TPL_NAME="yypm-auto"              # 我们的模板名 = 配置归属标记
+HMA_SCOPE_DEFAULT="com.chunqiuna"    # 默认拦截其包列表查询的检测应用（春秋）
+HMA_CONFIG_VERSION=93                   # oss-173 的 JsonConfig.configVersion
+HMA_MODULES_DIR="/data/adb/modules"           # 以下三项允许测试覆盖
+HMA_STAGED_DIR="/data/adb/modules_update"
+HMA_MISC_DIR="/data/misc"
+
+# HMA-OSS 数据目录（服务首次启动时自建）；没有 = 服务还没跑起来
+hma_data_dir() {
+    local d
+    for d in "$HMA_MISC_DIR"/hide_my_applist_*; do
+        [ -d "$d" ] && { echo "$d"; return 0; }
+    done
+    return 1
+}
+
+# 默认要隐藏的应用：内置风险应用 + 各管理器 + 反挂 D 级作弊包 + 用户隐藏列表
+hma_hidden_apps() {
+    {
+        echo bin.mt.plus                 # MT 管理器（春秋「风险应用」点名）
+        echo com.omarea.vtools           # Scene
+        echo com.wn.app.np               # NP 管理器
+        echo moe.shizuku.privileged.api  # Shizuku
+        echo org.frknkrc44.hma_oss       # HMA-OSS 管理器（藏好藏人的工具本身）
+        echo me.weishu.kernelsu          # KernelSU 管理器
+        echo org.lsposed.manager         # LSPosed 管理器（没装列着也无害）
+        echo io.github.a13e300.fusefixer
+        ac_cheat_pkgs 2>/dev/null | cut -d'|' -f1 | tr '\n' ' '
+        hide_apps_list 2>/dev/null | tr '\n' ' '
+    } | tr ' ' '\n' | grep -E '^[A-Za-z0-9_.]+$' | sort -u
+}
+
+# 生成整份配置 JSON（黑名单模板 + 每个 scope 条目挂模板）
+hma_build_config() {
+    local apps_json="" p first=1
+    for p in $(hma_hidden_apps); do
+        [ "$first" = "1" ] || apps_json="$apps_json,"
+        apps_json="$apps_json\"$p\""
+        first=0
+    done
+    local scope_json="" s sfirst=1
+    for s in $(cfg_get hma_scope "$HMA_SCOPE_DEFAULT"); do
+        [ -n "$s" ] || continue
+        [ "$sfirst" = "1" ] || scope_json="$scope_json,"
+        scope_json="$scope_json\"$s\":{\"useWhitelist\":false,\"excludeSystemApps\":true,\"applyTemplates\":[\"$HMA_TPL_NAME\"]}"
+        sfirst=0
+    done
+    printf '{"configVersion":%s,"templates":{"%s":{"isWhitelist":false,"appList":[%s]}},"scope":{%s}}\n' \
+        "$HMA_CONFIG_VERSION" "$HMA_TPL_NAME" "$apps_json" "$scope_json"
+}
+
+hma_oss_autocfg() {
+    [ "$(cfg_get hma_auto on)" = "off" ] && { dbg "HMA-OSS: hma_auto=off，跳过"; return 0; }
+    # 装了（生效区或待生效区）才有配置的意义
+    [ -d "$HMA_MODULES_DIR/$HMA_MOD_ID" ] || [ -d "$HMA_STAGED_DIR/$HMA_MOD_ID" ] \
+        || { dbg "HMA-OSS: 未安装，跳过"; return 0; }
+    local d
+    if ! d=$(hma_data_dir); then
+        # 服务还没建目录（刚装完没重启/没生效）：预建 + 先写好配置。
+        # 服务 searchDataDir 会认领已存在的 hide_my_applist_* 目录，首启即加载 —— 不多等一轮重启。
+        # 属主给 system(1000)：服务跑在 system_server 里，要往目录写 status/log。
+        d="$HMA_MISC_DIR/hide_my_applist_yypm"
+        mkdir -p "$d" 2>/dev/null || { dbg "HMA-OSS: 预建目录失败"; return 0; }
+        chown 1000:1000 "$d" 2>/dev/null
+        chmod 755 "$d" 2>/dev/null
+    fi
+    local cfg="$d/config.json"
+    if [ -s "$cfg" ] && ! grep -q "\"$HMA_TPL_NAME\"" "$cfg" 2>/dev/null; then
+        dbg "HMA-OSS: 用户已自行配置，不覆盖"
+        return 0
+    fi
+    local want; want=$(hma_build_config)
+    [ -s "$cfg" ] && [ "$(cat "$cfg" 2>/dev/null)" = "$(printf '%s' "$want")" ] \
+        && { dbg "HMA-OSS: 配置已是最新"; return 0; }
+    printf '%s' "$want" > "$cfg" 2>/dev/null || return 0
+    chmod 644 "$cfg" 2>/dev/null
+    log "[✓] HMA-OSS 已自动配置：对春秋等检测应用隐藏 $(hma_hidden_apps | grep -c . | tr -d ' ') 个风险应用（管理 App 里可查看修改，重启后生效）"
+    return 0
+}
+
+# ---- 1.8 旧组件自动清退：hma-uidfake（v2.8.4）----
+# 它盯的是 LSPosed 版 HMA 的私有配置（com.tsng.hidemyapplist/files/config.json），
+# 我们从没分发过 LSPosed 版 HMA —— 装上也永远 waiting for config；对抗面已被
+# HMA-OSS 完整替代。自动打 remove 标记交给 KernelSU 按标准流程清理（不硬删目录），
+# 生效区与待生效区都标；已标记过的不再重复（避免每轮刷日志）。
+cleanup_replaced_mods() {
+    local id d n=0
+    for id in hma-uidfake; do
+        for d in "$HMA_MODULES_DIR/$id" "$HMA_STAGED_DIR/$id"; do
+            [ -d "$d" ] || continue
+            [ -f "$d/remove" ] && continue
+            touch "$d/remove" 2>/dev/null || continue
+            n=$((n + 1))
+            log "[✓] 已标记移除被 HMA-OSS 取代的旧组件 $id（重启后清理）"
+        done
+    done
+    [ "$n" -gt 0 ] && echo "REPLACED_CLEAN=$n"
     return 0
 }
 
@@ -1506,9 +1626,10 @@ probe_source() { # $1 名称  $2 url
 
 health_check() {
     # 连通性检测必须测「客户端实际取用的那条链」，而不是挑两个顺手的地址：
-    # 顺序与 api_fetch_any 完全一致 —— 镜像在前（真实分担流量的路）-> 主源兜底 -> GitHub API。
-    # v2.8.2 及之前只测 主源+GitHub 两条，恰恰漏掉了客户端最先走的镜像 —— 现已对齐。
-    # mirror_urls=off 时不测镜像（与真实行为一致）。
+    # 顺序与 api_fetch_any 完全一致 —— 主源在前（清单必须新鲜）-> 镜像兜底（测速排序）-> GitHub API。
+    # v2.8.2 及之前只测 主源+GitHub 两条；jsDelivr 分支解析缓存钉旧提交实测在案，
+    # 主源前置正是为了绕开它。mirror_urls=off 时不测镜像（与真实行为一致）。
+    probe_source "主源（自建服务器）" "$(api_url manifest)"
     local m f h
     f=$(mirror_file_of manifest 2>/dev/null)
     if [ -n "$f" ]; then
@@ -1517,7 +1638,6 @@ health_check() {
             probe_source "镜像 ${h}" "$m/$f"
         done
     fi
-    probe_source "主源（自建服务器）" "$(api_url manifest)"
     probe_source "GitHub API（更新检查）" "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
 }
 
