@@ -147,15 +147,88 @@ api_url() { # $1 = action 名
 # 验签后发布（.github/workflows/mirror.yml）：主源被攻击 / 宕机 / 被封时，
 # 客户端自动切镜像继续工作，自建服务器只剩 acreport 一个轻量职责。
 # 顺序：镜像在前（分担流量）-> 主源兜底（最新）。mirror_urls=off 整体关闭；
-# mirror_url_list="..." 自定义镜像列表（空格分隔，目录级 URL）。
-MIRROR_URLS_DEFAULT="https://cdn.jsdelivr.net/gh/yourname/yypm@mirror-data/mirror https://raw.githubusercontent.com/yourname/yypm/mirror-data/mirror"
+# mirror_url_list="..." 自定义镜像列表（空格分隔，目录级 URL，不测速照单全收）。
+#
+# 镜像节点测速（v2.8.3）：不再写死 cdn.jsdelivr.net 一个边缘。jsDelivr 的公共边缘
+# （gcore / cdn / fastly / testingcf）+ raw 全部列为候选，拉取前对每个节点实测一次
+# manifest 往返延迟，按延迟排序取用 —— 最快的节点因设备网络而异，写死任何一个都是
+# 把慢路强加给一部分设备；gcore 排候选首位（国内可达性通常最好，慢/不可达会被测速淘汰）。
+# mirror_speed_test=off 关测速（退回静态顺序）；mirror_nodes 自定义候选节点；
+# mirror_test_ttl 测速缓存秒数（默认 86400：一天只测一次，不是每次拉取都测）。
+MIRROR_NODES_DEFAULT="gcore.jsdelivr.net cdn.jsdelivr.net fastly.jsdelivr.net testingcf.jsdelivr.net raw.githubusercontent.com"
+# 测速关闭/测速失败时的静态兜底顺序（gcore 在前）
+MIRROR_URLS_DEFAULT="https://gcore.jsdelivr.net/gh/yourname/yypm@mirror-data/mirror https://cdn.jsdelivr.net/gh/yourname/yypm@mirror-data/mirror https://raw.githubusercontent.com/yourname/yypm/mirror-data/mirror"
 
-mirror_urls() { # stdout：每行一个镜像 base（无尾斜杠）
-    [ "$(cfg_get mirror_urls on)" = "off" ] && return 0
+mirror_speed_test_enabled() { [ "$(cfg_get mirror_speed_test on)" != "off" ]; }
+
+# 静态默认顺序逐行输出（MIRROR_URLS_DEFAULT 是空格分隔的，别用 printf 一行全打）
+mirror_default_urls() {
     local m
-    for m in $(cfg_get mirror_url_list "$MIRROR_URLS_DEFAULT"); do
-        [ -n "$m" ] && printf '%s\n' "${m%/}"
+    for m in $MIRROR_URLS_DEFAULT; do printf '%s\n' "$m"; done
+}
+
+# 节点 -> 镜像 base：jsDelivr 系边缘共用 /gh/<repo>@<branch>/ 路径；raw 是独立源
+mirror_node_base() { # $1 = 节点域名
+    case "$1" in
+        raw.githubusercontent.com) echo "https://raw.githubusercontent.com/$GITHUB_REPO/mirror-data/mirror" ;;
+        *)                          echo "https://$1/gh/$GITHUB_REPO@mirror-data/mirror" ;;
+    esac
+}
+
+# 下载前测速（stdout：按延迟排序的 base，每行一个；不可达的按候选顺序垫底）。
+# 复用 probe_source（curl -> busybox wget -> toybox wget，含毫秒计时）：
+# 量的是「这台设备真实拉一次 manifest」的往返，不是纸面距离。
+mirror_speed_test() {
+    local node base out code ms ok_lines="" bad=""
+    local f; f=$(mirror_file_of manifest 2>/dev/null)
+    if [ -z "$f" ]; then mirror_default_urls; return 1; fi
+    for node in $(cfg_get mirror_nodes "$MIRROR_NODES_DEFAULT"); do
+        [ -n "$node" ] || continue
+        base=$(mirror_node_base "$node")
+        out=$(probe_source "node" "$base/$f")
+        code=$(printf '%s' "$out" | cut -d'|' -f2)
+        ms=$(printf '%s' "$out" | cut -d'|' -f3)
+        case "$code" in 200|204|304|301|302|307|308) ;; *) bad="$bad $base"; dbg "测速: $node 不可达($code)，垫底保留"; continue ;; esac
+        case "$ms" in ''|*[!0-9]*) ms=999999 ;; esac   # 可达但量不出延迟：排可达者末尾
+        ok_lines="$ok_lines$ms|$base
+"
+        dbg "测速: $node ${ms}ms"
     done
+    [ -n "$ok_lines" ] || { mirror_default_urls; return 1; }
+    printf '%s' "$ok_lines" | sort -n | cut -d'|' -f2
+    for base in $bad; do printf '%s\n' "$base"; done
+    return 0
+}
+
+# 测速排序结果缓存（默认 24h）：一天只测一次，拉取不重复等测速
+mirror_order_cached() {
+    local cache="$DATA_DIR/mirror_order.cache" stamp="$DATA_DIR/mirror_order.stamp"
+    if ! mirror_speed_test_enabled; then
+        mirror_default_urls                            # 关测速：静态顺序（gcore 优先）
+        return 0
+    fi
+    if [ -s "$cache" ] && [ -s "$stamp" ]; then
+        local st now ttl
+        st=$(cat "$stamp" 2>/dev/null); now=$(date +%s)
+        ttl=$(cfg_get mirror_test_ttl 86400)
+        case "$st" in ''|*[!0-9]*) ;; *) [ $((now - st)) -lt "$ttl" ] 2>/dev/null && { cat "$cache"; return 0; } ;; esac
+    fi
+    local ordered; ordered=$(mirror_speed_test)
+    mkdir -p "$DATA_DIR" 2>/dev/null
+    printf '%s\n' "$ordered" > "$cache" 2>/dev/null
+    date +%s > "$stamp" 2>/dev/null
+    printf '%s\n' "$ordered"
+}
+
+mirror_urls() { # stdout：每行一个镜像 base（无尾斜杠）；测速排序后的真实取用顺序
+    [ "$(cfg_get mirror_urls on)" = "off" ] && return 0
+    local m custom
+    custom=$(cfg_get mirror_url_list "")
+    if [ -n "$custom" ]; then          # 用户自定义列表：不测速，照单全收
+        for m in $custom; do [ -n "$m" ] && printf '%s\n' "${m%/}"; done
+        return 0
+    fi
+    mirror_order_cached
 }
 
 # action -> 镜像上的静态文件名（镜像是纯静态托管，没有 PHP 路由）

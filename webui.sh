@@ -269,7 +269,7 @@ case "${1:-status}" in
         while IFS= read -r line; do
             local k=${line%%=*} v=${line#*=}
             case "$k" in
-                auto_fetch|auto_bl|auto_debug|check_interval|pubkey_use|wifi_only|hide_apps_enable|hide_apps|deep_bl|abnormal_paths|anti_cheat|anti_cheat_ids|security_patch|abnormal_auto|risk_autohide|auto_target|mirror_urls|mirror_url_list|debug)
+                auto_fetch|auto_bl|auto_debug|check_interval|pubkey_use|wifi_only|hide_apps_enable|hide_apps|deep_bl|abnormal_paths|anti_cheat|anti_cheat_ids|security_patch|abnormal_auto|risk_autohide|auto_target|mirror_urls|mirror_url_list|mirror_nodes|mirror_speed_test|mirror_test_ttl|debug)
                     [ "$line" = "$k" ] && continue      # 没有 = 的裸键跳过
                     printf '%s=%s\n' "$k" "$v" >> "$TMP/cfg_clean.txt"
                     ;;
