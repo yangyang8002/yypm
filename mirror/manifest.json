@@ -1,29 +1,29 @@
 {
-  "version": "v2.8.1",
-  "version_code": 281,
+  "version": "v2.8.2",
+  "version_code": 282,
   "base_url": "https://yangyang8002.xin/api/kernelsu/module",
   "keybox": {
-    "updated_at": "2026-10-02 18:13:34",
-    "source": "yurikey",
-    "size": 12596,
-    "sha256": "a0a3da9c044555e2aa004172694e78ca9310f28fe70f21a33a6756f64f82b23b",
+    "updated_at": "2026-10-02 19:09:14",
+    "source": "pinned",
+    "size": 12713,
+    "sha256": "bb72001d8161618aeb0ceeca8d9f8965d15fa70c8c44b47e2c7e450a40e77353",
     "url": "https://raw.githubusercontent.com/yangyang8002/yypm/mirror-data/mirror/keybox.xml",
     "validity": {
       "level": "valid",
       "ok": true,
       "reasons": [],
       "warnings": [],
-      "checked_at": "2026-10-02 18:13:22",
-      "min_not_after": "2030-09-27",
-      "days_remaining": 1455,
+      "checked_at": "2026-10-02 19:09:14",
+      "min_not_after": "2040-04-08",
+      "days_remaining": 4936,
       "cert_count": 6,
       "serial_count": 5,
       "serials": [
-        "64DEAA4D53885472AFAC267BDBD4A472",
-        "353017E73DC205A73A9C3DE142230370",
-        "D50FF25BA3F2D6B3",
-        "09307822E6C6F88CD2F1AB20C37AFEB1",
-        "879D5BDC87EFDF863362DA64A197CA3F"
+        "CB46651E269262FA81855900AD12A3E7",
+        "FF1BB727C5EE82DA98D9C8197EE4CB0C",
+        "F1C172A699EAF51D",
+        "68762F4C24F40623D41CE61CBB752078",
+        "2DCDEA1F8D1497D70E216393710CAD6B"
       ],
       "chains": [
         {
@@ -34,37 +34,37 @@
           "chain_broken": [],
           "revoked": [],
           "expected": null,
-          "min_not_after": 1916684702,
+          "min_not_after": 2217442334,
           "serials": [
-            "64DEAA4D53885472AFAC267BDBD4A472",
-            "353017E73DC205A73A9C3DE142230370",
-            "D50FF25BA3F2D6B3"
+            "CB46651E269262FA81855900AD12A3E7",
+            "FF1BB727C5EE82DA98D9C8197EE4CB0C",
+            "F1C172A699EAF51D"
           ],
           "declared": 3,
           "certs": [
             {
               "parsed": true,
-              "subject": "serialNumber=91bb64f6f0dfcbe26de63a87ddc6c4e1",
-              "issuer": "serialNumber=70912df46104faae947864e5804f1f8d",
-              "serial": "64DEAA4D53885472AFAC267BDBD4A472",
-              "not_before": "2020-09-29",
-              "not_after": "2030-09-27"
+              "subject": "serialNumber=157f92edc2dd51d9eb7f3f9c9306de7c",
+              "issuer": "serialNumber=ebdd18d55e8cbbcfcd4e01c82d3318b2",
+              "serial": "CB46651E269262FA81855900AD12A3E7",
+              "not_before": "2025-04-12",
+              "not_after": "2040-04-08"
             },
             {
               "parsed": true,
-              "subject": "serialNumber=70912df46104faae947864e5804f1f8d",
+              "subject": "serialNumber=ebdd18d55e8cbbcfcd4e01c82d3318b2",
               "issuer": "serialNumber=f92009e853b6b045",
-              "serial": "353017E73DC205A73A9C3DE142230370",
-              "not_before": "2020-09-29",
-              "not_after": "2030-09-27"
+              "serial": "FF1BB727C5EE82DA98D9C8197EE4CB0C",
+              "not_before": "2025-04-12",
+              "not_after": "2040-04-08"
             },
             {
               "parsed": true,
               "subject": "serialNumber=f92009e853b6b045",
               "issuer": "serialNumber=f92009e853b6b045",
-              "serial": "D50FF25BA3F2D6B3",
-              "not_before": "2019-11-23",
-              "not_after": "2034-11-19"
+              "serial": "F1C172A699EAF51D",
+              "not_before": "2022-03-21",
+              "not_after": "2042-03-16"
             }
           ]
         },
@@ -76,43 +76,50 @@
           "chain_broken": [],
           "revoked": [],
           "expected": null,
-          "min_not_after": 1916684685,
+          "min_not_after": 2217442317,
           "serials": [
-            "09307822E6C6F88CD2F1AB20C37AFEB1",
-            "879D5BDC87EFDF863362DA64A197CA3F",
-            "D50FF25BA3F2D6B3"
+            "68762F4C24F40623D41CE61CBB752078",
+            "2DCDEA1F8D1497D70E216393710CAD6B",
+            "F1C172A699EAF51D"
           ],
           "declared": 3,
           "certs": [
             {
               "parsed": true,
-              "subject": "serialNumber=91bb64f6f0dfcbe26de63a87ddc6c4e1",
-              "issuer": "serialNumber=70912df46104faae947864e5804f1f8d",
-              "serial": "09307822E6C6F88CD2F1AB20C37AFEB1",
-              "not_before": "2020-09-29",
-              "not_after": "2030-09-27"
+              "subject": "serialNumber=157f92edc2dd51d9eb7f3f9c9306de7c",
+              "issuer": "serialNumber=ebdd18d55e8cbbcfcd4e01c82d3318b2",
+              "serial": "68762F4C24F40623D41CE61CBB752078",
+              "not_before": "2025-04-12",
+              "not_after": "2040-04-08"
             },
             {
               "parsed": true,
-              "subject": "serialNumber=70912df46104faae947864e5804f1f8d",
+              "subject": "serialNumber=ebdd18d55e8cbbcfcd4e01c82d3318b2",
               "issuer": "serialNumber=f92009e853b6b045",
-              "serial": "879D5BDC87EFDF863362DA64A197CA3F",
-              "not_before": "2020-09-29",
-              "not_after": "2030-09-27"
+              "serial": "2DCDEA1F8D1497D70E216393710CAD6B",
+              "not_before": "2025-04-12",
+              "not_after": "2040-04-08"
             },
             {
               "parsed": true,
               "subject": "serialNumber=f92009e853b6b045",
               "issuer": "serialNumber=f92009e853b6b045",
-              "serial": "D50FF25BA3F2D6B3",
-              "not_before": "2019-11-23",
-              "not_after": "2034-11-19"
+              "serial": "F1C172A699EAF51D",
+              "not_before": "2022-03-21",
+              "not_after": "2042-03-16"
             }
           ]
         }
       ]
     },
     "fallbacks": [
+      {
+        "source": "yurikey",
+        "sha256": "a0a3da9c044555e2aa004172694e78ca9310f28fe70f21a33a6756f64f82b23b",
+        "size": 12596,
+        "days_remaining": 1455,
+        "min_not_after": "2030-09-27"
+      },
       {
         "source": "megatron",
         "sha256": "041b17e646b3774aaa3698fd29fed4ad5dd64d8a5828abf34bc19003d2ce3abc",
@@ -129,8 +136,8 @@
       },
       {
         "source": "keyboxhub/keybox_7ab1758a25",
-        "sha256": "85165468926f4fcbc8aacc30426424675517b0cc9bf41eeb67ef5b0feacd4009",
-        "size": 12754,
+        "sha256": "6b12c954b43fd7bef40ac2f84ff91e27ea44b101e1d06bab522205bb093b200d",
+        "size": 12753,
         "days_remaining": 2677,
         "min_not_after": "2034-01-31"
       }
@@ -143,17 +150,17 @@
       "checked": 517,
       "tried": []
     },
-    "signature": "joYlKx6rXE8jEKxZMtna+ZAT49WujorgVGw0N5982Pitxakvoq7/MabVANosm0P6v1KuX9nx6Z/eT1j6aVbhBQ==",
+    "signature": "VecuiNmqbIvInAf+8pM4KF+bHyyL8S4tO82UbODg7cVHJ9ss01NNXh+gL7Jo3x/L8giSv3i1+BvUuOSLfsu7Bw==",
     "sign_public": "4+b3y4zvxtwJrNYDvD/1sCOy+rABnw5AbD3ivXpSg+E="
   },
   "module": {
-    "sha256": "6ea8b870b2f563608473fc640c0f3bfb3332849f25decfd042005954c0092810",
-    "size": 879739,
+    "sha256": "ea4c05b1224ddfc4119b1a25e7b60ed177dd15f2751fd864394ad05b18800d79",
+    "size": 884477,
     "url": "https://github.com/yangyang8002/yypm/releases/download/mirror/module.zip",
-    "signature": "h50QPqk0tYsZe5hSrdRoSSDlkl5Z0DI8ZWKS10ViDoyJwDu7CG/BV4B8SlLb0mHxLq2PS6ZWw6whtd1U6yDqDQ=="
+    "signature": "8F3dmSoCkP/kcFlhvdXmO3bM9pB4GV3nHhuMa3WXXfXaJXd7Vn/GBFRJS1MUU5jqnJEB0dIe9CRu9w2fFcDYDQ=="
   },
   "server": {
-    "updated_at": "2026-10-02 18:13:34",
+    "updated_at": "2026-10-02 19:09:14",
     "revoked_count": 517,
     "sources": [
       {
