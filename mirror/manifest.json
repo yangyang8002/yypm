@@ -1,9 +1,9 @@
 {
-  "version": "v2.8.2",
-  "version_code": 282,
+  "version": "v2.8.3",
+  "version_code": 283,
   "base_url": "https://yangyang8002.xin/api/kernelsu/module",
   "keybox": {
-    "updated_at": "2026-10-02 19:09:14",
+    "updated_at": "2026-10-02 20:25:51",
     "source": "pinned",
     "size": 12713,
     "sha256": "bb72001d8161618aeb0ceeca8d9f8965d15fa70c8c44b47e2c7e450a40e77353",
@@ -13,7 +13,7 @@
       "ok": true,
       "reasons": [],
       "warnings": [],
-      "checked_at": "2026-10-02 19:09:14",
+      "checked_at": "2026-10-02 20:25:51",
       "min_not_after": "2040-04-08",
       "days_remaining": 4936,
       "cert_count": 6,
@@ -136,8 +136,8 @@
       },
       {
         "source": "keyboxhub/keybox_7ab1758a25",
-        "sha256": "6b12c954b43fd7bef40ac2f84ff91e27ea44b101e1d06bab522205bb093b200d",
-        "size": 12753,
+        "sha256": "85165468926f4fcbc8aacc30426424675517b0cc9bf41eeb67ef5b0feacd4009",
+        "size": 12754,
         "days_remaining": 2677,
         "min_not_after": "2034-01-31"
       }
@@ -146,7 +146,7 @@
       "source": "purainity(缓存)",
       "count": 517,
       "fresh": true,
-      "fetched_at": 1790855324,
+      "fetched_at": 1790942363,
       "checked": 517,
       "tried": []
     },
@@ -154,13 +154,13 @@
     "sign_public": "4+b3y4zvxtwJrNYDvD/1sCOy+rABnw5AbD3ivXpSg+E="
   },
   "module": {
-    "sha256": "ea4c05b1224ddfc4119b1a25e7b60ed177dd15f2751fd864394ad05b18800d79",
-    "size": 884477,
+    "sha256": "58dbee479e41c579a1292c76f4f5d628b4bef4851cfbbce5240e60e94a36b7f6",
+    "size": 887371,
     "url": "https://github.com/yangyang8002/yypm/releases/download/mirror/module.zip",
-    "signature": "8F3dmSoCkP/kcFlhvdXmO3bM9pB4GV3nHhuMa3WXXfXaJXd7Vn/GBFRJS1MUU5jqnJEB0dIe9CRu9w2fFcDYDQ=="
+    "signature": "w22/JrMoVhydyo9SfqKNquBlo8bfyN8q0GUbSyj8vtzuhB/ap6C4FbpIEyW6ffXCrI922H/t2Xbq36VYPTx9Cw=="
   },
   "server": {
-    "updated_at": "2026-10-02 19:09:14",
+    "updated_at": "2026-10-02 20:25:51",
     "revoked_count": 517,
     "sources": [
       {

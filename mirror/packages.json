@@ -1,7 +1,19 @@
 {
-  "updated_at": "2026-10-02 19:09:14",
+  "updated_at": "2026-10-02 20:25:51",
   "count": 6,
   "modules": {
+    "HMA-OSS.zip": {
+      "sha256": "be364502b3d34510c856a742bbb67d91560ec033dcaef06e431991a1ba3a98ec",
+      "size": 2743824,
+      "url": "https://github.com/yangyang8002/yypm/releases/download/mirror/HMA-OSS.zip",
+      "signature": "2jFevBV+krWWawPRsbbRMnBk5ukrrM5J8S0vOjZrroCD/SgeMBXKNnSfeiNHDwobMNDJW9u68twRIborjYUcCA==",
+      "x-type": "ksu-module",
+      "x-auto": 1,
+      "x-id": "hma_oss_zygisk",
+      "x-name": "HMA-OSS Zygisk",
+      "x-version": "oss-173",
+      "x-versionCode": 7304656
+    },
     "LSPosed.zip": {
       "sha256": "725915707f88a4f5ebecddab908cb217aa0a6d98955db5885bc9fadda81e75b8",
       "size": 5986702,
@@ -37,22 +49,12 @@
       "size": 7529581,
       "url": "https://github.com/yangyang8002/yypm/releases/download/mirror/Zygisk-Next.zip",
       "signature": "U16Cb7i+IVG7w/hYGUfu4xNIlHuaGX9pLuS+FT/oYtOm2V74Vj4xtWQMUS4bf6brbHi+rmUwTLTDBYbpG8h/DA==",
+      "x-type": "ksu-module",
+      "x-auto": 1,
       "x-id": "zygisksu",
       "x-name": "Zygisk Next",
       "x-version": "1.5.0 (843-5217106-release)",
       "x-versionCode": 843
-    },
-    "hma-uidfake.zip": {
-      "sha256": "041e313e39b16693b765e8bd649234ee7b1594490a52603a65a8366cc44ed271",
-      "size": 754061,
-      "url": "https://github.com/yangyang8002/yypm/releases/download/mirror/hma-uidfake.zip",
-      "signature": "NdcCN+5l5AOE5PbMjAPjkn/TKVo9/2SCws53gg3E6DTsCsIgLVfWuQvWhq8JUHQTT+eJwAB8HjOp3nPbdRM3DQ==",
-      "x-type": "ksu-module",
-      "x-auto": 1,
-      "x-id": "hma-uidfake",
-      "x-name": "HMA UID Fake",
-      "x-version": "0.3.3+dcc8c19",
-      "x-versionCode": 3003
     },
     "FuseFixer.apk": {
       "sha256": "572ebe7705706b9807271f60b3daf89046712ec102e79d0ac09713b5be7dcb40",
