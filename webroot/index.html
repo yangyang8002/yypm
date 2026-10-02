@@ -575,11 +575,12 @@ html[data-lockdown="1"] #acBanner{
   <p class="note">春秋 Native check 报 <b>System compromised</b> 一般是下面几项。逐项对照处理，
   处理后重新检测确认。</p>
   <div class="row"><span class="k">安全补丁级别对齐</span><span class="v" id="spState">-</span></div>
-  <p class="note">① <b>Tampered Attestation Key(26)</b> —— TEE 模拟器应答的安全补丁级别与 keybox 对不上。
-  yypm 在注入 keybox 时会自动生成 <code>security_patch.txt</code>（与 keybox 同目录，是 TrickyStore 的正常配置项）。
-  已经存在且不是 yypm 生成的文件不会被覆盖。</p>
+  <p class="note">① <b>Tampered Attestation Key(26)</b> —— 检测方拿 getprop 读到的补丁日期和 attestation
+  应答里的日期对不上。yypm 自动维护 <code>security_patch.txt</code>（与 keybox 同目录，TrickyStore 的正常配置项），
+  采用 <b>prop 模式</b>：应答实时跟随系统属性，永不错位、永不过时；TEESimulator 即时生效，无需重启。
+  已存在的旧文件（固定日期等）会先备份为 .bak 再替换。</p>
   <div class="row2">
-    <button class="btn ghost" id="btnSpFix"><span>🩹</span> 立即生成/检查</button>
+    <button class="btn ghost" id="btnSpFix"><span>🩹</span> 立即对齐</button>
   </div>
   <p class="note">② <b>风险应用</b>（Scene / NP管理器 / Shizuku 等）—— 用 HMA（或 hma-oss）做模板隐藏，
   并刷入 hma-uidfake 模块配合；确定用不到的直接卸载最干净。
@@ -855,6 +856,15 @@ async function readVersion(){
 
 async function refresh(){
   var s;try{s=parseKv((await exec(MODDIR+'/webui.sh status')).stdout);}catch(e){return;}
+  // 锁定中：status 被 webui.sh 闸门拦截，只会回 AC_LOCKED 三行，其余字段全缺。
+  // 这时不能把空值渲染成「未挂载/未隐藏/0 份」之类的假状态 —— 统一标「已锁定」。
+  // （锁定横幅由 acLockCheck/acLockUI 负责，这里只管别撒谎。）
+  if(s.AC_LOCKED==='1' && typeof s.KEYBOX_MOUNTED==='undefined'){
+    ['kbMount','kbSize','kbSha','kbTime','kbExpiry','srvTime','srvSrc','poolCnt','blState','dbgState','haState','modTime','retryState','netState','hiderState','ttState'].forEach(function(id){var el=document.getElementById(id);if(el)el.textContent='已锁定';});
+    ['kbFresh','kbValid','teeState','srvFb','spState','modCount'].forEach(function(id){var el=document.getElementById(id);if(el)el.innerHTML='<span class="pill warn2">已锁定</span>';});
+    ['kbDot','valDot','blDot','dbgDot','haDot','modDot','retryDot','pkDot'].forEach(function(id){var el=document.getElementById(id);if(el)el.className='dot off';});
+    return;
+  }
   var mounted=(s.KEYBOX_MOUNTED==='1');
   document.getElementById('kbDot').className='dot '+(mounted?'on':'off');
   document.getElementById('kbMount').textContent=mounted?'已挂载':'未挂载';
@@ -867,9 +877,8 @@ async function refresh(){
   var spEl=document.getElementById('spState');
   if(spEl){
     var spv=s.SP_STATE||'',spp=s.SP_PROP||'';
-    spEl.innerHTML= spv==='ours' ? '<span class="pill ok">已对齐（'+esc(spp)+'）</span>'
-      : spv==='stale' ? '<span class="pill warn2">需更新（系统补丁日期已变）</span>'
-      : spv==='foreign' ? '<span class="pill warn2">已存在（非 yypm 生成，未改动）</span>'
+    spEl.innerHTML= spv==='ok' ? '<span class="pill ok">已对齐（prop 模式，跟随系统 '+esc(spp)+'）</span>'
+      : spv==='fixed' ? '<span class="pill warn2">固定日期模式（易错位，点下方按钮对齐）</span>'
       : '<span class="pill">未生成</span>';
   }
   document.getElementById('autoSwitch').classList.toggle('on',s.AUTO_FETCH==='on');
@@ -1038,7 +1047,10 @@ async function checkUpdate(){
   busy('btnUpdate',false);
 }
 
-async function confirmUpdate(){
+function confirmUpdate(){
+  ask('更新模块','发现新版本将立即下载并安装（重启后完全生效）。继续吗？',function(){ doUpdate(); });
+}
+async function doUpdate(){
   log('开始更新模块 ...','info');
   var a=document.querySelector('.update-strip .vlink');if(a){a.textContent='更新中...';a.style.pointerEvents='none';}
   try{
@@ -1362,7 +1374,10 @@ async function cleanAbnormal(){
   busy('btnClean',true,'清理中...');
   try{
     var s=parseKv((await exec(MODDIR+'/webui.sh clean-abnormal')).stdout);
-    log('已清理 '+(s.CLEAN_ABNORMAL||'0')+' 个目录','ok');
+    var cn=s.CLEAN_ABNORMAL||'0';
+    log('已清理 '+cn+' 个目录','ok');
+    var cs=document.getElementById('cleanState');
+    if(cs) cs.innerHTML=(cn!=='0'?'<span class="pill ok">本次清理 '+esc(cn)+' 个</span>':'<span class="pill ok">干净</span>');
   }catch(e){log('清理异常: '+e.message,'err');}
   busy('btnClean',false);
 }
@@ -1547,7 +1562,7 @@ function acLockUI(on,reason,since){
   if(b){
     b.innerHTML=on?('<b>⚠ yypm 已停用全部功能</b><br>'+esc(reason||'检测到可疑游戏挂模块')
       +'<br>游戏挂和本模块会互相拖累：反作弊一旦标记本机，依赖硬件认证的应用会跟着一起失效。'
-      +'<br>'+(AC_PENDING_ON?'请做出选择 —— 不选，yypm 会一直停用：':'请卸载上面列出的可疑模块，然后到「工具 → 反挂检查」点「解除锁定」。')
+      +'<br>'+(AC_PENDING_ON?'请做出选择 —— 不选，yypm 会一直停用：':'请卸载上面列出的可疑模块，然后到「环境对抗 → 反挂检查」点「解除锁定」。')
       +(since?('<br><span style="opacity:.85">锁定于 '+esc(since)+'</span>'):'')
       +(AC_PENDING_ON?('<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">'
         +'<button class="btn" id="btnAcKeepModuleTop" style="background:#fff;color:#B3261E">继续使用本模块（删除挂模块）</button>'
@@ -1755,10 +1770,13 @@ async function spFix(){
     log('===== 安全补丁级别对齐 =====','info');
     var ls=out.split('\n');
     for(var i=0;i<ls.length;i++)if(ls[i])log(ls[i],'info');
-    var st=acG(out,'SP_STATE');
-    var msg= st==='ours' ? '已生成/已对齐'
-      : st==='foreign' ? '文件已存在且不是 yypm 生成的，未改动它'
-      : st==='none' ? '未生成（读不到补丁日期属性，或设备上没有 TrickyStore）'
+    var st=(out.match(/^SP_STATE=(.*)$/m)||[])[1]||'';
+    var before=(out.match(/^SP_STATE_BEFORE=(.*)$/m)||[])[1]||'';
+    var msg= st==='ok'
+      ? (before==='ok' ? '已是 prop 模式（跟随系统属性，无需改动）'
+        : before==='none' ? '已生成 prop 模式配置，TEESimulator 即时生效'
+        : '已切换为 prop 模式（原文件已备份为 .bak）')
+      : st==='none' ? '未生成（设备上没有 TrickyStore 目录，或 security_patch=off）'
       : st;
     toast('security_patch.txt：'+msg);
     refresh();

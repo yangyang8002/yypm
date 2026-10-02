@@ -254,7 +254,7 @@ case "${1:-status}" in
         while IFS= read -r line; do
             local k=${line%%=*} v=${line#*=}
             case "$k" in
-                auto_fetch|auto_bl|auto_debug|check_interval|pubkey_use|wifi_only|hide_apps_enable|hide_apps|deep_bl|abnormal_paths)
+                auto_fetch|auto_bl|auto_debug|check_interval|pubkey_use|wifi_only|hide_apps_enable|hide_apps|deep_bl|abnormal_paths|anti_cheat|anti_cheat_ids|security_patch|abnormal_auto)
                     [ "$line" = "$k" ] && continue      # 没有 = 的裸键跳过
                     printf '%s=%s\n' "$k" "$v" >> "$TMP/cfg_clean.txt"
                     ;;
@@ -348,16 +348,27 @@ case "${1:-status}" in
         echo "WIFI_ONLY=$(cfg_get wifi_only off)"
         ;;
     security-patch)
-        # 安全补丁级别对齐：先尽力生成/更新，再报告状态与文件内容。
-        # foreign（文件存在但不是 yypm 写的）只报告、绝不动它。
+        # 安全补丁级别对齐：先尽力生成/对齐为 prop 模式，再报告前后内容。
+        # 外来文件（Pass.sh / TrickyStore 自带 / 用户手写）备份 .bak 后覆盖。
+        sp_before_state=$(security_patch_state)
+        sp_before=""
+        [ -f "$SP_FILE" ] && sp_before=$(cat "$SP_FILE" 2>/dev/null)
         ensure_security_patch
+        echo "SP_STATE_BEFORE=$sp_before_state"
         echo "SP_STATE=$(security_patch_state)"
         echo "SP_PATH=$SP_FILE"
         echo "SP_PROP=$(getprop ro.build.version.security_patch 2>/dev/null | tr -d ' \r')"
+        echo "SP_CFG=$(cfg_get security_patch auto)"
+        [ -f "$SP_FILE.bak" ] && echo "SP_BAK=1"
+        if [ -n "$sp_before" ]; then
+            echo "---SP-BEFORE-BEGIN---"
+            printf '%s\n' "$sp_before"
+            echo "---SP-BEFORE-END---"
+        fi
         if [ -f "$SP_FILE" ]; then
-            echo "---SP-BEGIN---"
+            echo "---SP-AFTER-BEGIN---"
             cat "$SP_FILE"
-            echo "---SP-END---"
+            echo "---SP-AFTER-END---"
         fi
         ;;
 

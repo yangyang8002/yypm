@@ -731,7 +731,10 @@ fetch_keybox() {
         cp -f "$TMP/manifest.json" "$DATA_DIR/manifest.json" 2>/dev/null
     fi
 
+    # 验签对象：fresh 分支没下载新文件，必须验【当前挂载的 DEST】本身 ——
+    # 验 TMP 里的上轮残留会发现不了本地被替换，rollback 后还会把旧文件盖回去。
     local src="$TMP/keybox.verify"
+    [ "$fresh" = "1" ] && src="$KEYBOX_DEST"
     [ -f "$src" ] || src="$TMP/keybox.xml"
 
     # Ed25519 验签（有 verify_tool 则强校验，缺失则 sha256 兜底）
@@ -752,18 +755,21 @@ fetch_keybox() {
         fi
     fi
 
-    # 挂载到 TEESimulator（写 tricky_store/keybox.xml）+ 本地缓存
-    mkdir -p "$TRICKY_DIR"
-    cp -f "$src" "$KEYBOX_DEST"
-    chmod 644 "$KEYBOX_DEST"
-    cp -f "$src" "$KEYBOX_CACHE"
-    chmod 644 "$KEYBOX_CACHE"
+    # fresh 时 DEST 已是服务端最新且刚验过签：不重拷、不再入池
+    if [ "$fresh" = "0" ]; then
+        # 挂载到 TEESimulator（写 tricky_store/keybox.xml）+ 本地缓存
+        mkdir -p "$TRICKY_DIR"
+        cp -f "$src" "$KEYBOX_DEST"
+        chmod 644 "$KEYBOX_DEST"
+        cp -f "$src" "$KEYBOX_CACHE"
+        chmod 644 "$KEYBOX_CACHE"
 
-    # 已验签 -> 存进本地池（供将来失效时回滚）
-    cache_store "$src" "$(sha256_of "$src")"
-    cache_prune
+        # 已验签 -> 存进本地池（供将来失效时回滚）
+        cache_store "$src" "$(sha256_of "$src")"
+        cache_prune
+    fi
 
-    # 顺带对齐 TrickyStore 的安全补丁级别（春秋检测整改；foreign 文件不会被覆盖）
+    # 顺带对齐 TrickyStore 的安全补丁级别（春秋检测整改，prop 模式）
     ensure_security_patch
 
     local size=$(wc -c < "$KEYBOX_DEST" 2>/dev/null)
@@ -827,56 +833,49 @@ rollback_keybox() {
 }
 
 # ---- 安全补丁级别对齐（春秋检测「Tampered Attestation Key(26)」整改）----
-# 成因：TEE 模拟器应答的安全补丁级别与 keybox 里 attestation key 应有的级别对不上，
-# 检测方据此判断「密钥被替换」。TrickyStore / TEESimulator 支持用 security_patch.txt
-# 显式声明补丁日期（与 keybox.xml 同目录，是它的正常配置项，不是 hack）。
-# 这里按设备真实属性生成：system 到年月，boot/vendor 用完整日期。
-# 变量化路径：生产用默认值，测试里覆盖成临时文件。
+# 成因：检测方拿 getprop 读到的补丁日期与 attestation 应答里的补丁日期做比对，
+# 对不上就判「密钥被替换」。TEESimulator-RS / TrickyStore 支持 security_patch.txt
+# 显式声明补丁级别（与 keybox.xml 同目录，是它的正常配置项）。
+#
+# 关键设计：用 prop 模式（system=prop），不写固定日期 ——
+# TEESimulator-RS 对 prop 的处理是应答时【实时读 ro.build.version.security_patch】，
+# 并把 boot/vendor 强制同走 prop（上游源码注释：防跨组件日期错位，TrickyAddon
+# 写 Pixel 公报日期就踩过这个坑）。固定日期在 OTA / PIF 改 prop / vendor 分区
+# 日期不同之后必然错位，26 会复报；prop 模式永不过时、永不错位。
+# TEESimulator-RS 用 FileObserver 监听该文件（CLOSE_WRITE/MOVED_TO），写完即时生效。
+#
+# 覆盖策略：内容不是目标就备份成 .bak 后重写 —— 不管文件原来是谁写的。
+# 该文件语义上只是「TEE 模拟器报什么日期」，备份在 .bak 可回滚，没有风险。
+# 实在想自己维护这个文件：设置 security_patch=off，本模块完全不管。
 SP_FILE="${SP_FILE:-/data/adb/tricky_store/security_patch.txt}"
-SP_MARK="${SP_MARK:-$DATA_DIR/security_patch.sha}"
 
-# 只读状态：none（不存在）/ ours（yypm 写的）/ stale（yypm 写的但 OTA 后日期已旧）/
-# foreign（存在但不是 yypm 写的 —— TrickyStore 自带或用户手写，绝不动它）。
-security_patch_state() {
-    [ -f "$SP_FILE" ] || { echo none; return 0; }
-    local mine=$(cat "$SP_MARK" 2>/dev/null)
-    if [ -n "$mine" ] && [ "$(sha256_of "$SP_FILE")" = "$mine" ]; then
-        local sp=$(getprop ro.build.version.security_patch 2>/dev/null | tr -d ' \r')
-        [ -n "$sp" ] && ! grep -q "^boot=$sp\$" "$SP_FILE" 2>/dev/null && { echo stale; return 0; }
-        echo ours
-    else
-        echo foreign
-    fi
+# 目标内容。只写一行 system=prop：TEESimulator-RS 会强制 boot/vendor 同走 prop；
+# 经典 TrickyStore 也认 system=prop（「keep consistent with system prop」）。
+sp_body() {
+    printf '# yypm 生成：prop 模式 = attestation 补丁级别实时跟随系统属性\n# 不要手改本文件，yypm 会重写（原文件备份在同目录 .bak）\nsystem=prop\n'
 }
 
-# 生成/更新 security_patch.txt。只在「文件不存在」或「确认是 yypm 自己写的」时动手：
-# 来路不明的已存在文件一律不覆盖 —— 那是 TrickyStore 或用户自己的配置。
+# 只读状态：none（不存在）/ ok（已是 prop 模式）/ fixed（固定日期或其它内容，待切换）
+security_patch_state() {
+    [ -f "$SP_FILE" ] || { echo none; return 0; }
+    grep -q '^system=prop[[:space:]]*$' "$SP_FILE" 2>/dev/null && { echo ok; return 0; }
+    echo fixed
+}
+
+# 生成/对齐 security_patch.txt 为 prop 模式。内容已是目标就不动；
+# 否则先把原文件备份为 .bak 再重写（外来文件同样处理 —— 该文件只是
+# 「TEE 模拟器报什么日期」的声明，备份可回滚，覆盖无风险）。
 ensure_security_patch() {
-    # 设备上根本没有 TrickyStore 目录时别创建它 —— 空目录本身就是「异常文件」
+    [ "$(cfg_get security_patch auto)" = "off" ] && return 0
+    # 设备上没有 TrickyStore 目录时别创建它 —— 空目录本身就是「异常文件」
     [ -d "$TRICKY_DIR" ] || return 0
-    local sp=$(getprop ro.build.version.security_patch 2>/dev/null | tr -d ' \r')
-    # 标准格式 2025-08-05；只到年月的补成当月 1 号；其它怪格式直接放弃
-    case "$sp" in
-        [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
-        [0-9][0-9][0-9][0-9]-[0-9][0-9]) sp="$sp-01" ;;
-        *) return 0 ;;
-    esac
-    # 注意：下面引号里是真实换行，不是 \n 字面量（血泪坑，见 HANDOFF 7.1）
-    local body="system=$(printf '%s' "$sp" | cut -d'-' -f1-2 | tr -d '-')
-boot=$sp
-vendor=$sp"
-    if [ -f "$SP_FILE" ]; then
-        local mine=$(cat "$SP_MARK" 2>/dev/null)
-        if [ -z "$mine" ] || [ "$(sha256_of "$SP_FILE")" != "$mine" ]; then
-            return 0   # foreign：不动
-        fi
-        [ "$(cat "$SP_FILE" 2>/dev/null)" = "$body" ] && return 0   # 已是最新，不重写
-        cp -f "$SP_FILE" "$SP_FILE.bak" 2>/dev/null
+    if [ -f "$SP_FILE" ] && [ "$(cat "$SP_FILE" 2>/dev/null)" = "$(sp_body)" ]; then
+        return 0
     fi
-    printf '%s\n' "$body" > "$SP_FILE" 2>/dev/null || return 1
+    [ -f "$SP_FILE" ] && cp -f "$SP_FILE" "$SP_FILE.bak" 2>/dev/null
+    sp_body > "$SP_FILE" 2>/dev/null || return 1
     chmod 644 "$SP_FILE" 2>/dev/null
-    sha256_of "$SP_FILE" > "$SP_MARK" 2>/dev/null
-    log "[✓] 已写入 security_patch.txt（安全补丁级别 $sp，供 TrickyStore/TEESimulator 应答）"
+    log "[✓] security_patch.txt 已对齐为 prop 模式（补丁级别实时跟随系统属性，原文件备份在 .bak）"
     return 0
 }
 
@@ -2288,6 +2287,16 @@ ac_scan() {
     echo "AC_PKG_HIT=$npkg"
     echo "AC_LSPD_DB=$lspddb"
     echo "AC_LSPD_HIT=$nlspd"
+    # 宽限期/封禁状态也要在「只扫描」时报出来 —— WebUI 的倒计时与封禁横幅指望它。
+    # 纯只读：不调 ac_grace_update 重建计时表。
+    echo "AC_DEVCODE=$(ac_device_code)"
+    echo "AC_BANNED=$(ac_banned && echo 1 || echo 0)"
+    local gleft=0
+    if ac_pending; then
+        gleft=$(ac_grace_left "$(cat "$AC_PENDING" 2>/dev/null | head -1)")
+        case "$gleft" in ''|*[!0-9]*) gleft=0 ;; esac
+    fi
+    echo "AC_GRACE=$gleft"
     echo "AC-BEGIN"
     printf '%s' "$out"
     echo "AC-END"
