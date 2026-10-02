@@ -1576,6 +1576,17 @@ function renderAc(out){
   h+=acRow('实锤（可处理）',g('AC_BLOCK')||'0');
   h+=acRow('可疑（只警告）',g('AC_WARN')||'0');
   var rows=(out.match(/AC-BEGIN\r?\n([\s\S]*?)\r?\nAC-END/)||[])[1]||'';
+  // 实锤的 3 天期限 / 封禁状态。这两件事必须第一眼看到 ——
+  // 期限到了会删模块并封本机，不能藏在日志里。
+  var acBanned=(g('AC_BANNED')==='1');
+  var acGrace=g('AC_GRACE');
+  if(acBanned){
+    h+='<p class="note">'+acTag('本机已封禁','err')+' 设备码 '+esc(g('AC_DEVCODE')||'-')
+      +' 已被封禁。实锤模块已按规则处理；解封需要联系作者。</p>';
+  } else if(acGrace && acGrace!=='0'){
+    h+='<p class="note">'+acTag('限 '+acGrace+' 天','warn')+' 请在 '+acGrace
+      +' 天内删除上面的实锤挂模块。逾期将自动删除该模块并封禁本机设备码。</p>';
+  }
   var lines=rows?rows.split('\n'):[];
   if(!lines.length){
     h+='<p class="note">'+acTag('干净','ok')+' 没有发现游戏挂模块。</p>';

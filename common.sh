@@ -2258,6 +2258,8 @@ ac_lock_clear() {
 # 功能闸门：锁定后 yypm 不做任何事。
 # 注意是 fail-closed：断网时同样保持锁定，否则拔网线就能绕过检查。
 ac_guard() {
+    # 有实锤在时必须联网才工作 —— 断网即停，拔网线躲不掉 3 天期限。
+    ac_net_gate || return 1
     ac_locked || return 0
     log "[✗] 反挂锁定中，拒绝执行（$(ac_lock_reason)）"
     return 1
@@ -2397,6 +2399,104 @@ ac_mode() {
     esac
 }
 
+# ============ 反挂：宽限期 / 设备码 / 封禁 / 联网闸 ============
+# 规则（实锤才管，疑似只记日志）：
+#   开机扫描 -> 发现实锤 -> 给 3 天期限，期间锁定自身并倒计时
+#   3 天内删掉挂模块 -> 计时清零，一切照常
+#   逾期仍在     -> 删掉挂模块 + 封本机设备码，并把设备码上报服务端
+#   有实锤在时   -> 模块只在联网状态下工作（断网即停，拔网线躲不掉）
+AC_TIMER="${AC_TIMER:-$DATA_DIR/ac.timer}"
+AC_BAN="${AC_BAN:-$DATA_DIR/ac.ban}"
+AC_DEVCODE="${AC_DEVCODE:-$DATA_DIR/device.code}"
+AC_GRACE_DAYS="${AC_GRACE_DAYS:-3}"
+
+# 设备码：稳定、跨重装模块存活，且不落地原始隐私信息（只存哈希）。
+ac_device_code() {
+    [ -s "$AC_DEVCODE" ] && { cat "$AC_DEVCODE"; return 0; }
+    local src="" id=""
+    src="$(getprop ro.serialno 2>/dev/null)$(getprop ro.product.model 2>/dev/null)$(getprop ro.build.fingerprint 2>/dev/null)"
+    [ -n "$src" ] || src="$(cat /proc/sys/kernel/random/uuid 2>/dev/null)"
+    if command -v sha256sum >/dev/null 2>&1; then
+        id=$(printf '%s' "$src" | sha256sum | cut -c1-16)
+    elif command -v openssl >/dev/null 2>&1; then
+        id=$(printf '%s' "$src" | openssl dgst -sha256 2>/dev/null | awk '{print $NF}' | cut -c1-16)
+    fi
+    [ -n "$id" ] || id=$(printf '%s' "$src" | cksum | tr -d ' ' | cut -c1-16)
+    mkdir -p "$DATA_DIR" 2>/dev/null
+    printf '%s\n' "$id" > "$AC_DEVCODE" 2>/dev/null
+    printf '%s\n' "$id"
+}
+
+# 宽限期计时。$1 = 当前实锤 id（换行分隔）。
+# 每次都按当前实锤重建计时表 —— 用户删掉挂模块后，对应条目自然消失，计时归零。
+# 输出：已逾期的 id（换行分隔）。
+ac_grace_update() {
+    local ids="$1" now id t out="" new=""
+    now=$(date +%s)
+    for id in $ids; do
+        [ -n "$id" ] || continue
+        t=$(sed -n "s|^$id=||p" "$AC_TIMER" 2>/dev/null | head -1)
+        case "$t" in ''|*[!0-9]*) t=$now ;; esac
+        new="${new}${id}=${t}
+"
+        [ $((now - t)) -ge $((AC_GRACE_DAYS * 86400)) ] && out="${out}${id}
+"
+    done
+    mkdir -p "$DATA_DIR" 2>/dev/null
+    printf '%s' "$new" > "$AC_TIMER" 2>/dev/null
+    printf '%s' "$out"
+}
+
+ac_grace_left() { # $1 = id -> 剩余天数（不足一天按一天算）
+    local t now left
+    t=$(sed -n "s|^$1=||p" "$AC_TIMER" 2>/dev/null | head -1)
+    case "$t" in ''|*[!0-9]*) echo "$AC_GRACE_DAYS"; return 0 ;; esac
+    now=$(date +%s)
+    left=$(( AC_GRACE_DAYS - (now - t) / 86400 ))
+    [ "$left" -lt 1 ] && left=1
+    echo "$left"
+}
+
+ac_banned() {
+    [ -s "$AC_BAN" ] || return 1
+    # 文件里是「设备码 封禁时间」，只能比第一个字段。之前拿整行比，
+    # 带上时间戳后永远不相等，封禁形同虚设。
+    [ "$(head -1 "$AC_BAN" 2>/dev/null | cut -d" " -f1)" = "$(ac_device_code)" ]
+}
+
+ac_ban_set() {
+    mkdir -p "$DATA_DIR" 2>/dev/null
+    printf '%s %s\n' "$(ac_device_code)" "$(date '+%Y-%m-%d %H:%M:%S')" > "$AC_BAN" 2>/dev/null
+    log "[✗] 反挂：已封禁本机设备码 $(ac_device_code)"
+}
+
+# 联网探测：拿一个轻量端点试连通性。断网时模块停摆，靠的就是它。
+ac_online() {
+    local url="$(api_url acreport)&code=$(ac_device_code)&ev=ping"
+    if command -v curl >/dev/null 2>&1; then
+        curl -s --connect-timeout 6 --max-time 12 -o /dev/null "$url" 2>/dev/null && return 0
+    fi
+    return 1
+}
+
+# 上报：$1 = 事件（ping/scan/expire）  $2 = 命中 id（换行分隔）
+ac_report() {
+    local ev="$1" ids="$2" code=$(ac_device_code)
+    local hits=$(printf '%s' "$ids" | tr '\n' ',' | sed 's/,$//; s/ //g')
+    local url="$(api_url acreport)&code=$code&ev=$ev&hits=$hits"
+    command -v curl >/dev/null 2>&1 || return 1
+    curl -s --connect-timeout 8 --max-time 20 -o /dev/null "$url" 2>/dev/null
+}
+
+# 联网闸：有实锤在时，模块必须联网才工作。
+# 这不是「检查前先联网」，而是「不联网就别用」—— 否则拔网线就能把 3 天期限冻住。
+ac_net_gate() {
+    ac_pending || return 0
+    ac_online && return 0
+    log "[✗] 反挂：检测到实锤且当前离线，按规则停止运行"
+    return 1
+}
+
 ac_apply() {
     local mode=$(ac_mode)
     echo "AC_MODE=$mode"
@@ -2406,27 +2506,73 @@ ac_apply() {
     echo "AC_BLOCK=$nb"
     echo "AC_WARN=$nw"
     local rows=$(printf '%s\n' "$scan" | sed -n '/^AC-BEGIN$/,/^AC-END$/p' | sed '1d;$d')
-    local acted=0 id lvl nm why
+    local ids=$(printf '%s\n' "$rows" | awk -F'\t' '$2=="block"{print $1}')
+    local id lvl nm why
 
-    # 实锤 -> 只锁定 + 挂起待决，等用户在 WebUI 里做选择。不自动删。
-    if [ "$nb" != "0" ]; then
-        ac_pending_set "$(printf '%s\n' "$rows" | awk -F'\t' '$2=="block"{print $1}')"
-        ac_lock_set "发现 $nb 个游戏挂模块，需要你做出选择"
-        printf '%s\n' "$rows" | while IFS="\t" read -r id lvl nm why; do
-            [ "$lvl" = "block" ] && log "[!] 反挂实锤：$id（$nm）— $why"
-        done
+    # 疑似只记日志。误报率摆在那里，动它得不偿失 —— 实锤才配得上处置。
+    printf '%s\n' "$rows" | while IFS="	" read -r id lvl nm why; do
+        [ "$lvl" = "warn" ] && log "[?] 反挂可疑（仅记录）：$id（$nm）— $why"
+    done
+
+    echo "AC_DEVCODE=$(ac_device_code)"
+
+    if [ "$nb" = "0" ]; then
+        ac_grace_update "" >/dev/null   # 没有实锤：计时清零
+        ac_pending_clear
+        # 已封禁的设备不因为挂模块消失就解封 —— 封了就是封了，解封只能走服务端。
+        if ac_banned; then
+            ac_lock_set "本机设备码已被封禁（$(head -1 "$AC_BAN" 2>/dev/null | cut -d" " -f2- )）"
+        else
+            ac_lock_clear
+        fi
+        ac_report "scan" "" >/dev/null 2>&1
+        echo "AC_GRACE=0"
+        echo "AC_DUE=0"
+        echo "AC_ACTED=0"
+        echo "AC_BANNED=$(ac_banned && echo 1 || echo 0)"
+        echo "AC_PENDING=0"
+        echo "AC_LOCKED=$(ac_locked && echo 1 || echo 0)"
+        return 0
     fi
 
-    # 警告 -> 锁定自身（不删，因为误报率高，删错不可挽回）
-    if [ "$nw" != "0" ] && [ "$nb" = "0" ]; then
-        ac_lock_set "发现 $nw 个可疑游戏挂模块（关键字命中），已停用 yypm 全部功能"
-        printf '%s\n' "$rows" | while IFS="	" read -r id lvl nm why; do
-            [ "$lvl" = "warn" ] && log "[!] 反挂可疑：$id（$nm）— $why"
+    printf '%s\n' "$rows" | while IFS="	" read -r id lvl nm why; do
+        [ "$lvl" = "block" ] && log "[!] 反挂实锤：$id（$nm）— $why"
+    done
+
+    local due=$(ac_grace_update "$ids")
+    local ndue=$(printf '%s\n' "$due" | sed '/^$/d' | wc -l | tr -d ' ')
+    local left=$(ac_grace_left "$(printf '%s\n' "$ids" | head -1)")
+    echo "AC_GRACE=$left"
+    echo "AC_DUE=$ndue"
+
+    if [ "$ndue" != "0" ]; then
+        # 逾期：删掉实锤模块并封设备码。这是全流程里唯一不可逆的动作，只对实锤做。
+        local n=0 d
+        for d in $due; do
+            [ -n "$d" ] || continue
+            ac_is_allowed "$d" && continue
+            [ -d "$AC_MODDIR/$d" ] || continue
+            if [ "$mode" = "quarantine" ]; then
+                ac_quarantine "$d" && n=$((n + 1))
+            elif rm -rf "$AC_MODDIR/$d" 2>/dev/null; then
+                n=$((n + 1))
+                log "[✗] 反挂：宽限期已过，已删除实锤模块 $d"
+            fi
         done
-    elif [ "$nb" = "0" ]; then
-        ac_lock_clear
+        ac_ban_set
+        ac_report "expire" "$ids" >/dev/null 2>&1
+        ac_pending_clear
+        ac_lock_set "实锤逾期未处理，已处理挂模块并封禁本机设备码"
+        log "[✗] 反挂：宽限期已过，处置 $n 个实锤模块"
+        echo "AC_ACTED=1"
+        echo "AC_REMOVED=$n"
+    else
+        ac_pending_set "$ids"
+        ac_lock_set "发现 $nb 个游戏挂模块，请在 $left 天内删除（逾期将自动删除并封禁本机）"
+        ac_report "scan" "$ids" >/dev/null 2>&1
+        echo "AC_ACTED=0"
     fi
-    echo "AC_ACTED=$acted"
+    echo "AC_BANNED=$(ac_banned && echo 1 || echo 0)"
     echo "AC_PENDING=$(ac_pending && echo 1 || echo 0)"
     echo "AC_LOCKED=$(ac_locked && echo 1 || echo 0)"
     return 0
