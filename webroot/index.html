@@ -547,6 +547,7 @@ html[data-lockdown="1"] #acBanner{
     <button class="btn ghost" id="btnAcRestore"><span>↩</span> 还原隔离的模块</button>
   </div>
   <div id="acLockBox"></div>
+  <div id="acNotice"></div>
   <div id="acDecide" style="display:none">
     <div style="border:2px solid #B3261E;border-radius:14px;padding:12px;margin:10px 0">
       <div style="font-weight:700;color:#B3261E;margin-bottom:6px">⚠ 需要你做出选择</div>
@@ -567,6 +568,29 @@ html[data-lockdown="1"] #acBanner{
   <div id="acReport"><div class="appempty">点「扫描」检查已安装模块</div></div>
   <p class="note">「隔离」是把模块移到 /data/adb/yypm/quarantine —— 效果等同于删除
   （模块不再加载），但误判能一键还原。「删除」是 rm -rf，不可恢复。</p>
+</div>
+
+<div class="card wide">
+  <h2>春秋检测整改指引</h2>
+  <p class="note">春秋 Native check 报 <b>System compromised</b> 一般是下面几项。逐项对照处理，
+  处理后重新检测确认。</p>
+  <div class="row"><span class="k">安全补丁级别对齐</span><span class="v" id="spState">-</span></div>
+  <p class="note">① <b>Tampered Attestation Key(26)</b> —— TEE 模拟器应答的安全补丁级别与 keybox 对不上。
+  yypm 在注入 keybox 时会自动生成 <code>security_patch.txt</code>（与 keybox 同目录，是 TrickyStore 的正常配置项）。
+  已经存在且不是 yypm 生成的文件不会被覆盖。</p>
+  <div class="row2">
+    <button class="btn ghost" id="btnSpFix"><span>🩹</span> 立即生成/检查</button>
+  </div>
+  <p class="note">② <b>风险应用</b>（Scene / NP管理器 / Shizuku 等）—— 用 HMA（或 hma-oss）做模板隐藏，
+  并刷入 hma-uidfake 模块配合；确定用不到的直接卸载最干净。
+  yypm 的「隐藏应用列表」（上方卡片）对包可见性检测同样有效。</p>
+  <p class="note">③ <b>MT管理器 / MT2 文件夹 / 异常文件</b> —— 卸载 MT 管理器并删除 /sdcard/MT2 目录；
+  残留的异常文件用下面「深度伪装与异常清理」卡片扫描清理。</p>
+  <p class="note">④ <b>FuseFixer</b> —— 安装后在 LSPosed 里勾选它并 hook 系统框架，重启后打开 FuseFixer
+  界面确认显示 <code>fuse bpf: supported</code>。两个配套地址（长按复制到浏览器打开）：<br>
+  <code style="word-break:break-all">https://github.com/5ec1cff/FuseFixer/releases</code><br>
+  <code style="word-break:break-all">https://github.com/KodateMitsuru/hma-uidfake/releases</code></p>
+  <p class="note">「隐藏应用列表已生效」这一项是<b>正常</b>的 —— 说明隐藏手段在工作，不用处理。</p>
 </div>
 
 <div class="card">
@@ -839,6 +863,15 @@ async function refresh(){
   document.getElementById('kbTime').textContent=s.KEYBOX_UPDATED||'-';
   var tee=document.getElementById('teeState');
   tee.innerHTML=(s.TEESIMULATOR_INSTALLED==='1')?'<span class="pill ok">已安装</span>':'<span class="pill warn">未安装</span>';
+  // 安全补丁级别对齐状态（春秋检测整改指引卡片）
+  var spEl=document.getElementById('spState');
+  if(spEl){
+    var spv=s.SP_STATE||'',spp=s.SP_PROP||'';
+    spEl.innerHTML= spv==='ours' ? '<span class="pill ok">已对齐（'+esc(spp)+'）</span>'
+      : spv==='stale' ? '<span class="pill warn2">需更新（系统补丁日期已变）</span>'
+      : spv==='foreign' ? '<span class="pill warn2">已存在（非 yypm 生成，未改动）</span>'
+      : '<span class="pill">未生成</span>';
+  }
   document.getElementById('autoSwitch').classList.toggle('on',s.AUTO_FETCH==='on');
   var blHidden=(s.BL_HIDDEN==='1');
   document.getElementById('blDot').className='dot '+(blHidden?'on':'off');
@@ -1358,6 +1391,7 @@ function appsRender(){
     var a=list[i], tags=a.tags||'', tg='';
     var lbl=a.label||a.pkg, same=(lbl===a.pkg);
     if(tags.indexOf('xposed')>=0)tg+='<span class="tag">LSPosed</span>';
+    if(tags.indexOf('game')>=0)tg+='<span class="tag">游戏</span>';
     if(tags.indexOf('system')>=0)tg+='<span class="tag">系统</span>';
     // 图标由 appinfo.dex 渲染成 PNG 落在 webroot/icons/ 下；取不到就淡出，不留破图
     h+='<label class="approw"><input type="checkbox" data-pkg="'+esc(a.pkg)+'"'+(a.checked?' checked':'')+'>'
@@ -1460,6 +1494,18 @@ function acFeedbackText(){
   } else {
     L.push('  （还没扫描，或没有命中）');
   }
+  var fbpk=(s.match(/AC-PKG-BEGIN\r?\n([\s\S]*?)\r?\nAC-PKG-END/)||[])[1]||'';
+  if(fbpk){
+    var fbl=fbpk.split('\n');
+    for(var j=0;j<fbl.length;j++){
+      var fc=fbl[j].split('\t');
+      if(fc.length>=3)L.push('  [作弊应用-仅提醒] '+fc[1]+' — '+fc[2]);
+    }
+  }
+  var fbs=(s.match(/AC-LSPD-BEGIN\r?\n([\s\S]*?)\r?\nAC-LSPD-END/)||[])[1]||'';
+  if(fbs){
+    L.push('  [LSPosed 作用域-仅提醒] 命中游戏: '+fbs.split('\n').filter(function(x){return x;}).join(', '));
+  }
   L.push('');
   L.push('说明：');
   L.push('（请补充你为什么认为这是误报，或你打算怎么处理这些模块）');
@@ -1536,6 +1582,22 @@ async function acLockCheck(){
     var out=r.stdout||'';
     var g=function(k){var m=out.match(new RegExp('^'+k+'=(.*)$','m'));return m?m[1].replace(/\r$/,''):'';};
     acLockUI(g('AC_LOCKED')==='1',g('AC_LOCK_REASON'),g('AC_LOCK_SINCE'));
+    // 疑似提醒（只提醒，不处置）：warn 模块 / 作弊应用 / LSPosed 作用域命中的汇总黄条
+    var nb=document.getElementById('acNotice');
+    if(nb){
+      if(g('AC_NOTICE')==='1'){
+        var parts=[];
+        var w=g('AC_NOTICE_WARN'),p=g('AC_NOTICE_PKG'),l=g('AC_NOTICE_LSPD');
+        if(w&&w!=='0')parts.push(w+' 个可疑模块');
+        if(p&&p!=='0')parts.push(p+' 个作弊应用');
+        if(l&&l!=='0')parts.push(l+' 个游戏在 LSPosed 作用域里');
+        nb.innerHTML='<p class="note">'+acTag('提醒','warn')+' 发现 '+(g('AC_NOTICE_N')||'?')+' 个可疑项'
+          +'（'+(parts.length?parts.join('、'):'详见扫描结果')+'）。仅提醒，不会自动处理；点「扫描」查看明细。'
+          +(g('AC_NOTICE_AT')?(' <span style="opacity:.7">'+esc(g('AC_NOTICE_AT'))+'</span>'):'')+'</p>';
+      } else {
+        nb.innerHTML='';
+      }
+    }
   }catch(e){}
 }
 function acUnlock(){
@@ -1610,6 +1672,28 @@ function renderAc(out){
       h+='</div>';
     }
   }
+  // Signal C：已安装的作弊应用（仅提醒，永不处理）
+  var pkgs=(out.match(/AC-PKG-BEGIN\r?\n([\s\S]*?)\r?\nAC-PKG-END/)||[])[1]||'';
+  var pls=pkgs?pkgs.split('\n').filter(function(x){return x;}):[];
+  if(pls.length){
+    h+='<h3 style="margin:14px 0 6px;font-size:14px">已安装的作弊应用 '+acTag('仅提醒','warn')+'</h3>';
+    for(var pi=0;pi<pls.length;pi++){
+      var pc=pls[pi].split('\t');
+      h+='<div style="border-left:2px solid #8B5000;padding:2px 0 2px 10px;margin:6px 0">';
+      h+='<div style="font-size:13px;font-weight:600">'+esc(pc[1]||'')+' '+acTag('作弊应用','warn')+'</div>';
+      h+='<div style="font-size:12px;opacity:.75">'+esc(pc[2]||'')+' —— 仅提醒，不会处理它</div>';
+      h+='</div>';
+    }
+  }
+  // Signal A（A3）：LSPosed 作用域命中游戏（仅提醒，strings 粗扫无法归因到模块）
+  var lg=(out.match(/AC-LSPD-BEGIN\r?\n([\s\S]*?)\r?\nAC-LSPD-END/)||[])[1]||'';
+  var gl=lg?lg.split('\n').filter(function(x){return x;}):[];
+  if(gl.length){
+    h+='<h3 style="margin:14px 0 6px;font-size:14px">LSPosed 作用域命中游戏 '+acTag('仅提醒','warn')+'</h3>';
+    h+='<p class="note">有 LSPosed 模块的作用域包含下面 '+gl.length+' 个游戏。'
+      +'这只能证明「有模块 hook 游戏」，看不出是哪个模块 —— 请到 LSPosed 管理器里逐个检查模块的作用域。仅此提醒，yypm 不会处理。</p>';
+    h+='<div style="font-size:12.5px;opacity:.8;word-break:break-all">'+esc(gl.join('　'))+'</div>';
+  }
   return h;
 }
 async function acScan(){
@@ -1624,6 +1708,7 @@ async function acScan(){
     if(m)acSetMode(m.replace(/\r$/,''),true);
     acDecideUI(acG(out,'AC_PENDING')==='1');
     box.innerHTML=renderAc(out);
+    acLockCheck();   // 提醒条内容可能刚变（提醒随扫描结果撤下或更新）
   }catch(e){box.innerHTML='<div class="appempty">扫描异常: '+esc(e.message)+'</div>';}
   busy('btnAcScan',false);
 }
@@ -1660,6 +1745,25 @@ async function acRestore(){
     }catch(e){log('还原异常: '+e.message,'err');}
     busy('btnAcRestore',false);
   });
+}
+// ---- 安全补丁级别对齐（春秋检测整改）----
+async function spFix(){
+  busy('btnSpFix',true,'处理中...');
+  try{
+    var r=await execT(MODDIR+'/webui.sh security-patch',20000);
+    var out=r.stdout||'';
+    log('===== 安全补丁级别对齐 =====','info');
+    var ls=out.split('\n');
+    for(var i=0;i<ls.length;i++)if(ls[i])log(ls[i],'info');
+    var st=acG(out,'SP_STATE');
+    var msg= st==='ours' ? '已生成/已对齐'
+      : st==='foreign' ? '文件已存在且不是 yypm 生成的，未改动它'
+      : st==='none' ? '未生成（读不到补丁日期属性，或设备上没有 TrickyStore）'
+      : st;
+    toast('security_patch.txt：'+msg);
+    refresh();
+  }catch(e){log('执行异常: '+e.message,'err');}
+  busy('btnSpFix',false);
 }
 // ---- 密钥自检 ----
 // shell 只负责搬运字节（见 common.sh 的 keybox_audit），JSON 解析放在这里。
@@ -2035,6 +2139,7 @@ document.getElementById('btnAcKeepModule').onclick=function(){acDecide('keep_mod
 document.getElementById('btnAcKeepCheats').onclick=function(){acDecide('keep_cheats');};
 document.getElementById('btnAcMail').onclick=acMailto;
 document.getElementById('btnAcCopy').onclick=acCopyFeedback;
+document.getElementById('btnSpFix').onclick=spFix;
 document.getElementById('appSearch').oninput=appsRender;
 document.getElementById('appList').addEventListener('change',function(e){
   var t=e.target;

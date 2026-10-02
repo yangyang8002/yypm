@@ -106,6 +106,8 @@ public class AppInfo {
         Field fMeta = cAI.getField("metaData");
         Field fSrc = fieldOrNull(cAI, "sourceDir");
         Field fIcon = fieldOrNull(cAI, "icon");
+        // API 26+ 才有；CATEGORY_GAME == 0，反挂的 LSPosed 作用域分析靠它认出游戏
+        Field fCategory = fieldOrNull(cAI, "category");
 
         Class<?> cBundle = Class.forName("android.os.Bundle");
         Method bGetBool = cBundle.getMethod("getBoolean", String.class);
@@ -172,6 +174,17 @@ public class AppInfo {
                 int flags = fFlags.getInt(ai);
                 if ((flags & (FLAG_SYSTEM | FLAG_UPDATED_SYSTEM_APP)) != 0) {
                     tags.append("system");
+                }
+                if (fCategory != null) {
+                    try {
+                        if (fCategory.getInt(ai) == 0) {   // CATEGORY_GAME
+                            if (tags.length() > 0) {
+                                tags.append(',');
+                            }
+                            tags.append("game");
+                        }
+                    } catch (Throwable ignored) {
+                    }
                 }
                 Object meta = null;
                 try { meta = fMeta.get(ai); } catch (Throwable ignored) { }

@@ -35,6 +35,8 @@ run_cycle() {
     [ "$(cfg_get deep_bl off)" = "on" ] && hide_bl_deep
     # 环境对抗：把隐藏应用列表同步到系统（列表没变时是空操作）
     hide_apps_sync
+    # 安全补丁级别对齐（春秋检测整改；与是否自动拉取无关，TrickyStore 不在时自动跳过）
+    ensure_security_patch
     return 0
 }
 

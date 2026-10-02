@@ -763,6 +763,9 @@ fetch_keybox() {
     cache_store "$src" "$(sha256_of "$src")"
     cache_prune
 
+    # 顺带对齐 TrickyStore 的安全补丁级别（春秋检测整改；foreign 文件不会被覆盖）
+    ensure_security_patch
+
     local size=$(wc -c < "$KEYBOX_DEST" 2>/dev/null)
     if [ "$fresh" = "1" ]; then
         log "[✓] keybox 校验通过并已挂载 ($size 字节，未重新下载)"
@@ -820,6 +823,60 @@ rollback_keybox() {
     cp -f "$f" "$KEYBOX_DEST"; chmod 644 "$KEYBOX_DEST"
     cp -f "$f" "$KEYBOX_CACHE"; chmod 644 "$KEYBOX_CACHE"
     log "[✓] 已回滚到本地池中的 keybox（$(sha256_of "$KEYBOX_DEST" | cut -c1-16)，来自 $(basename "$f")）"
+    return 0
+}
+
+# ---- 安全补丁级别对齐（春秋检测「Tampered Attestation Key(26)」整改）----
+# 成因：TEE 模拟器应答的安全补丁级别与 keybox 里 attestation key 应有的级别对不上，
+# 检测方据此判断「密钥被替换」。TrickyStore / TEESimulator 支持用 security_patch.txt
+# 显式声明补丁日期（与 keybox.xml 同目录，是它的正常配置项，不是 hack）。
+# 这里按设备真实属性生成：system 到年月，boot/vendor 用完整日期。
+# 变量化路径：生产用默认值，测试里覆盖成临时文件。
+SP_FILE="${SP_FILE:-/data/adb/tricky_store/security_patch.txt}"
+SP_MARK="${SP_MARK:-$DATA_DIR/security_patch.sha}"
+
+# 只读状态：none（不存在）/ ours（yypm 写的）/ stale（yypm 写的但 OTA 后日期已旧）/
+# foreign（存在但不是 yypm 写的 —— TrickyStore 自带或用户手写，绝不动它）。
+security_patch_state() {
+    [ -f "$SP_FILE" ] || { echo none; return 0; }
+    local mine=$(cat "$SP_MARK" 2>/dev/null)
+    if [ -n "$mine" ] && [ "$(sha256_of "$SP_FILE")" = "$mine" ]; then
+        local sp=$(getprop ro.build.version.security_patch 2>/dev/null | tr -d ' \r')
+        [ -n "$sp" ] && ! grep -q "^boot=$sp\$" "$SP_FILE" 2>/dev/null && { echo stale; return 0; }
+        echo ours
+    else
+        echo foreign
+    fi
+}
+
+# 生成/更新 security_patch.txt。只在「文件不存在」或「确认是 yypm 自己写的」时动手：
+# 来路不明的已存在文件一律不覆盖 —— 那是 TrickyStore 或用户自己的配置。
+ensure_security_patch() {
+    # 设备上根本没有 TrickyStore 目录时别创建它 —— 空目录本身就是「异常文件」
+    [ -d "$TRICKY_DIR" ] || return 0
+    local sp=$(getprop ro.build.version.security_patch 2>/dev/null | tr -d ' \r')
+    # 标准格式 2025-08-05；只到年月的补成当月 1 号；其它怪格式直接放弃
+    case "$sp" in
+        [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
+        [0-9][0-9][0-9][0-9]-[0-9][0-9]) sp="$sp-01" ;;
+        *) return 0 ;;
+    esac
+    # 注意：下面引号里是真实换行，不是 \n 字面量（血泪坑，见 HANDOFF 7.1）
+    local body="system=$(printf '%s' "$sp" | cut -d'-' -f1-2 | tr -d '-')
+boot=$sp
+vendor=$sp"
+    if [ -f "$SP_FILE" ]; then
+        local mine=$(cat "$SP_MARK" 2>/dev/null)
+        if [ -z "$mine" ] || [ "$(sha256_of "$SP_FILE")" != "$mine" ]; then
+            return 0   # foreign：不动
+        fi
+        [ "$(cat "$SP_FILE" 2>/dev/null)" = "$body" ] && return 0   # 已是最新，不重写
+        cp -f "$SP_FILE" "$SP_FILE.bak" 2>/dev/null
+    fi
+    printf '%s\n' "$body" > "$SP_FILE" 2>/dev/null || return 1
+    chmod 644 "$SP_FILE" 2>/dev/null
+    sha256_of "$SP_FILE" > "$SP_MARK" 2>/dev/null
+    log "[✓] 已写入 security_patch.txt（安全补丁级别 $sp，供 TrickyStore/TEESimulator 应答）"
     return 0
 }
 
@@ -1211,6 +1268,9 @@ echo_status() {
     else
         echo "TEESIMULATOR_INSTALLED=0"
     fi
+    # 安全补丁级别对齐状态（春秋检测整改；只读，不在这里写文件）
+    echo "SP_STATE=$(security_patch_state)"
+    echo "SP_PROP=$(getprop ro.build.version.security_patch 2>/dev/null | tr -d ' \r')"
     # 隐藏 BL 状态
     echo "AUTO_BL=$(cfg_get auto_bl off)"
     [ "$(getprop ro.boot.verifiedbootstate 2>/dev/null)" = "green" ] && echo "BL_HIDDEN=1" || echo "BL_HIDDEN=0"
@@ -2198,15 +2258,45 @@ ac_scan() {
 "
         done
     fi
+
+    # Signal C：已安装的作弊 APK。只提醒，永不处理（不在 AC-BEGIN 的模块行里）。
+    local pkgscan pkgrows npkg
+    pkgscan=$(ac_scan_pkgs)
+    npkg=$(printf '%s\n' "$pkgscan" | sed -n 's/^AC_PKG_HIT=//p' | head -1)
+    case "$npkg" in ''|*[!0-9]*) npkg=0 ;; esac
+    pkgrows=$(printf '%s\n' "$pkgscan" | grep '^PKG' 2>/dev/null)
+
+    # Signal A（A3）：LSPosed 作用域命中游戏。只提醒；strings 粗扫无法归因到模块。
+    # 没有 LSPosed 库 / 游戏清单不可用 / 库里没有游戏，都不算命中。
+    local lspdrows nlspd=0 lspddb=0 games grc=0
+    if [ -f "$AC_LSPD_DB" ]; then
+        lspddb=1
+        games=$(ac_game_pkgs) || grc=$?
+        if [ "$grc" = "0" ] && [ -n "$games" ]; then
+            lspdrows=$(ac_lspd_scope "$AC_LSPD_DB" "$games")
+            [ -n "$lspdrows" ] && nlspd=$(printf '%s\n' "$lspdrows" | sed '/^$/d' | wc -l | tr -d ' ')
+        fi
+    fi
+    case "$nlspd" in ''|*[!0-9]*) nlspd=0 ;; esac
+
     echo "AC_MODE=$(ac_mode)"
     echo "AC_LOCKED=$(ac_locked && echo 1 || echo 0)"
     echo "AC_PENDING=$(ac_pending && echo 1 || echo 0)"
     echo "AC_TOTAL=$total"
     echo "AC_BLOCK=$block"
     echo "AC_WARN=$warn"
+    echo "AC_PKG_HIT=$npkg"
+    echo "AC_LSPD_DB=$lspddb"
+    echo "AC_LSPD_HIT=$nlspd"
     echo "AC-BEGIN"
     printf '%s' "$out"
     echo "AC-END"
+    echo "AC-PKG-BEGIN"
+    printf '%s\n' "$pkgrows" | sed '/^$/d'
+    echo "AC-PKG-END"
+    echo "AC-LSPD-BEGIN"
+    printf '%s\n' "$lspdrows" | sed '/^$/d'
+    echo "AC-LSPD-END"
 }
 
 # D 级：已装的作弊 APK。只警告。
@@ -2227,6 +2317,101 @@ ac_scan_pkgs() {
     done
     IFS="$oldifs"
     echo "AC_PKG_HIT=$n"
+}
+
+# ---- Signal A：LSPosed 作用域识别（A3 零成本方案）----
+# LSPosed 的 scope 表（哪个模块 hook 哪个应用）存在 SQLite 库 modules_config.db 里。
+# A3 方案不解析表结构：对 db 做 strings 式粗扫，把「像包名」的字符串全抠出来，
+# 再与设备上的游戏包名求交集。缺点是无法归因到具体模块 —— 所以这一档只提醒，
+# 永远不提实锤（要归因得用 dex 直接读 SQLite，即 HANDOFF 任务 B 的 A1 方案）。
+AC_LSPD_DB="${AC_LSPD_DB:-/data/adb/lspd/config/modules_config.db}"
+AC_GAME_CACHE="${AC_GAME_CACHE:-$DATA_DIR/cache/game_pkgs.txt}"
+
+# 设备上游戏类应用包名（ApplicationInfo.CATEGORY_GAME），一行一个。
+# 来自 appinfo dex 输出的 game 标记；结果缓存 12 小时（新装的游戏最迟半天内认出）。
+# dex 不可用 -> 返回 1（调用方据此把信号标成「未执行」，不算干净也不算命中）。
+ac_game_pkgs() {
+    local f="$AC_GAME_CACHE" mt
+    if [ -f "$f" ]; then
+        mt=$(stat -c %Y "$f" 2>/dev/null)
+        case "$mt" in ''|*[!0-9]*) mt=0 ;; esac
+        if [ $(( $(date +%s) - mt )) -lt 43200 ] 2>/dev/null; then
+            cat "$f" 2>/dev/null
+            return 0
+        fi
+    fi
+    local out games
+    out=$(appinfo_run 2>/dev/null) || return 1
+    games=$(printf '%s\n' "$out" | awk -F'\t' '$3 ~ /(^|,)game(,|$)/ {print $1}' 2>/dev/null | sed '/^$/d')
+    mkdir -p "$(dirname "$f")" 2>/dev/null
+    printf '%s\n' "$games" | sed '/^$/d' > "$f" 2>/dev/null
+    printf '%s\n' "$games" | sed '/^$/d'
+    return 0
+}
+
+# $1=db 路径  $2=游戏包名（换行分隔）-> 输出出现在作用域库里的游戏包名（换行分隔）
+# 返回码：0=有命中  1=无命中/db 不可读  2=游戏清单不可用（信号未执行）
+ac_lspd_scope() {
+    local db="$1" games="$2" pkgs g hits=""
+    [ -f "$db" ] || return 1
+    [ -n "$games" ] || return 2
+    # tr 把非包名字符全部压成换行（等价 strings 的效果），再按包名形状过滤。
+    # 不用 grep -a 直接读二进制：toybox / busybox / GNU 对二进制 -a 的行为不一致。
+    pkgs=$(tr -cs 'A-Za-z0-9_.' '\n' < "$db" 2>/dev/null | \
+        grep -E '^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+){2,}$' 2>/dev/null | sort -u)
+    [ -n "$pkgs" ] || return 1
+    local oldifs="$IFS"
+    IFS='
+'
+    for g in $games; do
+        [ -n "$g" ] || continue
+        case "
+$pkgs
+" in
+            *"
+$g
+"*) hits="${hits}${g}
+" ;;
+        esac
+    done
+    IFS="$oldifs"
+    [ -n "$hits" ] || return 1
+    printf '%s' "$hits"
+}
+
+# ---- 疑似提醒（只提醒，无任何处置）----
+# warn 级模块 / 作弊 APK / LSPosed 作用域命中游戏 —— 三类统一汇成一条提醒存
+# $AC_NOTICE。WebUI 打开时读它，有就挂黄色提醒条；下次扫描干净了自动撤下。
+# 提醒不是处置：不写锁定、不写计时、不动任何模块文件。
+AC_NOTICE="${AC_NOTICE:-$DATA_DIR/ac.notice}"
+
+ac_notice_set() { # $1=warn数 $2=pkg数 $3=lspd数
+    local total=$(( ${1:-0} + ${2:-0} + ${3:-0} ))
+    if [ "$total" -le 0 ] 2>/dev/null; then
+        [ -f "$AC_NOTICE" ] && { rm -f "$AC_NOTICE" 2>/dev/null; log "[✓] 反挂：可疑项已清空，提醒撤下"; }
+        return 0
+    fi
+    mkdir -p "$DATA_DIR" 2>/dev/null
+    {
+        echo "n=$total"
+        echo "warn=${1:-0}"
+        echo "pkg=${2:-0}"
+        echo "lspd=${3:-0}"
+        echo "at=$(date '+%Y-%m-%d %H:%M:%S')"
+    } > "$AC_NOTICE" 2>/dev/null
+}
+
+ac_notice_report() {
+    if [ -f "$AC_NOTICE" ]; then
+        echo "AC_NOTICE=1"
+        echo "AC_NOTICE_N=$(sed -n 's/^n=//p' "$AC_NOTICE" 2>/dev/null | head -1)"
+        echo "AC_NOTICE_WARN=$(sed -n 's/^warn=//p' "$AC_NOTICE" 2>/dev/null | head -1)"
+        echo "AC_NOTICE_PKG=$(sed -n 's/^pkg=//p' "$AC_NOTICE" 2>/dev/null | head -1)"
+        echo "AC_NOTICE_LSPD=$(sed -n 's/^lspd=//p' "$AC_NOTICE" 2>/dev/null | head -1)"
+        echo "AC_NOTICE_AT=$(sed -n 's/^at=//p' "$AC_NOTICE" 2>/dev/null | head -1)"
+    else
+        echo "AC_NOTICE=0"
+    fi
 }
 
 # ---- 自我锁定 ----
@@ -2276,6 +2461,8 @@ ac_lock_status() {
         echo "AC_LOCK_REASON="
         echo "AC_LOCK_SINCE="
     fi
+    # 疑似提醒（只提醒不处置）：warn 模块 / 作弊 APK / LSPosed 作用域的汇总
+    ac_notice_report
 }
 
 # ---- 实锤处置：先警告，强制二选一 ----
@@ -2400,7 +2587,7 @@ ac_mode() {
 }
 
 # ============ 反挂：宽限期 / 设备码 / 封禁 / 联网闸 ============
-# 规则（实锤才管，疑似只记日志）：
+# 规则（实锤才管；疑似只提醒 —— 记日志 + WebUI 黄条，无任何处置）：
 #   开机扫描 -> 发现实锤 -> 给 3 天期限，期间锁定自身并倒计时
 #   3 天内删掉挂模块 -> 计时清零，一切照常
 #   逾期仍在     -> 删掉挂模块 + 封本机设备码，并把设备码上报服务端
@@ -2470,22 +2657,59 @@ ac_ban_set() {
     log "[✗] 反挂：已封禁本机设备码 $(ac_device_code)"
 }
 
+# 设备令牌文件（v2.7.0 起）：服务端首次联系时下发，之后上报必须带牌，
+# 防止「知道设备码就能伪造 expire 封禁别人」。令牌只存本地，不落隐私。
+AC_TOK_FILE="${AC_TOK_FILE:-$DATA_DIR/ac.token}"
+
+ac_tok() { head -1 "$AC_TOK_FILE" 2>/dev/null | tr -cd '0-9a-f'; }
+
+# 统一的服务端反挂通道：ping 探活 / scan 上报 / expire 上报都走这里。
+# 服务端首次联系会下发 tok（响应里的 "tok":"..."），本地存 $AC_TOK_FILE（600）；
+# 已持有的令牌绝不被响应里的值覆盖（防服务端被冒充后换牌）。
+# 丢了令牌的后果：expire 会被服务端拒绝（不再接受无牌封禁），扫描上报与
+# 封禁查询不受影响 —— 宁可封不上，也不能让伪造者封别人。
+ac_call() { # $1=ev(ping|scan|expire)  $2=hits(csv，可空) -> stdout=响应体
+    command -v curl >/dev/null 2>&1 || return 1
+    local code=$(ac_device_code)
+    local url="$(api_url acreport)&code=$code&ev=$1"
+    [ -n "$2" ] && url="$url&hits=$2"
+    local tok=$(ac_tok)
+    [ -n "$tok" ] && url="$url&tok=$tok"
+    local body=$(curl -s --connect-timeout 8 --max-time 20 "$url" 2>/dev/null)
+    [ -n "$body" ] || return 1
+    case "$body" in
+        *'"tok":"'*)
+            if [ ! -s "$AC_TOK_FILE" ]; then
+                local nt=$(printf '%s' "$body" | sed -n 's/.*"tok":"\([0-9a-f]\{64\}\)".*/\1/p' | head -1)
+                if [ -n "$nt" ]; then
+                    mkdir -p "$DATA_DIR" 2>/dev/null
+                    printf '%s\n' "$nt" > "$AC_TOK_FILE" 2>/dev/null
+                    chmod 600 "$AC_TOK_FILE" 2>/dev/null
+                    log "[·] 反挂：已从服务端登记设备令牌（上报通道已加签）"
+                fi
+            fi
+            ;;
+    esac
+    printf '%s' "$body"
+}
+
 # 联网探测：拿一个轻量端点试连通性。断网时模块停摆，靠的就是它。
+# 能拿到响应体就算在线（哪怕业务上被拒绝，也说明网络通、服务在）。
 ac_online() {
-    local url="$(api_url acreport)&code=$(ac_device_code)&ev=ping"
-    if command -v curl >/dev/null 2>&1; then
-        curl -s --connect-timeout 6 --max-time 12 -o /dev/null "$url" 2>/dev/null && return 0
-    fi
-    return 1
+    ac_call ping "" >/dev/null 2>&1
 }
 
 # 上报：$1 = 事件（ping/scan/expire）  $2 = 命中 id（换行分隔）
 ac_report() {
-    local ev="$1" ids="$2" code=$(ac_device_code)
-    local hits=$(printf '%s' "$ids" | tr '\n' ',' | sed 's/,$//; s/ //g')
-    local url="$(api_url acreport)&code=$code&ev=$ev&hits=$hits"
-    command -v curl >/dev/null 2>&1 || return 1
-    curl -s --connect-timeout 8 --max-time 20 -o /dev/null "$url" 2>/dev/null
+    local hits=$(printf '%s' "$2" | tr '\n' ',' | sed 's/,$//; s/ //g')
+    local body
+    body=$(ac_call "$1" "$hits") || return 1
+    case "$body" in
+        *'"ok":0'*)
+            log "[!] 反挂：服务端拒绝了上报（$(printf '%s' "$body" | sed -n 's/.*"err":"\([^"]*\)".*/\1/p' | head -1)）"
+            ;;
+    esac
+    return 0
 }
 
 # 向服务端确认本机是否被封。
@@ -2494,9 +2718,8 @@ ac_report() {
 # 重装模块，本地封禁文件就没了。只有向服务端问一次，封禁才跨重装有效。
 # 注意：这里只【读状态】，服务端不下发任何指令。
 ac_ban_query() {
-    command -v curl >/dev/null 2>&1 || return 1
-    local url="$(api_url acreport)&code=$(ac_device_code)&ev=ping"
-    local r=$(curl -s --connect-timeout 8 --max-time 20 "$url" 2>/dev/null)
+    local r
+    r=$(ac_call ping "") || return 1
     case "$r" in *'"banned":1'*) return 0 ;; esac
     return 1
 }
@@ -2521,11 +2744,22 @@ ac_apply() {
     local rows=$(printf '%s\n' "$scan" | sed -n '/^AC-BEGIN$/,/^AC-END$/p' | sed '1d;$d')
     local ids=$(printf '%s\n' "$rows" | awk -F'\t' '$2=="block"{print $1}')
     local id lvl nm why
+    local pkgrows=$(printf '%s\n' "$scan" | sed -n '/^AC-PKG-BEGIN$/,/^AC-PKG-END$/p' | sed '1d;$d')
+    local npkg=$(printf '%s\n' "$scan" | sed -n 's/^AC_PKG_HIT=//p' | head -1)
+    local nlspd=$(printf '%s\n' "$scan" | sed -n 's/^AC_LSPD_HIT=//p' | head -1)
+    case "$npkg" in ''|*[!0-9]*) npkg=0 ;; esac
+    case "$nlspd" in ''|*[!0-9]*) nlspd=0 ;; esac
 
-    # 疑似只记日志。误报率摆在那里，动它得不偿失 —— 实锤才配得上处置。
+    # 疑似档（warn 模块 / 作弊 APK / LSPosed 作用域命中游戏）只提醒：记日志 +
+    # 挂 WebUI 黄色提醒条（ac.notice），绝不处置。误报率摆在那里，动它得不偿失。
     printf '%s\n' "$rows" | while IFS="	" read -r id lvl nm why; do
         [ "$lvl" = "warn" ] && log "[?] 反挂可疑（仅记录）：$id（$nm）— $why"
     done
+    printf '%s\n' "$pkgrows" | while IFS="	" read -r _tag _pkg _pwhy; do
+        [ "$_tag" = "PKG" ] && [ -n "$_pkg" ] && log "[?] 反挂提醒：已安装作弊应用 $_pkg（$_pwhy）—— 仅提醒，不处理"
+    done
+    [ "$nlspd" != "0" ] && log "[?] 反挂提醒：LSPosed 作用域包含 $nlspd 个游戏（strings 粗扫无法归因到具体模块）—— 仅提醒"
+    ac_notice_set "${nw:-0}" "$npkg" "$nlspd"
 
     echo "AC_DEVCODE=$(ac_device_code)"
 

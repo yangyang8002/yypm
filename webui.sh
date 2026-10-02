@@ -164,9 +164,11 @@ case "${1:-status}" in
             chmod 644 "$KEYBOX_DEST"
             echo "MOUNT=OK"
             echo "KEYBOX_SIZE=$(wc -c < "$KEYBOX_DEST" 2>/dev/null | tr -d ' ')"
+            ensure_security_patch
         elif [ -f "$KEYBOX_DEST" ]; then
             echo "MOUNT=OK(already)"
             echo "KEYBOX_SIZE=$(wc -c < "$KEYBOX_DEST" 2>/dev/null | tr -d ' ')"
+            ensure_security_patch
         else
             echo "MOUNT=FAIL(no keybox cached)"
         fi
@@ -344,6 +346,19 @@ case "${1:-status}" in
     net)
         echo "NET_WIFI=$(net_is_wifi)"
         echo "WIFI_ONLY=$(cfg_get wifi_only off)"
+        ;;
+    security-patch)
+        # 安全补丁级别对齐：先尽力生成/更新，再报告状态与文件内容。
+        # foreign（文件存在但不是 yypm 写的）只报告、绝不动它。
+        ensure_security_patch
+        echo "SP_STATE=$(security_patch_state)"
+        echo "SP_PATH=$SP_FILE"
+        echo "SP_PROP=$(getprop ro.build.version.security_patch 2>/dev/null | tr -d ' \r')"
+        if [ -f "$SP_FILE" ]; then
+            echo "---SP-BEGIN---"
+            cat "$SP_FILE"
+            echo "---SP-END---"
+        fi
         ;;
 
     # ---- 环境对抗 ----
