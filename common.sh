@@ -2488,6 +2488,19 @@ ac_report() {
     curl -s --connect-timeout 8 --max-time 20 -o /dev/null "$url" 2>/dev/null
 }
 
+# 向服务端确认本机是否被封。
+#
+# 这一步不能省：没有它，「封机器码」就是摆设 —— 用户删掉 /data/adb/yypm
+# 重装模块，本地封禁文件就没了。只有向服务端问一次，封禁才跨重装有效。
+# 注意：这里只【读状态】，服务端不下发任何指令。
+ac_ban_query() {
+    command -v curl >/dev/null 2>&1 || return 1
+    local url="$(api_url acreport)&code=$(ac_device_code)&ev=ping"
+    local r=$(curl -s --connect-timeout 8 --max-time 20 "$url" 2>/dev/null)
+    case "$r" in *'"banned":1'*) return 0 ;; esac
+    return 1
+}
+
 # 联网闸：有实锤在时，模块必须联网才工作。
 # 这不是「检查前先联网」，而是「不联网就别用」—— 否则拔网线就能把 3 天期限冻住。
 ac_net_gate() {
@@ -2526,6 +2539,10 @@ ac_apply() {
             ac_lock_clear
         fi
         ac_report "scan" "" >/dev/null 2>&1
+        # 本地没实锤，但服务端可能已把本机封了（用户重装过模块也一样查得到）。
+        if ! ac_banned && ac_ban_query; then
+            ac_ban_set
+        fi
         echo "AC_GRACE=0"
         echo "AC_DUE=0"
         echo "AC_ACTED=0"
