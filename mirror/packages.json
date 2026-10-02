@@ -1,0 +1,67 @@
+{
+  "updated_at": "2026-10-02 17:00:37",
+  "count": 6,
+  "modules": {
+    "LSPosed.zip": {
+      "sha256": "725915707f88a4f5ebecddab908cb217aa0a6d98955db5885bc9fadda81e75b8",
+      "size": 5986702,
+      "url": "https://github.com/yangyang8002/yypm/releases/download/mirror/LSPosed.zip",
+      "signature": "E9NySF+K/vydppwa0Pr9xONfWmcZHvUlqJeKkfR7S+lVEQqX8m/aqwQtp0/g6mUbTbWE4c4fFtC1F10pzZOUBA==",
+      "x-id": "zygisk_lsposed",
+      "x-name": "LSPosed",
+      "x-version": "v2.2.0 (7854)",
+      "x-versionCode": 7854
+    },
+    "PlayIntegrityFix.zip": {
+      "sha256": "10eec591735cafee437332871443a2fadf6632b1a58abb16fe2461d9df100ab1",
+      "size": 660329,
+      "url": "https://github.com/yangyang8002/yypm/releases/download/mirror/PlayIntegrityFix.zip",
+      "signature": "9Mt8HOY4PtGcGVW8nLO4HGpr4m+K0umfHVwE8FP+Mw+gA1OAtG1rwXX/6Al4O9GD775U4udd4kcSF/bCUN2CCQ==",
+      "x-id": "playintegrityfix",
+      "x-name": "Play Integrity Fix [INJECT]",
+      "x-version": "v4.7-1-inject-s",
+      "x-versionCode": 471
+    },
+    "TEESimulator.zip": {
+      "sha256": "ea4cfad7312834b4843e1fe2d7107e4d587e8c988eca558e0656985043928051",
+      "size": 2664772,
+      "url": "https://github.com/yangyang8002/yypm/releases/download/mirror/TEESimulator.zip",
+      "signature": "l+JCY6ejbzVPBeJdcYydH8UATcaRvpTS8Z83pVWQPbgI6CX4RzDCon8v7qERQI5dUNeV+DpVIBnzWZe1i+/qCg==",
+      "x-id": "tricky_store",
+      "x-name": "TEESimulator-RS",
+      "x-version": "v6.0.1-307",
+      "x-versionCode": 307
+    },
+    "Zygisk-Next.zip": {
+      "sha256": "474d58abc208c0779e7f8f1d8449db755a874d475c13b9cf8decf74bc171933b",
+      "size": 7529581,
+      "url": "https://github.com/yangyang8002/yypm/releases/download/mirror/Zygisk-Next.zip",
+      "signature": "U16Cb7i+IVG7w/hYGUfu4xNIlHuaGX9pLuS+FT/oYtOm2V74Vj4xtWQMUS4bf6brbHi+rmUwTLTDBYbpG8h/DA==",
+      "x-id": "zygisksu",
+      "x-name": "Zygisk Next",
+      "x-version": "1.5.0 (843-5217106-release)",
+      "x-versionCode": 843
+    },
+    "hma-uidfake.zip": {
+      "sha256": "041e313e39b16693b765e8bd649234ee7b1594490a52603a65a8366cc44ed271",
+      "size": 754061,
+      "url": "https://github.com/yangyang8002/yypm/releases/download/mirror/hma-uidfake.zip",
+      "signature": "NdcCN+5l5AOE5PbMjAPjkn/TKVo9/2SCws53gg3E6DTsCsIgLVfWuQvWhq8JUHQTT+eJwAB8HjOp3nPbdRM3DQ==",
+      "x-type": "ksu-module",
+      "x-auto": 1,
+      "x-id": "hma-uidfake",
+      "x-name": "HMA UID Fake",
+      "x-version": "0.3.3+dcc8c19",
+      "x-versionCode": 3003
+    },
+    "FuseFixer.apk": {
+      "sha256": "572ebe7705706b9807271f60b3daf89046712ec102e79d0ac09713b5be7dcb40",
+      "size": 491739,
+      "url": "https://github.com/yangyang8002/yypm/releases/download/mirror/FuseFixer.apk",
+      "signature": "rCkumdMDO9//n4tLcgKWpLZ+LPIYkk5NvHXpPgeRqvzNriYY3UUZEEys+E8RjUkmT2YxrxJD6Go9TbK6ibisAg==",
+      "x-type": "apk",
+      "x-auto": 1,
+      "x-package": "io.github.a13e300.fusefixer"
+    }
+  }
+}

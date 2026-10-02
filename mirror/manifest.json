@@ -1,0 +1,188 @@
+{
+  "version": "v2.7.1",
+  "version_code": 271,
+  "base_url": "https://yangyang8002.xin/api/kernelsu/module",
+  "keybox": {
+    "updated_at": "2026-10-02 17:00:36",
+    "source": "yurikey",
+    "size": 12596,
+    "sha256": "a0a3da9c044555e2aa004172694e78ca9310f28fe70f21a33a6756f64f82b23b",
+    "url": "https://raw.githubusercontent.com/yangyang8002/yypm/mirror-data/mirror/keybox.xml",
+    "validity": {
+      "level": "valid",
+      "ok": true,
+      "reasons": [],
+      "warnings": [],
+      "checked_at": "2026-10-02 17:00:19",
+      "min_not_after": "2030-09-27",
+      "days_remaining": 1455,
+      "cert_count": 6,
+      "serial_count": 5,
+      "serials": [
+        "64DEAA4D53885472AFAC267BDBD4A472",
+        "353017E73DC205A73A9C3DE142230370",
+        "D50FF25BA3F2D6B3",
+        "09307822E6C6F88CD2F1AB20C37AFEB1",
+        "879D5BDC87EFDF863362DA64A197CA3F"
+      ],
+      "chains": [
+        {
+          "count": 3,
+          "expired": [],
+          "not_yet_valid": [],
+          "unparsable": 0,
+          "chain_broken": [],
+          "revoked": [],
+          "expected": null,
+          "min_not_after": 1916684702,
+          "serials": [
+            "64DEAA4D53885472AFAC267BDBD4A472",
+            "353017E73DC205A73A9C3DE142230370",
+            "D50FF25BA3F2D6B3"
+          ],
+          "declared": 3,
+          "certs": [
+            {
+              "parsed": true,
+              "subject": "serialNumber=91bb64f6f0dfcbe26de63a87ddc6c4e1",
+              "issuer": "serialNumber=70912df46104faae947864e5804f1f8d",
+              "serial": "64DEAA4D53885472AFAC267BDBD4A472",
+              "not_before": "2020-09-29",
+              "not_after": "2030-09-27"
+            },
+            {
+              "parsed": true,
+              "subject": "serialNumber=70912df46104faae947864e5804f1f8d",
+              "issuer": "serialNumber=f92009e853b6b045",
+              "serial": "353017E73DC205A73A9C3DE142230370",
+              "not_before": "2020-09-29",
+              "not_after": "2030-09-27"
+            },
+            {
+              "parsed": true,
+              "subject": "serialNumber=f92009e853b6b045",
+              "issuer": "serialNumber=f92009e853b6b045",
+              "serial": "D50FF25BA3F2D6B3",
+              "not_before": "2019-11-23",
+              "not_after": "2034-11-19"
+            }
+          ]
+        },
+        {
+          "count": 3,
+          "expired": [],
+          "not_yet_valid": [],
+          "unparsable": 0,
+          "chain_broken": [],
+          "revoked": [],
+          "expected": null,
+          "min_not_after": 1916684685,
+          "serials": [
+            "09307822E6C6F88CD2F1AB20C37AFEB1",
+            "879D5BDC87EFDF863362DA64A197CA3F",
+            "D50FF25BA3F2D6B3"
+          ],
+          "declared": 3,
+          "certs": [
+            {
+              "parsed": true,
+              "subject": "serialNumber=91bb64f6f0dfcbe26de63a87ddc6c4e1",
+              "issuer": "serialNumber=70912df46104faae947864e5804f1f8d",
+              "serial": "09307822E6C6F88CD2F1AB20C37AFEB1",
+              "not_before": "2020-09-29",
+              "not_after": "2030-09-27"
+            },
+            {
+              "parsed": true,
+              "subject": "serialNumber=70912df46104faae947864e5804f1f8d",
+              "issuer": "serialNumber=f92009e853b6b045",
+              "serial": "879D5BDC87EFDF863362DA64A197CA3F",
+              "not_before": "2020-09-29",
+              "not_after": "2030-09-27"
+            },
+            {
+              "parsed": true,
+              "subject": "serialNumber=f92009e853b6b045",
+              "issuer": "serialNumber=f92009e853b6b045",
+              "serial": "D50FF25BA3F2D6B3",
+              "not_before": "2019-11-23",
+              "not_after": "2034-11-19"
+            }
+          ]
+        }
+      ]
+    },
+    "fallbacks": [
+      {
+        "source": "megatron",
+        "sha256": "041b17e646b3774aaa3698fd29fed4ad5dd64d8a5828abf34bc19003d2ce3abc",
+        "size": 11049,
+        "days_remaining": 1455,
+        "min_not_after": "2030-09-27"
+      },
+      {
+        "source": "integritybox",
+        "sha256": "855a786ce84b8a14953b08ff24320bde228a94657c7a465b2e71ca1a46d5ccb3",
+        "size": 13109,
+        "days_remaining": 1302,
+        "min_not_after": "2030-04-27"
+      },
+      {
+        "source": "keyboxhub/keybox_7ab1758a25",
+        "sha256": "85165468926f4fcbc8aacc30426424675517b0cc9bf41eeb67ef5b0feacd4009",
+        "size": 12754,
+        "days_remaining": 2677,
+        "min_not_after": "2034-01-31"
+      }
+    ],
+    "revocation": {
+      "source": "purainity(缓存)",
+      "count": 517,
+      "fresh": true,
+      "fetched_at": 1790855324,
+      "checked": 517,
+      "tried": []
+    },
+    "signature": "joYlKx6rXE8jEKxZMtna+ZAT49WujorgVGw0N5982Pitxakvoq7/MabVANosm0P6v1KuX9nx6Z/eT1j6aVbhBQ==",
+    "sign_public": "4+b3y4zvxtwJrNYDvD/1sCOy+rABnw5AbD3ivXpSg+E="
+  },
+  "module": {
+    "sha256": "e8826793581ec186007a4859af96694bc83e31f0fc73cac1aeb167343f55d05b",
+    "size": 868181,
+    "url": "https://github.com/yangyang8002/yypm/releases/download/mirror/module.zip",
+    "signature": "JNoEITLSCrN74wH0TxQJTES2GmQkVewpA70PukRIyN1yHBL/4EWVMuv8+XnPFNCtFDLE5qFbebb/gNI+nA0aCQ=="
+  },
+  "server": {
+    "updated_at": "2026-10-02 17:00:36",
+    "revoked_count": 517,
+    "sources": [
+      {
+        "source": "yurikey",
+        "ok": true,
+        "why": ""
+      },
+      {
+        "source": "integritybox",
+        "ok": true,
+        "why": ""
+      },
+      {
+        "source": "megatron",
+        "ok": true,
+        "why": ""
+      },
+      {
+        "source": "keyboxhub/keybox_7ab1758a25",
+        "ok": true,
+        "why": ""
+      },
+      {
+        "source": "keyboxstatus",
+        "ok": false,
+        "why": "目录取样失败"
+      }
+    ],
+    "candidate_count": 5,
+    "valid_count": 4
+  }
+}
