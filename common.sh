@@ -418,6 +418,21 @@ pm_bin() {
     return 1
 }
 
+# 应用是否真的装在系统里：pm path -> pm list packages -> cmd package path 三级判定。
+# 只用 pm path 会在个别 ROM/时机上假阴性（binder 抖动 / 子命令不可用），
+# 假阴性直接把 APK 条目判成「未安装」→ 界面永远显示「还有一项要更新」、
+# 自动安装每轮重装。收敛到这一个函数，检查与自动安装共用同一条判定。
+apk_installed() { # $1 = 应用包名
+    local p="$1" pm
+    [ -n "$p" ] || return 1
+    pm=$(pm_bin 2>/dev/null) || { dbg "apk_installed: 无 pm，视为未装"; return 1; }
+    if "$pm" path "$p" >/dev/null 2>&1; then dbg "apk_installed: $p 由 pm path 判定已装"; return 0; fi
+    if "$pm" list packages 2>/dev/null | grep -xq -e "$p" -e "package:$p"; then dbg "apk_installed: $p 由 pm list packages 判定已装"; return 0; fi
+    if command -v cmd >/dev/null 2>&1 && cmd package path "$p" >/dev/null 2>&1; then dbg "apk_installed: $p 由 cmd package path 判定已装"; return 0; fi
+    dbg "apk_installed: $p 三级判定均为未装"
+    return 1
+}
+
 # 已隐藏的包数（以本模块的记录为准）
 hide_apps_applied() {
     [ -f "$HIDE_APPS_MARK" ] || { echo 0; return 0; }
@@ -1417,9 +1432,20 @@ probe_source() { # $1 名称  $2 url
 }
 
 health_check() {
-    local m="${1:-6}"
-    probe_source "自建服务器" "$(api_url manifest)"
-    probe_source "GitHub" "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
+    # 连通性检测必须测「客户端实际取用的那条链」，而不是挑两个顺手的地址：
+    # 顺序与 api_fetch_any 完全一致 —— 镜像在前（真实分担流量的路）-> 主源兜底 -> GitHub API。
+    # v2.8.2 及之前只测 主源+GitHub 两条，恰恰漏掉了客户端最先走的镜像 —— 现已对齐。
+    # mirror_urls=off 时不测镜像（与真实行为一致）。
+    local m f h
+    f=$(mirror_file_of manifest 2>/dev/null)
+    if [ -n "$f" ]; then
+        for m in $(mirror_urls); do
+            h="${m#*://}"; h="${h%%/*}"   # 镜像 base -> 域名（纯参数展开，不依赖 sed）
+            probe_source "镜像 ${h}" "$m/$f"
+        done
+    fi
+    probe_source "主源（自建服务器）" "$(api_url manifest)"
+    probe_source "GitHub API（更新检查）" "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
 }
 
 # ---- 状态输出（供 WebUI 解析，key=value 格式）----
@@ -1722,13 +1748,19 @@ check_updates() {
         p_ty=$(grep -F "$fn|" "$TMP/pmeta.txt" 2>/dev/null | cut -d'|' -f5 | head -1)
         p_pk=$(grep -F "$fn|" "$TMP/pmeta.txt" 2>/dev/null | cut -d'|' -f7 | head -1)
 
-        # ---- APK 条目：已安装看 pm path，更新看安装时记的 sha 与清单 sha ----
+        # ---- APK 条目：已装三级判定（apk_installed），更新看安装时记的 sha 与清单 sha ----
         if [ "$p_ty" = "apk" ]; then
             local apk_label="${p_pk:-$fn}"
             local want_sha=$(pkg_field "$fn" sha256)
             local inst_sha=$(sed -n "s/^$fn=//p" "$AUTO_INSTALL_STATE" 2>/dev/null | head -1)
-            local pm; pm=$(pm_bin 2>/dev/null)
-            if [ -n "$pm" ] && [ -n "$p_pk" ] && "$pm" path "$p_pk" >/dev/null 2>&1; then
+            if [ -z "$p_pk" ]; then
+                # 清单没带包名（老服务端/手工清单）：没法判定装没装。
+                # 如实报 ERR 而不是默默当「未安装」—— 否则这一项会永远显示待更新。
+                echo "CHECK|$fn|$apk_label|?|?|ERR|清单缺应用包名（x-package），无法判断" >> "$TMP/check_out.txt"
+                continue
+            fi
+            dbg "check: $fn apk pkg=$p_pk inst_sha=${inst_sha:-无} want_sha=${want_sha:-?}"
+            if apk_installed "$p_pk"; then
                 if [ -n "$inst_sha" ] && [ -n "$want_sha" ] && [ "$inst_sha" != "$want_sha" ]; then
                     echo "CHECK|$fn|$apk_label|已安装|新版|UPD|应用有新版本" >> "$TMP/check_out.txt"
                 else
@@ -2069,7 +2101,7 @@ auto_install_packages() {
             [ -n "$fpk" ] || continue
             local pm; pm=$(pm_bin 2>/dev/null) || continue
             local inst_sha=$(sed -n "s/^$fn=//p" "$AUTO_INSTALL_STATE" 2>/dev/null | head -1)
-            if "$pm" path "$fpk" >/dev/null 2>&1 && [ -n "$inst_sha" ] && [ "$inst_sha" = "$want_sha" ]; then
+            if apk_installed "$fpk" && [ -n "$inst_sha" ] && [ "$inst_sha" = "$want_sha" ]; then
                 dbg "auto_install: $fpk 已装且 sha 一致，跳过"
                 continue   # 已装且就是清单里这份
             fi
@@ -2156,8 +2188,11 @@ install_all_packages() {
 
     while IFS='|' read -r tag fn mid lvc rvc st msg; do
         [ -n "$fn" ] || continue
-        # 只装"确实有新版本"的；OK/NEW/MISMATCH/ERR 都跳过
-        [ "$st" = "UPD" ] || continue
+        # 装"确实有新版本"(UPD)与"未安装"(NEW)的条目。
+        # 界面的可更新计数包含 NEW —— 一键安装必须与计数同口径，否则显示 N 项待更新、
+        # 点了却只处理其中一部分（v2.8.3 修正：NEW 由跳过改为安装）。
+        # OK（已最新）/ MISMATCH（建议手动重装）/ ERR（清单问题）仍然跳过。
+        case "$st" in UPD|NEW) ;; *) continue ;; esac
         n=$((n + 1))
         echo "→ 安装 $mid $lvc → $rvc"
 

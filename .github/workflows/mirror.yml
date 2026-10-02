@@ -118,3 +118,16 @@ jobs:
           fi
           git commit -m "mirror: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           git push origin HEAD:mirror-data
+      - name: 刷新 jsDelivr 缓存（新数据必须立即可见）
+        if: always()
+        run: |
+          set -uo pipefail
+          # jsDelivr 对 mirror-data 分支的文件缓存以小时/天计。分支已更新而缓存未刷时，
+          # 客户端（jsDelivr 优先的取用顺序）拿到的还是旧清单：自更新与自愈链会停摆
+          # （v2.8.2 排障实锤过一次：服务器与镜像都对了，设备却一直拿旧 keybox）。
+          # 提交推送后主动 purge，让新数据立刻可见；失败不阻断（下次定时任务会重试）。
+          for f in manifest.json keybox.xml packages.json; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+              "https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@mirror-data/mirror/$f" || true)
+            echo "purge $f -> ${code:-000}"
+          done

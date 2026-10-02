@@ -190,6 +190,17 @@ font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;transition:b
 .hrow .nm{flex:1;color:var(--on-surface-variant)}
 .hrow .ms{font-family:ui-monospace,monospace;font-size:12px;color:var(--on-surface-variant)}
 
+/* 折叠详情：长说明默认收起，一行入口点开展开 */
+details.fold{border:1px solid var(--outline-variant);border-radius:var(--r-in);margin-top:10px;background:var(--surface-container)}
+details.fold summary{display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;list-style:none;font-size:12px;font-weight:600;color:var(--on-surface-variant);-webkit-user-select:none;user-select:none}
+details.fold summary::-webkit-details-marker{display:none}
+details.fold summary:active{filter:brightness(.94)}
+details.fold summary .i{width:14px;height:14px;flex-shrink:0;transition:transform .15s ease}
+details.fold[open] summary .i{transform:rotate(90deg)}
+details.fold .fd{padding:0 12px 10px}
+details.fold .fd p{margin:0 0 8px}
+details.fold .fd p:last-child{margin-bottom:0}
+
 /* 配置导入框 */
 textarea.cfg{width:100%;box-sizing:border-box;margin-top:10px;padding:12px;border-radius:var(--r-in);
  border:1px solid var(--outline);background:var(--code-bg);color:var(--code-sub);
@@ -377,6 +388,7 @@ html[data-lockdown="1"] #acBanner{
 <symbol id="i-tune" viewBox="0 0 24 24"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></symbol>
 <symbol id="i-dark" viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/></symbol>
 <symbol id="i-light" viewBox="0 0 24 24"><path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zm-9 4c.55 0 1 .45 1 1s-.45 1-1 1H2c-.55 0-1-.45-1-1s.45-1 1-1h1zm18 0c.55 0 1 .45 1 1s-.45 1-1 1h-2c-.55 0-1-.45-1-1s.45-1 1-1h2c.55 0 1 .45 1 1s-.45-1-1-1zm-10-9c.55 0 1 .45 1 1v2c0 .55-.45 1-1 1s-1-.45-1-1V3c0-.55.45-1 1-1zm0 18c.55 0 1 .45 1 1v2c0 .55-.45 1-1 1s-1-.45-1-1v-2c0-.55.45-1 1-1zM5.99 4.58c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0 .39-.39.39-1.03 0-1.41l-1.06-1.06zm1.06-10.96c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41l1.06 1.06c.39-.39.39-1.03 0-1.41zM7.05 18.36c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41l1.06 1.06c.39-.39.39-1.03 0-1.41z"/></symbol>
+<symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="i-pageview" viewBox="0 0 24 24"><path d="M11.5 9C10.12 9 9 10.12 9 11.5s1.12 2.5 2.5 2.5 2.5-1.12 2.5-2.5S12.88 9 11.5 9zM20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-3.21 14.21l-2.91-2.91c-.69.44-1.51.7-2.39.7C9.01 16 7 13.99 7 11.5S9.01 7 11.5 7 16 9.01 16 11.5c0 .88-.26 1.7-.7 2.39l2.91 2.9-1.42 1.42z"/></symbol>
 </defs></svg>
 <div class="overlay" id="overlay"><div class="spin"></div></div>
@@ -458,7 +470,7 @@ html[data-lockdown="1"] #acBanner{
   <div class="row"><span class="k">当前网络</span><span class="v" id="netState">-</span></div>
   <div class="row mt12"><span class="k"><span id="retryDot" class="dot off"></span>上次失败重试</span><span class="v" id="retryState">正常</span></div>
   <button class="btn ghost" id="btnUpdate"><svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg> 检查更新</button>
-  <p class="note">发现新版本后可一键下载并自动安装；v2.1.6 起装完立即生效，无需重启</p>
+  <p class="note">发现新版本后可一键下载并自动安装；装完立即生效，无需重启</p>
 </div>
 
 <div class="card">
@@ -467,12 +479,12 @@ html[data-lockdown="1"] #acBanner{
   <div class="row"><span class="k">上次检查</span><span class="v" id="modTime">-</span></div>
   <button class="btn" id="btnCheckMods"><svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg> 检查附属模块更新</button>
   <button class="btn ghost" id="btnInstallAll"><svg class="i" aria-hidden="true"><use href="#i-download"/></svg> 一键安装可更新的模块</button>
-  <p class="note">只检查不安装；「一键安装」会把可更新的附属模块交给 ksud 安装（重启后生效）</p>
+  <p class="note">「检查」只检查不安装；标了自动装的组件（FuseFixer / HMA-OSS / Zygisk-Next）巡检时会自动装。「一键安装」把可更新与未安装的条目都装上：模块交给 ksud（重启生效）、应用交给 pm（立即生效）</p>
 </div>
 
 <div class="card">
   <h2>下载源连通性</h2>
-  <div id="healthBox"><div class="note">点下面的按钮检测各下载源的可达性与延迟</div></div>
+  <div id="healthBox"><div class="note">按实际取用顺序探测：镜像（jsDelivr / raw）→ 主源 → GitHub API；点下面的按钮开始</div></div>
   <button class="btn ghost" id="btnHealth"><svg class="i" aria-hidden="true"><use href="#i-wifi"/></svg> 开始检测</button>
 </div>
 </div>
@@ -599,24 +611,28 @@ html[data-lockdown="1"] #acBanner{
   <p class="note">春秋 Native check 报 <b>System compromised</b> 一般是下面几项。逐项对照处理，
   处理后重新检测确认。</p>
   <div class="row"><span class="k">安全补丁级别对齐</span><span class="v" id="spState">-</span></div>
+  <details class="fold"><summary><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg>查看逐项说明（①-④）</summary>
+  <div class="fd">
   <p class="note">① <b>Tampered Attestation Key(26)</b> —— 检测方拿 getprop 读到的补丁日期和 attestation
   应答里的日期对不上。yypm 自动维护 <code>security_patch.txt</code>（与 keybox 同目录，TrickyStore 的正常配置项），
   采用 <b>prop 模式</b>：应答实时跟随系统属性，永不错位、永不过时；TEESimulator 即时生效，无需重启。
   已存在的旧文件（固定日期等）会先备份为 .bak 再替换。</p>
-  <div class="row2">
-    <button class="btn ghost" id="btnSpFix"><svg class="i" aria-hidden="true"><use href="#i-tune"/></svg> 立即对齐</button>
-  </div>
   <p class="note">② <b>风险应用</b>（Scene / NP管理器 / Shizuku / GG 等）—— <b>全自动</b>：每轮巡检发现
   这些应用已安装，就自动并入上方「隐藏应用列表」（pm hide）。被藏的应用自己也打不开，要用时先到
   隐藏应用卡片还原。设 <code>risk_autohide=off</code> 可关闭。</p>
   <p class="note">③ <b>MT管理器 / MT2 文件夹 / 异常文件</b> —— MT2 等落地目录每轮自动清理；
   MT 管理器本体用下面卡片里的「一键卸载 MT 管理器」。</p>
-  <p class="note">④ <b>FuseFixer / hma-uidfake</b> —— <b>全自动</b>：yypm 的服务器会从上游 release 抓取这两个组件，
-  验签后自动安装（hma-uidfake 是内核模块，重启后生效；FuseFixer 是应用，立即生效）。
+  <p class="note">④ <b>FuseFixer / HMA-OSS</b> —— <b>全自动</b>：yypm 的服务器会从上游 release 抓取这两个组件，
+  验签后自动安装（HMA-OSS 是 Zygisk 模块，需要 Zygisk（Zygisk-Next 会一并自动装），重启后生效，
+  自带管理 App，装好打开勾选要隐藏的应用；FuseFixer 是应用，立即生效）。
   FuseFixer 装完点下面按钮自动配置 LSPosed（启用模块 + 勾选系统框架），
   重启后打开 FuseFixer 确认显示 <code>fuse bpf: supported</code>。</p>
-  <button class="btn ghost" id="btnFuseSetup"><svg class="i" aria-hidden="true"><use href="#i-settings"/></svg> 一键配置 FuseFixer（LSPosed 启用 + 勾选系统框架）</button>
   <p class="note">「隐藏应用列表已生效」这一项是<b>正常</b>的 —— 说明隐藏手段在工作，不用处理。</p>
+  </div></details>
+  <div class="row2">
+    <button class="btn ghost" id="btnSpFix"><svg class="i" aria-hidden="true"><use href="#i-tune"/></svg> 立即对齐</button>
+  </div>
+  <button class="btn ghost" id="btnFuseSetup"><svg class="i" aria-hidden="true"><use href="#i-settings"/></svg> 一键配置 FuseFixer（LSPosed 启用 + 勾选系统框架）</button>
 </div>
 
 <div class="card wide">
@@ -634,8 +650,9 @@ html[data-lockdown="1"] #acBanner{
     <button class="btn ghost" id="btnCqCheck"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg> 按春秋项自检</button>
     <button class="btn ghost" id="btnCqFix"><svg class="i" aria-hidden="true"><use href="#i-build"/></svg> 一键整改可自动项</button>
   </div>
-  <p class="note">「风险应用 me.weishu.kernelsu」只显示状态、永不自动处理：管理器被 pm hide 后
-  WebUI 会随它一起从桌面消失，没法再从网页还原，属于自锁。要缓解请用 KernelSU 自带的隐藏或 Shamiko。</p>
+  <details class="fold"><summary><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg>为什么「风险应用 me.weishu.kernelsu」只显示不自动处理</summary>
+  <div class="fd"><p class="note">「风险应用 me.weishu.kernelsu」只显示状态、永不自动处理：管理器被 pm hide 后
+  WebUI 会随它一起从桌面消失，没法再从网页还原，属于自锁。要缓解请用 KernelSU 自带的隐藏或 Shamiko。</p></div></details>
 </div>
 
 <div class="card">
@@ -647,8 +664,9 @@ html[data-lockdown="1"] #acBanner{
     <div class="switch" id="deepBlSwitch"></div>
   </div>
   <button class="btn ghost" id="btnDeepBl"><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg> 立即深度伪装</button>
-  <p class="note">resetprop 改不了内核提供的 /proc/cmdline 与 /proc/bootconfig。没有 SUSFS 内核或
-  Shamiko 支撑时不会硬改——bind mount 会在 mountinfo 里留下劫持痕迹，反而更容易被检出。</p>
+  <details class="fold"><summary><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg>查看 /proc 伪装的原理与限制</summary>
+  <div class="fd"><p class="note">resetprop 改不了内核提供的 /proc/cmdline 与 /proc/bootconfig。没有 SUSFS 内核或
+  Shamiko 支撑时不会硬改——bind mount 会在 mountinfo 里留下劫持痕迹，反而更容易被检出。</p></div></details>
 
   <div class="row mt12"><span class="k">异常文件清理</span><span class="v" id="cleanState">-</span></div>
   <p class="note">每轮巡检会自动清理 MT2 等落地目录（在配置文件里设 <code>abnormal_auto=off</code> 可关闭）。
@@ -667,9 +685,10 @@ html[data-lockdown="1"] #acBanner{
   <div class="row"><span class="k">使用中</span><span class="v" id="pkActive">-</span></div>
   <div class="row"><span class="k">系统版本</span><span class="v" id="sdkLabel">-</span></div>
   <div class="row"><span class="k">适配范围</span><span class="v" id="sdkState">-</span></div>
-  <p class="note">本模块适配 <b>Android 13-17（API 33-37）</b>。它依赖 app_process（应用名解析）、
+  <details class="fold"><summary><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg>查看适配范围与依赖</summary>
+  <div class="fd"><p class="note">本模块适配 <b>Android 13-17（API 33-37）</b>。它依赖 app_process（应用名解析）、
 pm hide（隐藏应用列表）和 resetprop（属性伪装）；低于 Android 13 时这些能力的现代行为不齐，
-高于 Android 17 属未验证区间。超出范围只会提示，不会阻止使用。</p>
+高于 Android 17 属未验证区间。超出范围只会提示，不会阻止使用。</p></div></details>
 <p class="note">指纹用于自检 pubkey.b64 是否被替换。轮换密钥时把新公钥放进模块目录，
   并在配置里设置 <b>pubkey_use</b> 指向新文件名。</p>
 </div>
