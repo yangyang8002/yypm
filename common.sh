@@ -136,7 +136,7 @@ api_url() { # $1 = action 名
 # 客户端自动切镜像继续工作，自建服务器只剩 acreport 一个轻量职责。
 # 顺序：镜像在前（分担流量）-> 主源兜底（最新）。mirror_urls=off 整体关闭；
 # mirror_url_list="..." 自定义镜像列表（空格分隔，目录级 URL）。
-MIRROR_URLS_DEFAULT="https://cdn.jsdelivr.net/gh/yourname/yypm@mirror/mirror https://raw.githubusercontent.com/yourname/yypm/mirror/mirror"
+MIRROR_URLS_DEFAULT="https://cdn.jsdelivr.net/gh/yourname/yypm@mirror-data/mirror https://raw.githubusercontent.com/yourname/yypm/mirror-data/mirror"
 
 mirror_urls() { # stdout：每行一个镜像 base（无尾斜杠）
     [ "$(cfg_get mirror_urls on)" = "off" ] && return 0

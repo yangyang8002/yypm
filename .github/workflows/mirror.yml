@@ -71,7 +71,7 @@ jobs:
           done
 
           # 改写成自包含镜像 URL（签名覆盖的是文件字节，URL 改写不影响验签）
-          RAW="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/mirror/mirror"
+          RAW="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/mirror-data/mirror"
           REL="https://github.com/${GITHUB_REPOSITORY}/releases/download/mirror"
           jq --arg kb "$RAW/keybox.xml" --arg mz "$REL/module.zip" \
              '.keybox.url = $kb | .module.url = $mz' dl/manifest.json > mirror/manifest.json
@@ -100,11 +100,11 @@ jobs:
           set -euo pipefail
           [ -d mirror ] || exit 0
           rm -rf mirror-repo
-          if git clone --depth 1 --branch mirror "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" mirror-repo 2>/dev/null; then
+          if git clone --depth 1 --branch mirror-data "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" mirror-repo 2>/dev/null; then
             :
           else
             git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" mirror-repo
-            (cd mirror-repo && git checkout --orphan mirror && git rm -rf . >/dev/null 2>&1 || true)
+            (cd mirror-repo && git checkout --orphan mirror-data && git rm -rf . >/dev/null 2>&1 || true)
           fi
           mkdir -p mirror-repo/mirror
           cp mirror/manifest.json mirror/keybox.xml mirror/packages.json mirror-repo/mirror/
@@ -117,4 +117,4 @@ jobs:
             exit 0
           fi
           git commit -m "mirror: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          git push origin HEAD:mirror
+          git push origin HEAD:mirror-data
