@@ -454,6 +454,15 @@ spoof_bootconfig_file() { # $1 源  $2 目标
 
 hide_bl_deep() {
     hide_bl_props || { log "[✗] 未找到 resetprop"; return 1; }
+    local tool
+    if tool=$(susfs_tool); then
+        # SUSFS 内核层伪装 /proc/cmdline·bootconfig —— 不落 bind mount 痕迹
+        if susfs_spoof_boot_state "$tool"; then
+            log "[✓] 深度伪装完成（支撑：susfs 内核层，无挂载痕迹）"
+            return 0
+        fi
+        log "[!] SUSFS 伪装未生效，回落 bind mount 路径"
+    fi
     local hider; hider=$(mount_hider_present) || hider=""
     if [ -z "$hider" ]; then
         log "[!] 深度伪装未执行：没有 SUSFS 内核支持，也没装 Shamiko。"
@@ -614,9 +623,11 @@ HMA_MOD_ID="hma_oss_zygisk"           # HMA-OSS 的模块 id（其 module.prop�
 HMA_TPL_NAME="yypm-auto"              # 我们的模板名 = 配置归属标记
 HMA_SCOPE_DEFAULT="com.chunqiuna"    # 默认拦截其包列表查询的检测应用（春秋）
 HMA_CONFIG_VERSION=93                   # oss-173 的 JsonConfig.configVersion
+HMA_MGR_PKG="org.frknkrc44.hma_oss"  # 管理器应用包名（固定不改名）
 HMA_MODULES_DIR="/data/adb/modules"           # 以下三项允许测试覆盖
 HMA_STAGED_DIR="/data/adb/modules_update"
 HMA_MISC_DIR="/data/misc"
+KSU_BIN_DIR="/data/adb/ksu/bin"       # ksu 自带工具位（1.9 用，允许测试覆盖）
 
 # HMA-OSS 数据目录（服务首次启动时自建）；没有 = 服务还没跑起来
 hma_data_dir() {
@@ -635,7 +646,8 @@ hma_hidden_apps() {
         echo com.wn.app.np               # NP 管理器
         echo moe.shizuku.privileged.api  # Shizuku
         echo org.frknkrc44.hma_oss       # HMA-OSS 管理器（藏好藏人的工具本身）
-        echo me.weishu.kernelsu          # KernelSU 管理器
+        echo me.weishu.kernelsu          # KernelSU 管理器（默认包名）
+        ksu_manager_pkg 2>/dev/null      # 管理器改随机包名时动态反查（ksu:// 深链应答者）
         echo org.lsposed.manager         # LSPosed 管理器（没装列着也无害）
         echo io.github.a13e300.fusefixer
         ac_cheat_pkgs 2>/dev/null | cut -d'|' -f1 | tr '\n' ' '
@@ -710,6 +722,108 @@ cleanup_replaced_mods() {
     [ "$n" -gt 0 ] && echo "REPLACED_CLEAN=$n"
     return 0
 }
+
+# ---- 1.9 「Found ksu / 免解」对抗：KSU 管理器动态识别 + SUSFS 加固（v2.8.5）----
+# 春秋「发现 KSU 处于免解（越狱）模式，或发现 ksu 相关进程 / 设备」的检测向量拆解：
+#   a. 包列表查询看到 KSU 管理器 —— HMA-OSS 拦（1.7 节；这里把管理器真实包名
+#      动态找出来并进名单 —— 管理器改成随机包名也跟着换）
+#   b. /data/adb 目录树、模块镜像挂载留下的 jbd2/ext4 回环接口、挂载表 —— SUSFS 内核层隐藏
+#   c. /proc/cmdline、/proc/bootconfig 里的 unlocked/orange —— SUSFS 内核层伪装
+# b/c 与官方 ksu_module_susfs 演示模块同款命令集；没有 SUSFS 内核时这两类做不了，
+# 只记调试日志不动手（伪装一半比不伪装更容易被比对出来）。
+
+# KSU 管理器真实包名：改过随机包名也能找到 —— 管理器不管改成什么包名，
+# manifest 里的 ksu:// 深链注册始终跟着走；用 pm 反查谁在应答 ksu://webui。
+ksu_manager_pkg() {
+    if pm path me.weishu.kernelsu >/dev/null 2>&1; then
+        echo "me.weishu.kernelsu"
+        return 0
+    fi
+    local out p
+    out=$(pm query-intent-activities --brief -a android.intent.action.VIEW -d 'ksu://webui' 2>/dev/null) || return 1
+    p=$(printf '%s\n' "$out" | grep -E '^[A-Za-z0-9_.]+/' | head -n 1 | cut -d'/' -f1)
+    [ -n "$p" ] || return 1
+    echo "$p"
+}
+
+# SUSFS 用户态工具（ksu_susfs）：官方 addon 模块（id=susfs4ksu）装好后在 ksu bin 目录，
+# 也可能直接随内核放在任意模块目录里 —— 全找一遍。
+susfs_tool() {
+    local d
+    [ -x "$KSU_BIN_DIR/ksu_susfs" ] && { echo "$KSU_BIN_DIR/ksu_susfs"; return 0; }
+    [ -x "$HMA_MODULES_DIR/susfs4ksu/ksu_susfs" ] && { echo "$HMA_MODULES_DIR/susfs4ksu/ksu_susfs"; return 0; }
+    for d in "$HMA_MODULES_DIR"/*/; do
+        [ -f "${d%/}/disable" ] && continue
+        [ -x "${d%/}/ksu_susfs" ] && { echo "${d%/}/ksu_susfs"; return 0; }
+    done
+    return 1
+}
+
+# /proc/cmdline + /proc/bootconfig 内核层伪装（verifiedbootstate=green / vbmeta locked，
+# 抹掉 verifiedbooterror / verifyerrorpart —— 与官方 susfs 模板同款改法）。
+# 走 set_cmdline_or_bootconfig，比 bind mount 干净：mountinfo 里不落痕迹。
+susfs_spoof_boot_state() {
+    local tool="$1" sp="$DATA_DIR/spoof" did=0
+    mkdir -p "$sp" 2>/dev/null
+    if spoof_cmdline_file /proc/cmdline "$sp/cmdline" 2>/dev/null && [ -s "$sp/cmdline" ]; then
+        "$tool" set_cmdline_or_bootconfig "$sp/cmdline" >/dev/null 2>&1 && did=$((did + 1))
+    fi
+    if [ -e /proc/bootconfig ] && spoof_bootconfig_file /proc/bootconfig "$sp/bootconfig" 2>/dev/null && [ -s "$sp/bootconfig" ]; then
+        "$tool" set_cmdline_or_bootconfig "$sp/bootconfig" >/dev/null 2>&1 && did=$((did + 1))
+    fi
+    [ "$did" -gt 0 ] && log "[✓] /proc/cmdline·bootconfig 已由 SUSFS 内核层伪装（green/locked，不留挂载痕迹）"
+    [ "$did" -gt 0 ]
+}
+
+# SUSFS 加固（b/c 向量）。官方说明这些命令允许重复执行（目标 ino 变了重跑即可），
+# 所以每轮巡检重放一遍 —— 重放本身就是自愈。
+susfs_harden() {
+    [ "$(cfg_get susfs_harden on)" = "off" ] && { dbg "susfs: susfs_harden=off，跳过"; return 0; }
+    local tool
+    if ! tool=$(susfs_tool); then
+        dbg "susfs: 无 ksu_susfs 工具（内核无 SUSFS 补丁），路径/挂载表/开机状态伪装跳过"
+        return 0
+    fi
+    local n=0 d dev
+    # b-1) /data/adb 整树对无 root 进程隐藏（含子路径 —— KSU 目录足迹）
+    "$tool" add_sus_path /data/adb >/dev/null 2>&1 && n=$((n + 1))
+    # b-2) 模块镜像挂载留下的 jbd2/ext4 回环接口（KSU 检测的经典向量）
+    for d in /proc/fs/jbd2/loop*8; do
+        [ -d "$d" ] || continue
+        dev=$(printf '%s' "$d" | sed 's|/proc/fs/jbd2/||; s|-8$||')
+        "$tool" add_sus_path "/proc/fs/jbd2/$dev-8" >/dev/null 2>&1 && n=$((n + 1))
+        "$tool" add_sus_path "/proc/fs/ext4/$dev" >/dev/null 2>&1 && n=$((n + 1))
+    done
+    # b-3) 挂载表（mounts/mountinfo/mountstats）里的 KSU 痕迹
+    for d in "$HMA_MODULES_DIR" /debug_ramdisk "$HMA_MODULES_DIR/zygisk"; do
+        [ -e "$d" ] || continue
+        "$tool" add_sus_mount "$d" >/dev/null 2>&1 && n=$((n + 1))
+    done
+    # c) /proc/cmdline·bootconfig 开机状态伪装
+    if susfs_spoof_boot_state "$tool"; then n=$((n + 1)); fi
+    log "[✓] SUSFS 加固完成（$n 项：/data/adb 隐藏 + 回环接口 + 挂载表 + 开机状态伪装）"
+    [ "$n" -gt 0 ] && echo "SUSFS_HARDEN=$n"
+    return 0
+}
+
+# HMA-OSS 配置归属状态（WebUI 展示用；归属规则见 1.7）
+# missing=未装 / off=已关 / preset=装了但服务没起来也没预建 / none=目录在没配置 /
+# ours=我们的（自动维护）/ user=用户自配（不覆盖）
+hma_cfg_state() {
+    [ -d "$HMA_MODULES_DIR/$HMA_MOD_ID" ] || [ -d "$HMA_STAGED_DIR/$HMA_MOD_ID" ] || { echo missing; return 0; }
+    [ "$(cfg_get hma_auto on)" = "off" ] && { echo off; return 0; }
+    local d cfg
+    if ! d=$(hma_data_dir); then echo preset; return 0; fi
+    cfg="$d/config.json"
+    if [ -s "$cfg" ]; then
+        if grep -q "\"$HMA_TPL_NAME\"" "$cfg" 2>/dev/null; then echo ours; else echo user; fi
+    else
+        echo none
+    fi
+    return 0
+}
+
+
 
 # ---- 2. 异常文件清理 ----
 # 默认只清 MT 管理器留下的工作目录，可用 abnormal_paths 覆盖（空格分隔）。
@@ -1679,7 +1793,13 @@ echo_status() {
     echo "AUTO_DEBUG=$(cfg_get auto_debug off)"
     [ "$(getprop ro.debuggable 2>/dev/null)" = "0" ] && echo "DEBUG_CLOSED=1" || echo "DEBUG_CLOSED=0"
 
-    # ---- 环境对抗：隐藏应用列表 / 深度伪装 / 异常文件 ----
+    # ---- 环境对抗：HMA-OSS 隐藏配置 / 深度伪装 / 异常文件 ----
+    # （隐藏应用列表已并入 HMA-OSS 名单自动维护，v2.8.5 起不再单独展示）
+    echo "HMA_CFG=$(hma_cfg_state)"
+    echo "HMA_APPS=$(hma_hidden_apps 2>/dev/null | grep -c . | tr -d ' ')"
+    echo "HMA_SCOPE=$(cfg_get hma_scope "$HMA_SCOPE_DEFAULT")"
+    echo "KSU_PKG=$(ksu_manager_pkg 2>/dev/null || echo none)"
+    echo "SUSFS_TOOL=$(susfs_tool >/dev/null 2>&1 && echo ready || echo none)"
     echo "HIDE_APPS_ENABLE=$(cfg_get hide_apps_enable off)"
     echo "HIDE_APPS_COUNT=$(hide_apps_list | wc -l | tr -d ' ')"
     echo "HIDE_APPS_APPLIED=$(hide_apps_applied)"

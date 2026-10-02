@@ -507,21 +507,20 @@ html[data-lockdown="1"] #acBanner{
 </div>
 
 <div class="card">
-  <h2>隐藏应用列表</h2>
-  <div class="row"><span class="k"><span id="haDot" class="dot off"></span>当前状态</span><span class="v" id="haState">-</span></div>
-  <div class="switch-row">
-    <div><div class="lab">自动应用隐藏列表</div><div class="hint">开机与每轮检查时自动摘掉下面这些包</div></div>
-    <div class="switch" id="hideAppsSwitch"></div>
-  </div>
-  <textarea class="cfg" id="hideAppsBox" placeholder="每行一个包名，例如：&#10;bin.mt.plus&#10;com.eza.hyperglow&#10;com.kiminonawa.HyperLight"></textarea>
+  <h2>HMA-OSS 隐藏配置</h2>
+  <div class="row"><span class="k"><span id="hmaDot" class="dot off"></span>配置状态</span><span class="v" id="hmaState">-</span></div>
+  <div class="row"><span class="k">对检测应用隐藏</span><span class="v" id="hmaApps">-</span></div>
+  <div class="row"><span class="k">拦截对象</span><span class="v" id="hmaScope">-</span></div>
+  <div class="row"><span class="k">KSU 管理器包名</span><span class="v" id="hmaKsu">-</span></div>
+  <div class="row"><span class="k">SUSFS 加固</span><span class="v" id="hmaSusfs">-</span></div>
   <div class="row2">
-    <button class="btn ghost" id="btnHideAppsSave"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg> 保存列表</button>
-    <button class="btn ghost" id="btnHideAppsApply"><svg class="i" aria-hidden="true"><use href="#i-eyeoff"/></svg> 立即隐藏</button>
+    <button class="btn" id="btnHmaCfg"><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg> 自动配置 HMA</button>
+    <button class="btn ghost" id="btnHmaMgr"><svg class="i" aria-hidden="true"><use href="#i-pageview"/></svg> 打开 HMA 管理器</button>
   </div>
-  <button class="btn ghost" id="btnHideAppsRestore"><svg class="i" aria-hidden="true"><use href="#i-undo"/></svg> 还原隐藏</button>
-  <p class="note">用系统自带的 pm hide 把这些包从「其它应用可见的包列表」里摘掉，可随时还原。
-  比 HMA（隐藏应用列表）粒度粗，但不需要 LSPosed；两者可以并存。</p>
-
+  <p class="note">自动写好 HMA-OSS 的默认隐藏配置：对春秋等检测应用隐藏风险应用清单
+  （MT/Scene/NP/Shizuku/各管理器/反挂作弊包；KSU 管理器按实际包名动态并入，改了随机包名也跟着换）。
+  有 SUSFS 内核时同步加固 /data/adb 足迹、挂载表与开机状态伪装。你在 HMA 管理器里
+  自己配过不会被覆盖；改动名单后点一次按钮即可跟进。配置重启后生效。</p>
 </div>
 
 <div class="card wide">
@@ -540,7 +539,6 @@ html[data-lockdown="1"] #acBanner{
   </div>
   <div class="applist" id="appList"><div class="appempty">点「扫描应用」列出已安装应用</div></div>
   <div class="row2">
-    <button class="btn ghost" id="btnAppsToHide"><svg class="i" aria-hidden="true"><use href="#i-eyeoff"/></svg> 加入隐藏列表</button>
     <button class="btn ghost" id="btnAppsToTarget"><svg class="i" aria-hidden="true"><use href="#i-target"/></svg> 追加到 target.txt</button>
   </div>
   <div class="row"><span class="k">目标清单 target.txt</span><span class="v" id="ttState">-</span></div>
@@ -618,8 +616,9 @@ html[data-lockdown="1"] #acBanner{
   采用 <b>prop 模式</b>：应答实时跟随系统属性，永不错位、永不过时；TEESimulator 即时生效，无需重启。
   已存在的旧文件（固定日期等）会先备份为 .bak 再替换。</p>
   <p class="note">② <b>风险应用</b>（Scene / NP管理器 / Shizuku / GG 等）—— <b>全自动</b>：每轮巡检发现
-  这些应用已安装，就自动并入上方「隐藏应用列表」（pm hide）。被藏的应用自己也打不开，要用时先到
-  隐藏应用卡片还原。设 <code>risk_autohide=off</code> 可关闭。</p>
+  这些应用已安装，就自动用系统的 pm hide 藏起来（被藏的应用自己也打不开；
+  同时也会并入 HMA-OSS 的隐藏名单，对春秋等检测应用一并隐藏）。设 <code>risk_autohide=off</code> 可关闭；
+  还原用终端执行 <code>webui.sh hide-apps-restore</code>。</p>
   <p class="note">③ <b>MT管理器 / MT2 文件夹 / 异常文件</b> —— MT2 等落地目录每轮自动清理；
   MT 管理器本体用下面卡片里的「一键卸载 MT 管理器」。</p>
   <p class="note">④ <b>FuseFixer / HMA-OSS</b> —— <b>全自动</b>：yypm 的服务器会从上游 release 抓取这两个组件，
@@ -926,9 +925,9 @@ async function refresh(){
   // 这时不能把空值渲染成「未挂载/未隐藏/0 份」之类的假状态 —— 统一标「已锁定」。
   // （锁定横幅由 acLockCheck/acLockUI 负责，这里只管别撒谎。）
   if(s.AC_LOCKED==='1' && typeof s.KEYBOX_MOUNTED==='undefined'){
-    ['kbMount','kbSize','kbSha','kbTime','kbExpiry','srvTime','srvSrc','poolCnt','blState','dbgState','haState','modTime','retryState','netState','hiderState','ttState'].forEach(function(id){var el=document.getElementById(id);if(el)el.textContent='已锁定';});
+    ['kbMount','kbSize','kbSha','kbTime','kbExpiry','srvTime','srvSrc','poolCnt','blState','dbgState','hmaState','modTime','retryState','netState','hiderState','ttState'].forEach(function(id){var el=document.getElementById(id);if(el)el.textContent='已锁定';});
     ['kbFresh','kbValid','teeState','srvFb','spState','modCount'].forEach(function(id){var el=document.getElementById(id);if(el)el.innerHTML='<span class="pill warn2">已锁定</span>';});
-    ['kbDot','valDot','blDot','dbgDot','haDot','modDot','retryDot','pkDot'].forEach(function(id){var el=document.getElementById(id);if(el)el.className='dot off';});
+    ['kbDot','valDot','blDot','dbgDot','hmaDot','modDot','retryDot','pkDot'].forEach(function(id){var el=document.getElementById(id);if(el)el.className='dot off';});
     return;
   }
   var mounted=(s.KEYBOX_MOUNTED==='1');
@@ -964,16 +963,15 @@ async function refresh(){
   document.getElementById('dbgState').textContent=dbgClosed?'已关闭':'未关闭';
   document.getElementById('autoDebugSwitch').classList.toggle('on',s.AUTO_DEBUG==='on');
 
-  // ---- 环境对抗 ----
-  var haCount=parseInt(s.HIDE_APPS_COUNT||'0',10)||0;
-  var haApplied=parseInt(s.HIDE_APPS_APPLIED||'0',10)||0;
-  document.getElementById('haDot').className='dot '+(haApplied>0?'on':'off');
-  document.getElementById('haState').textContent=haCount?(('列表 '+haCount+' 个，已隐藏 '+haApplied+' 个')):'未设置';
-  document.getElementById('hideAppsSwitch').classList.toggle('on',s.HIDE_APPS_ENABLE==='on');
-  var haBox=document.getElementById('hideAppsBox');
-  if(document.activeElement!==haBox){
-    haBox.value=(s.HIDE_APPS_LIST||'').split(/[\s,;]+/).filter(function(x){return x;}).join('\n');
-  }
+  // ---- 环境对抗：HMA-OSS 隐藏配置 ----
+  var hsMap={ours:'已配置（自动维护）',user:'用户自配（不覆盖）',preset:'待配置',none:'未配置',off:'已关闭（hma_auto=off）',missing:'HMA-OSS 未安装'};
+  var hcs=s.HMA_CFG||'';
+  document.getElementById('hmaDot').className='dot '+(hcs==='ours'?'on':(hcs==='user'?'warn':'off'));
+  document.getElementById('hmaState').textContent=hsMap[hcs]||'-';
+  document.getElementById('hmaApps').textContent=(s.HMA_APPS&&s.HMA_APPS!=='0')?(s.HMA_APPS+' 个应用'):'-';
+  document.getElementById('hmaScope').textContent=s.HMA_SCOPE||'-';
+  document.getElementById('hmaKsu').textContent=(s.KSU_PKG&&s.KSU_PKG!=='none')?s.KSU_PKG:'未识别';
+  document.getElementById('hmaSusfs').textContent=(s.SUSFS_TOOL==='ready')?'就绪（/data/adb 隐藏 + 挂载表 + 开机状态伪装）':'无（换个带 SUSFS 的内核可再藏一层）';
   var dbOn=(s.DEEP_BL==='on');
   document.getElementById('dbDot').className='dot '+(dbOn?'on':'off');
   document.getElementById('deepBlState').textContent=dbOn?'已开启':'未开启';
@@ -1391,46 +1389,29 @@ async function cfgImport(){
 }
 
 // ================= 环境对抗 =================
-function haListText(){
-  return (document.getElementById('hideAppsBox').value||'').split(/[\s,;]+/).filter(function(x){return x;}).join('\n');
-}
-async function hideAppsSave(){
-  var txt=haListText();
-  if(!txt){log('列表为空；如要清空请直接保存空列表','info');}
-  var b64=btoa(unescape(encodeURIComponent(txt)));
-  busy('btnHideAppsSave',true,'保存中...');
+// ---- HMA-OSS 隐藏配置（自动配置按钮的后端动作在 webui.sh hma-cfg）----
+async function hmaCfg(){
+  busy('btnHmaCfg',true,'配置中...');
+  log('===== 自动配置 HMA =====','info');
   try{
-    var r=await exec(MODDIR+'/webui.sh hide-apps-set '+b64);
+    var r=await execT(MODDIR+'/webui.sh hma-cfg',60000);
     var out=r.stdout||'';
-    if(out.indexOf('HIDE_APPS_SET=OK')>=0){
-      log('隐藏列表已保存（'+((out.match(/HIDE_APPS_COUNT=(\d+)/)||[])[1]||'0')+' 个包）','ok');
-    }else{
-      log('保存失败：'+((out.match(/HIDE_APPS_SET=FAIL\((.*?)\)/)||[])[1]||out.trim()||'未知错误'),'err');
-    }
-  }catch(e){log('保存异常: '+e.message,'err');}
-  busy('btnHideAppsSave',false);
-  await refresh();
+    var ls=out.split('\n');
+    for(var i=0;i<ls.length;i++)if(ls[i].trim())log(ls[i],'info');
+    var m=parseKv(out);
+    log('HMA 配置：'+(m.HMA_CFG||'-')+'，隐藏 '+(m.HMA_APPS||'?')+' 个应用，拦截 '+(m.HMA_SCOPE||'-')+'；SUSFS '+(m.SUSFS_TOOL==='ready'?'就绪':'无'),'ok');
+    toast('HMA 配置完成，重启后生效');
+    await refresh();
+  }catch(e){log('自动配置异常: '+e.message,'err');}
+  busy('btnHmaCfg',false);
 }
-async function hideAppsApply(){
-  log('正在隐藏应用...','info');
-  busy('btnHideAppsApply',true,'隐藏中...');
+async function hmaMgr(){
   try{
-    var s=parseKv((await exec(MODDIR+'/webui.sh hide-apps-apply')).stdout);
-    log('已隐藏 '+(s.HIDE_APPS_APPLIED||'0')+' 个包','ok');
-  }catch(e){log('隐藏异常: '+e.message,'err');}
-  busy('btnHideAppsApply',false);
-  await refresh();
-}
-async function hideAppsRestore(){
-  log('正在还原隐藏的应用...','info');
-  try{await exec(MODDIR+'/webui.sh hide-apps-restore');log('已还原','ok');}catch(e){log('还原异常: '+e.message,'err');}
-  await refresh();
-}
-async function toggleHideApps(){
-  var on=!document.getElementById('hideAppsSwitch').classList.contains('on');
-  try{await exec(MODDIR+'/webui.sh hide-apps-auto '+(on?'on':'off'));}catch(e){}
-  await refresh();
-  log('自动应用隐藏列表已'+(on?'开启':'关闭'),'info');
+    var r=await execT(MODDIR+'/webui.sh hma-mgr',15000);
+    var m=parseKv(r.stdout||'');
+    if(m.HMA_MGR==='ok'){toast('已打开 HMA 管理器');}
+    else{log('HMA 管理器未安装（先在「附属模块」里装 HMA-OSS）','err');}
+  }catch(e){log('打开异常: '+e.message,'err');}
 }
 async function deepBlNow(){
   log('正在深度伪装启动状态...','info');
@@ -2238,17 +2219,6 @@ async function appsSelectXposed(){
   busy('btnAppsXposed',false);
 }
 
-async function appsToHide(){
-  var sel=appsSelected();
-  if(!sel.length){log('先在上面的列表里勾选应用','err');return;}
-  var box=document.getElementById('hideAppsBox');
-  var cur=box.value.split(/[\s,;]+/).filter(function(x){return x;});
-  var add=sel.filter(function(p){return cur.indexOf(p)<0;});
-  box.value=cur.concat(add).join('\n');
-  log('已把 '+add.length+' 个新包填进隐藏列表，正在保存…','info');
-  await hideAppsSave();
-}
-
 async function appsToTarget(){
   var sel=appsSelected();
   if(!sel.length){log('先在上面的列表里勾选应用','err');return;}
@@ -2289,12 +2259,8 @@ document.getElementById('autoBlSwitch').onclick=toggleBl;
 document.getElementById('autoDebugSwitch').onclick=toggleDebug;
 document.getElementById('btnBl').onclick=manualBl;
 document.getElementById('btnDebug').onclick=manualDebug;
-document.getElementById('btnHideAppsSave').onclick=hideAppsSave;
-document.getElementById('btnHideAppsApply').onclick=hideAppsApply;
-document.getElementById('btnHideAppsRestore').onclick=function(){
-  ask('还原隐藏的应用？','这些应用会重新出现在其它应用可见的包列表里。',hideAppsRestore);
-};
-document.getElementById('hideAppsSwitch').onclick=toggleHideApps;
+document.getElementById('btnHmaCfg').onclick=hmaCfg;
+document.getElementById('btnHmaMgr').onclick=hmaMgr;
 document.getElementById('btnDeepBl').onclick=deepBlNow;
 document.getElementById('deepBlSwitch').onclick=toggleDeepBl;
 document.getElementById('btnClean').onclick=function(){
@@ -2321,7 +2287,6 @@ document.getElementById('btnAppsXposed').onclick=appsSelectXposed;
 document.getElementById('btnAppsDiag').onclick=appsDiag;
 document.getElementById('btnKbAudit').onclick=keyboxAudit;
 document.getElementById('btnKbRepair').onclick=keyboxRepair;
-document.getElementById('btnAppsToHide').onclick=appsToHide;
 document.getElementById('btnAppsToTarget').onclick=appsToTarget;
 
 // 反挂卡片上的按钮。

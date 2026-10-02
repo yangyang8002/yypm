@@ -51,6 +51,9 @@ run_cycle() {
     hma_oss_autocfg
     # 清退被 HMA-OSS 取代的旧组件（hma-uidfake：打了 remove 标记，重启后由 KernelSU 清理）
     cleanup_replaced_mods
+    # SUSFS 加固（「Found ksu」向量：/data/adb 足迹、回环接口、挂载表、开机状态；
+    # 无 SUSFS 内核时自动跳过，只记调试日志）
+    susfs_harden
     return 0
 }
 

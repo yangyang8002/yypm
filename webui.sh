@@ -272,7 +272,7 @@ case "${1:-status}" in
         while IFS= read -r line; do
             local k=${line%%=*} v=${line#*=}
             case "$k" in
-                auto_fetch|auto_bl|auto_debug|check_interval|pubkey_use|wifi_only|hide_apps_enable|hide_apps|deep_bl|abnormal_paths|anti_cheat|anti_cheat_ids|security_patch|abnormal_auto|risk_autohide|auto_target|mirror_urls|mirror_url_list|mirror_nodes|mirror_speed_test|mirror_test_ttl|hma_auto|hma_scope|debug)
+                auto_fetch|auto_bl|auto_debug|check_interval|pubkey_use|wifi_only|hide_apps_enable|hide_apps|deep_bl|abnormal_paths|anti_cheat|anti_cheat_ids|security_patch|abnormal_auto|risk_autohide|auto_target|mirror_urls|mirror_url_list|mirror_nodes|mirror_speed_test|mirror_test_ttl|hma_auto|hma_scope|susfs_harden|debug)
                     [ "$line" = "$k" ] && continue      # 没有 = 的裸键跳过
                     printf '%s=%s\n' "$k" "$v" >> "$TMP/cfg_clean.txt"
                     ;;
@@ -432,6 +432,26 @@ case "${1:-status}" in
     hide-apps-restore)
         hide_apps_restore
         echo "HIDE_APPS_APPLIED=$(hide_apps_applied)"
+        ;;
+    hma-cfg)
+        # 手动触发：HMA-OSS 自动配置 + 旧组件清退 + SUSFS 加固，并回报最新状态
+        hma_oss_autocfg
+        cleanup_replaced_mods >/dev/null 2>&1
+        susfs_harden >/dev/null 2>&1
+        echo "HMA_CFG=$(hma_cfg_state)"
+        echo "HMA_APPS=$(hma_hidden_apps 2>/dev/null | grep -c . | tr -d ' ')"
+        echo "HMA_SCOPE=$(cfg_get hma_scope "$HMA_SCOPE_DEFAULT")"
+        echo "KSU_PKG=$(ksu_manager_pkg 2>/dev/null || echo none)"
+        echo "SUSFS_TOOL=$(susfs_tool >/dev/null 2>&1 && echo ready || echo none)"
+        ;;
+    hma-mgr)
+        # 打开 HMA-OSS 管理器（查看/修改自动写入的配置；monkey 拉 LAUNCHER 不用管 activity 名）
+        if pm path "$HMA_MGR_PKG" >/dev/null 2>&1; then
+            monkey --pct-syskeys 0 -p "$HMA_MGR_PKG" 1 >/dev/null 2>&1
+            echo "HMA_MGR=ok"
+        else
+            echo "HMA_MGR=missing"
+        fi
         ;;
     clean-abnormal)
         clean_abnormal
