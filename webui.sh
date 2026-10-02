@@ -269,7 +269,7 @@ case "${1:-status}" in
         while IFS= read -r line; do
             local k=${line%%=*} v=${line#*=}
             case "$k" in
-                auto_fetch|auto_bl|auto_debug|check_interval|pubkey_use|wifi_only|hide_apps_enable|hide_apps|deep_bl|abnormal_paths|anti_cheat|anti_cheat_ids|security_patch|abnormal_auto|risk_autohide|mirror_urls|mirror_url_list|debug)
+                auto_fetch|auto_bl|auto_debug|check_interval|pubkey_use|wifi_only|hide_apps_enable|hide_apps|deep_bl|abnormal_paths|anti_cheat|anti_cheat_ids|security_patch|abnormal_auto|risk_autohide|auto_target|mirror_urls|mirror_url_list|debug)
                     [ "$line" = "$k" ] && continue      # 没有 = 的裸键跳过
                     printf '%s=%s\n' "$k" "$v" >> "$TMP/cfg_clean.txt"
                     ;;
@@ -562,6 +562,67 @@ case "${1:-status}" in
         fi
         target_txt_add < "$TMP/tt_in.txt"
         echo "TT_COUNT=$(grep -cv '^[[:space:]]*$' "$TT_FILE" 2>/dev/null || echo 0)"
+        ;;
+
+    proc-scan)
+        # 可疑进程诊断（只读）：列出命中可疑名的进程，不改系统任何东西
+        suspicious_procs
+        ;;
+    cq-check)
+        # 春秋 4.5.8 六项整改对照的只读自检：只输出 KEY=VALUE，不改任何东西。
+        # WebUI 的「春秋 4.5.8 整改对照」卡片靠这些字段渲染。
+        # ① keybox 已挂载且非空（26 项的前提）
+        if [ -s "$KEYBOX_DEST" ]; then echo "CQ_KEYBOX=有"; else echo "CQ_KEYBOX=无"; fi
+        # ② security_patch.txt 内容（多行压成一行；没有文件就是 无）
+        if [ -f "$SP_FILE" ]; then
+            cq_sp=$(grep -v '^[[:space:]]*#' "$SP_FILE" 2>/dev/null | grep -v '^[[:space:]]*$' | tr '\n' ' ' | sed 's/[[:space:]]*$//')
+            echo "CQ_SP=${cq_sp:-无}"
+        else
+            echo "CQ_SP=无"
+        fi
+        # ③ 检测应用是否已在 TrickyStore 目标清单
+        if [ -f "$TT_FILE" ] && grep -qxF "com.chunqiuna" "$TT_FILE" 2>/dev/null; then
+            echo "CQ_TARGET=含 com.chunqiuna"
+        else
+            echo "CQ_TARGET=不含"
+        fi
+        # ④ MT 管理器本体是否还装着
+        cq_pm=$(pm_bin 2>/dev/null)
+        if [ -n "$cq_pm" ] && "$cq_pm" path bin.mt.plus >/dev/null 2>&1; then
+            echo "CQ_MT=已装 bin.mt.plus"
+        else
+            echo "CQ_MT=未装"
+        fi
+        # ⑤ 默认清理名单里还存在的落地目录数（MT2 / MT / MT 私有目录）
+        cq_n=0
+        for cq_p in $ABNORMAL_DEFAULT; do
+            [ -e "$cq_p" ] && cq_n=$((cq_n + 1))
+        done
+        echo "CQ_MTDIR=$cq_n"
+        # ⑥ 可疑进程数（复用 suspicious_procs，先抓完整输出再解析，避免管道并发）
+        cq_procs=$(suspicious_procs)
+        echo "CQ_PROC=$(printf '%s\n' "$cq_procs" | sed -n 's/^PROC_COUNT=//p' | head -1)"
+        # ⑦ KernelSU 管理器。只报状态、绝不自动处理：
+        # pm hide 掉管理器后用户连 WebUI 都打不开，无法自己还原，属于自锁。
+        if [ -n "$cq_pm" ] && "$cq_pm" path me.weishu.kernelsu >/dev/null 2>&1; then
+            echo "CQ_KSUAPP=已装 me.weishu.kernelsu"
+        else
+            echo "CQ_KSUAPP=未装"
+        fi
+        ;;
+    cq-fix)
+        # 一键整改可自动项（春秋 4.5.8）：单项失败只说明、不中断，最后统一收尾。
+        # 只动「能自动做且不改变用户数据语义」的项：
+        #   安全补丁级别对齐 / 检测应用入目标清单 / 异常目录清理。
+        # 不在这里面的事：隐藏 KernelSU 管理器（自锁，见 cq-check 注释）、卸载应用（用户手动）。
+        echo "== 安全补丁级别对齐 =="
+        ensure_security_patch || echo "[!] 安全补丁级别对齐失败（详见运行日志）"
+        echo "== 检测应用加入目标清单 =="
+        auto_target_known_apps || echo "[!] 目标清单追加失败（详见运行日志）"
+        echo "== 异常目录清理 =="
+        clean_abnormal || echo "[!] 异常目录清理失败（详见运行日志）"
+        log "[✓] 春秋整改一键执行完成"
+        echo "CQ_FIX=OK"
         ;;
 
     status|*)

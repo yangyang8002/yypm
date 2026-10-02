@@ -43,6 +43,10 @@ run_cycle() {
     [ "$(cfg_get abnormal_auto on)" = "on" ] && clean_abnormal >/dev/null 2>&1
     # 安全补丁级别对齐（春秋检测整改；与是否自动拉取无关，TrickyStore 不在时自动跳过）
     ensure_security_patch
+    # 把春秋等检测类应用并入 TrickyStore 目标清单（检测项 26：检测方自己的密钥认证也要走模拟）。
+    # 放在巡检末尾：fetch_keybox 已跑完，TrickyStore 目录与 keybox 都已就绪；
+    # 与是否自动拉取无关（拉取关了清单也要维护），函数内部会自行判断目录是否存在。
+    auto_target_known_apps
     return 0
 }
 

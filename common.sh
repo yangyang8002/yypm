@@ -505,8 +505,10 @@ risk_apps_autohide() {
 
 # ---- 2. 异常文件清理 ----
 # 默认只清 MT 管理器留下的工作目录，可用 abnormal_paths 覆盖（空格分隔）。
+# MT 的落地点有两代：老版本用 /sdcard/MT2，新版本退回 /sdcard/MT；
+# 应用私有目录（Android/data|media/bin.mt.plus）卸载后也会残留，春秋同样算「异常文件」。
 # 安全限制：只允许 /sdcard/ 与 /storage/emulated/0/ 下的路径。
-ABNORMAL_DEFAULT="/sdcard/MT2 /storage/emulated/0/MT2 /sdcard/MT"
+ABNORMAL_DEFAULT="/sdcard/MT2 /storage/emulated/0/MT2 /sdcard/MT /storage/emulated/0/MT /sdcard/Android/data/bin.mt.plus /sdcard/Android/media/bin.mt.plus"
 
 clean_abnormal() {
     local list; list=$(cfg_get abnormal_paths "$ABNORMAL_DEFAULT")
@@ -526,6 +528,47 @@ clean_abnormal() {
     done
     [ "$n" = "0" ] && log "[·] 没有需要清理的目录"
     echo "CLEAN_ABNORMAL=$n"
+    return 0
+}
+
+# ---- 2.5 可疑进程诊断（春秋检测「异常进程」排查，只读）----
+# 只列出来、不处理：杀进程会牵一发而动全身（ksud/su 是 root 基础设施本身），
+# 这里只负责把「检测方可能看到了什么」摆给用户看。
+# 输出契约（WebUI 靠它解析，别改格式）：
+#   PROC_COUNT=<命中数>
+#   ---PROC-BEGIN---
+#   <pid> <name>     （每行一个）
+#   ---PROC-END---
+suspicious_procs() {
+    # 可疑名（大小写不敏感）：ksud/magisk/su 是 root 与框架进程；
+    # ceserver/frida/gameguardian 是注入与内存修改工具；gg- 是 GG 的守护进程前缀；
+    # bin.mt.plus 是 MT 管理器常驻；scene 是调优工具（春秋把这类常驻都算「异常进程」）。
+    local pat='ksud|magisk|^su$|ceserver|cheatengine|frida|gameguardian|gg-|bin\.mt\.plus|scene'
+    local raw pairs names hitnames n=0 lines=""
+    # 优先 -o PID,NAME 拿干净的两列；老 busybox 不认 -o 时退到默认输出。
+    # 注意必须先快照、后匹配：若写成 ps | grep 一条管道，grep 自己的进程
+    # 会和 ps 同时启动，它的命令行里带着 magisk|scene 这些特征串，
+    # 必然命中自己 —— 于是 PROC_COUNT 永远至少多算 1 个，查不干净。
+    raw=$(ps -A -o PID,NAME 2>/dev/null || ps -A 2>/dev/null || ps 2>/dev/null)
+    # 归一化成「name pid」：常见输出里 pid 都是第一个纯数字列，名字在最后一列
+    # （表头 PID/USER 行不是纯数字开头，awk 自动滤掉）。
+    pairs=$(printf '%s\n' "$raw" | awk '$1 ~ /^[0-9]+$/ {print $NF, $1}')
+    [ -n "$pairs" ] || { echo "PROC_COUNT=0"; echo "---PROC-BEGIN---"; echo "---PROC-END---"; return 0; }
+    names=$(printf '%s\n' "$pairs" | awk '{print $1}')
+    # 在纯名字流上匹配，^su$ 这类锚点才锚得住名字本身；
+    # grep -v grep 是双保险（快照里本不该有 grep，防以后有人改回单管道写法）。
+    hitnames=$(printf '%s\n' "$names" | grep -Ei "$pat" | grep -v grep | sort -u)
+    if [ -n "$hitnames" ]; then
+        # 按命中名单回查 pairs，把 pid 带回来（同一个名字可能对应多个 pid）
+        lines=$(printf '%s\n' "$pairs" | awk -v h="$hitnames" '
+            BEGIN { m=split(h, a, "\n"); for (i=1; i<=m; i++) ok[a[i]]=1 }
+            ($1 in ok) { print $2, $1 }')
+        n=$(printf '%s\n' "$lines" | grep -c .)
+    fi
+    echo "PROC_COUNT=$n"
+    echo "---PROC-BEGIN---"
+    [ -n "$lines" ] && printf '%s\n' "$lines"
+    echo "---PROC-END---"
     return 0
 }
 
@@ -781,6 +824,34 @@ target_txt_add() { # stdin: 包名列表（逗号/空白分隔都行）
     done
     log "[✓] 目标清单追加 $n 个包（共 $(grep -cv '^[[:space:]]*$' "$TT_FILE" 2>/dev/null) 行）"
     echo "TT_ADD=$n"
+    return 0
+}
+
+# ---- 4.5 自动把检测类应用并入 TrickyStore 目标清单（春秋检测项 26 整改）----
+# 为什么需要：春秋这类检测应用自己会发起密钥认证（key attestation）来验设备完整性。
+# 它不在 target.txt 里时，认证请求直通真实 TEE，真 TEE 一答就露馅（报 26）。
+# 所以光注入 keybox 不够 —— 必须把「检测方自己」也加进目标清单，让它的认证走模拟。
+# 名单内置、只增不删；config.prop 里 auto_target=off 可整体关闭。
+AUTO_TARGET_APPS="com.chunqiuna"
+
+auto_target_known_apps() {
+    if [ "$(cfg_get auto_target on)" = "off" ]; then
+        dbg "auto_target: off，跳过"
+        return 0
+    fi
+    # 没有 TrickyStore 时 target.txt 无处可写，建空目录本身还会被当成「异常文件」
+    [ -d "$TRICKY_DIR" ] || { dbg "auto_target: 无 TrickyStore，跳过"; return 0; }
+    local pm; pm=$(pm_bin) || { dbg "auto_target: 无 pm，跳过"; return 0; }
+    local p
+    for p in $AUTO_TARGET_APPS; do
+        # pm path 成功才算真的装了（包名出现在名单里 ≠ 设备上装着）
+        "$pm" path "$p" >/dev/null 2>&1 || continue
+        # 已在清单里的不重复追加（target_txt_add 自身也查重，这里先挡一层）
+        grep -qxF "$p" "$TT_FILE" 2>/dev/null && continue
+        if printf '%s\n' "$p" | target_txt_add >/dev/null 2>&1; then
+            log "[✓] 已把检测应用加入密钥认证目标清单：$p（春秋等检测项 26 需要）"
+        fi
+    done
     return 0
 }
 
@@ -1380,6 +1451,8 @@ echo_status() {
     fi
     echo "RISK_AUTOHIDE=$(cfg_get risk_autohide on)"
     echo "ABNORMAL_AUTO=$(cfg_get abnormal_auto on)"
+    # 检测类应用自动并入 TrickyStore 目标清单的开关状态（春秋检测项 26 整改）
+    echo "AUTO_TARGET=$(cfg_get auto_target on)"
     # 隐藏 BL 状态
     echo "AUTO_BL=$(cfg_get auto_bl off)"
     [ "$(getprop ro.boot.verifiedbootstate 2>/dev/null)" = "green" ] && echo "BL_HIDDEN=1" || echo "BL_HIDDEN=0"

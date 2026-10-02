@@ -619,6 +619,25 @@ html[data-lockdown="1"] #acBanner{
   <p class="note">「隐藏应用列表已生效」这一项是<b>正常</b>的 —— 说明隐藏手段在工作，不用处理。</p>
 </div>
 
+<div class="card wide">
+  <h2>春秋 4.5.8 整改对照</h2>
+  <p class="note">对照春秋 Native check-Eros 4.5.8 的 6 个报告项逐项排查。
+  「按春秋项自检」只读不改；「一键整改」只做可自动项：安全补丁级别对齐、
+  把春秋等检测应用加入 TrickyStore 目标清单、清理 MT2/MT 残留目录。</p>
+  <div class="row"><span class="k">Found ksu/免解设备</span><span class="v" id="cqKsu">本机即 KernelSU（模块自身运行环境），无法自隐藏；可用 KernelSU 自带隐藏/Shamiko 缓解</span></div>
+  <div class="row"><span class="k">异常进程</span><span class="v" id="cqProc">未检测</span></div>
+  <div class="row"><span class="k">MT2/异常文件</span><span class="v" id="cqMt">未检测</span></div>
+  <div class="row"><span class="k">风险应用 me.weishu.kernelsu</span><span class="v" id="cqKsuApp">未检测</span></div>
+  <div class="row"><span class="k">Tampered Attestation Key(26)</span><span class="v" id="cqKey">未检测</span></div>
+  <div class="row"><span class="k">System compromised</span><span class="v" id="cqSys">上面各项全过即为通过</span></div>
+  <div class="row2">
+    <button class="btn ghost" id="btnCqCheck"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg> 按春秋项自检</button>
+    <button class="btn ghost" id="btnCqFix"><svg class="i" aria-hidden="true"><use href="#i-build"/></svg> 一键整改可自动项</button>
+  </div>
+  <p class="note">「风险应用 me.weishu.kernelsu」只显示状态、永不自动处理：管理器被 pm hide 后
+  WebUI 会随它一起从桌面消失，没法再从网页还原，属于自锁。要缓解请用 KernelSU 自带的隐藏或 Shamiko。</p>
+</div>
+
 <div class="card">
   <h2>深度伪装与异常清理</h2>
   <div class="row"><span class="k"><span id="dbDot" class="dot off"></span>启动状态伪装</span><span class="v" id="deepBlState">-</span></div>
@@ -1842,6 +1861,73 @@ async function spFix(){
   }catch(e){log('执行异常: '+e.message,'err');}
   busy('btnSpFix',false);
 }
+// ---- 春秋 4.5.8 整改对照 ----
+// 后端契约：webui.sh cq-check 输出 CQ_* 键值行（只读）；cq-fix 以 CQ_FIX=OK 收尾。
+function cqSet(id,html){var el=document.getElementById(id);if(el)el.innerHTML=html;}
+function cqFailAll(){
+  ['cqProc','cqMt','cqKsuApp','cqKey'].forEach(function(id){cqSet(id,'<span class="pill err">自检失败</span>');});
+}
+async function cqCheck(){
+  busy('btnCqCheck',true,'自检中...');
+  try{
+    var r=await execT(MODDIR+'/webui.sh cq-check',30000);
+    var out=r.stdout||'';
+    var m=parseKv(out);
+    // 锁定中/无输出时 CQ_* 全缺 —— 无法解析就明示失败，不留旧状态骗人
+    if(typeof m.CQ_KEYBOX==='undefined'){
+      cqFailAll();
+      log('春秋自检失败：'+((out.match(/AC_LOCK_REASON=(.*)/)||[])[1]||r.stderr||'无输出'),'err');
+      busy('btnCqCheck',false);
+      return;
+    }
+    // ② 异常进程
+    var pn=parseInt(m.CQ_PROC||'0',10)||0;
+    cqSet('cqProc', pn>0
+      ? '<span class="pill warn2">'+pn+' 个可疑进程</span> <span class="dim">（su/ksud 是 root 自身，属预期；明细见日志页 proc-scan）</span>'
+      : '<span class="pill ok">未见可疑进程</span>');
+    // ③ MT2/异常文件（MT 本体与落地目录一起算）
+    var mtInst=(m.CQ_MT||'').indexOf('已装')===0;
+    var mtd=parseInt(m.CQ_MTDIR||'0',10)||0;
+    cqSet('cqMt', (mtInst||mtd>0)
+      ? '<span class="pill warn2">'+esc((mtInst?'MT 管理器已装':'')+(mtInst&&mtd>0?'；':'')+(mtd>0?('残留目录 '+mtd+' 个'):''))+'</span>'
+      : '<span class="pill ok">干净</span>');
+    // ④ KernelSU 管理器：只报不藏 —— 藏了 WebUI 跟着消失，无法还原（自锁）
+    cqSet('cqKsuApp', (m.CQ_KSUAPP||'').indexOf('已装')===0
+      ? '<span class="pill warn2">已装</span> <span class="dim">（不自动隐藏：隐藏后 WebUI 打不开，自锁）</span>'
+      : '<span class="pill ok">未装</span>');
+    // ⑤ 密钥认证(26)：keybox 挂载 + prop 模式 + 检测应用入清单，三件套齐了才算过
+    var miss=[];
+    if(m.CQ_KEYBOX!=='有')miss.push('keybox 未挂载');
+    if((m.CQ_SP||'').indexOf('system=prop')<0)miss.push('补丁级别未对齐');
+    if((m.CQ_TARGET||'').indexOf('不含')===0)miss.push('检测应用未入目标清单');
+    cqSet('cqKey', miss.length===0
+      ? '<span class="pill ok">keybox 已挂载，prop 模式，春秋已入目标清单</span>'
+      : '<span class="pill warn2">'+esc(miss.join('；'))+'</span>');
+    log('春秋自检完成：可疑进程 '+pn+' 个，MT 残留目录 '+mtd+' 个','info');
+  }catch(e){cqFailAll();log('春秋自检异常: '+e.message,'err');}
+  busy('btnCqCheck',false);
+}
+function cqFixAsk(){
+  ask('一键整改可自动项？','将依次执行：安全补丁级别对齐（prop 模式）、把春秋等检测应用加入 TrickyStore 目标清单、清理 MT2/MT 残留目录。不卸载任何应用。',function(){ cqFix(); });
+}
+async function cqFix(){
+  busy('btnCqFix',true,'整改中...');
+  log('===== 春秋整改 =====','info');
+  try{
+    var r=await execT(MODDIR+'/webui.sh cq-fix',40000);
+    var out=r.stdout||'';
+    var ls=out.split('\n');
+    for(var i=0;i<ls.length;i++){var l=ls[i].trim();if(l)log(l,'info');}
+    if(/CQ_FIX=OK/.test(out)){
+      toast('整改完成，正在刷新对照状态');
+      await cqCheck();   // 整改完立刻复测，对照卡片直接反映最新状态
+      refresh();
+    }else{
+      toast('整改未完整执行，详见操作记录');
+    }
+  }catch(e){log('整改异常: '+e.message,'err');}
+  busy('btnCqFix',false);
+}
 // ---- 密钥自检 ----
 // shell 只负责搬运字节（见 common.sh 的 keybox_audit），JSON 解析放在这里。
 function kbRow(k,v){
@@ -2234,6 +2320,8 @@ document.getElementById('btnAcKeepCheats').onclick=function(){acDecide('keep_che
 document.getElementById('btnAcMail').onclick=acMailto;
 document.getElementById('btnAcCopy').onclick=acCopyFeedback;
 document.getElementById('btnSpFix').onclick=spFix;
+document.getElementById('btnCqCheck').onclick=cqCheck;
+document.getElementById('btnCqFix').onclick=cqFixAsk;
 document.getElementById('appSearch').oninput=appsRender;
 document.getElementById('appList').addEventListener('change',function(e){
   var t=e.target;

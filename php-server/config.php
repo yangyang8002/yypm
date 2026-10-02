@@ -20,6 +20,10 @@ return [
     'module_pkg'   => 'module.zip',
     'keybox_in'    => 'keybox.xml',
 
+    // 人工固定 keybox：文件存在且校验通过时，update.php 永远优先用它，
+    // 不再被上游源覆盖（A/B 实验/回滚用：删掉该文件即恢复自动择优）。
+    'keybox_pin' => __DIR__ . '/data/keybox.pinned.xml',
+
     'version'      => 'v2.2.1',
     'version_code' => 221,
 

@@ -19,7 +19,8 @@ require __DIR__ . '/lib/revocation.php';
 require __DIR__ . '/lib/sign.php';
 require __DIR__ . '/lib/packages.php';
 
-$cfg = require __DIR__ . '/config.php';
+// 测试可用 YYPM_TEST_CONFIG 指定替代配置（生产环境不传，行为不变）
+$cfg = require(getenv('YYPM_TEST_CONFIG') ?: __DIR__ . '/config.php');
 
 $dataDir = $cfg['data_dir'];
 @mkdir($dataDir, 0755, true);
@@ -149,6 +150,39 @@ foreach ($cfg['sources'] as $name => $src) {
     }
 }
 
+// ---- 1.5 人工固定 keybox（A/B 实验 / 一键回滚）----
+// config 里 keybox_pin 指向管理员手工验证过的一份 keybox：文件存在且校验通过时
+// 永远优先于上游源，不再被每天的自动择优覆盖；删掉该文件即恢复自动择优。
+// 校验与上游候选完全相同（validate_keybox + kb_validity_report：链验证/过期/吊销），
+// 不另搞简化版 —— 固定一份坏 keybox 比没有固定更危险。
+// 校验不过只打印原因并回退自动择优：绝不能因为固定文件坏了导致服务端没有 keybox。
+$pinned = null;
+$pinFile = (string)($cfg['keybox_pin'] ?? '');
+if ($pinFile !== '' && is_file($pinFile) && @filesize($pinFile) > 0) {
+    echo "{$ts} 检测到固定 keybox: {$pinFile}\n";
+    $pinXml = (string)@file_get_contents($pinFile);
+    if (!validate_keybox($pinXml)) {
+        echo "{$ts} 固定 keybox 校验失败：基础校验失败（非有效 keybox XML），回退到自动择优\n";
+    } else {
+        $pinRep = kb_validity_report($pinXml, $revoked);
+        if (!$pinRep['ok']) {
+            echo "{$ts} 固定 keybox 校验失败：" . implode('；', $pinRep['reasons']) . "，回退到自动择优\n";
+        } else {
+            $pinned = [
+                'name'      => 'pinned',
+                'priority'  => 0,   // 0 = 人工作选，日志/快照里一眼可辨
+                'ok'        => true,
+                'why'       => '',
+                'keybox'    => $pinXml,
+                'sha256'    => hash('sha256', $pinXml),
+                'validity'  => $pinRep,
+                'serials'   => $pinRep['serials'],
+            ];
+            echo "{$ts} 固定 keybox 校验通过：有效，剩余 {$pinRep['days_remaining']} 天，将优先于所有上游源\n";
+        }
+    }
+}
+
 // ---- 2. 择优：有效的里挑剩余有效期最长的；并列时取配置靠前的 ----
 $valid = array_values(array_filter($candidates, fn($c) => !empty($c['ok'])));
 $chosen = null;
@@ -161,6 +195,8 @@ if (!empty($valid)) {
     // 剩余 2678 天的 keybox，比 yurikey 的 1456 天还长 —— 但那些文件来历不明、
     // 没在真机上验证过。让它们无声顶掉已经跑通的源是不负责任的；它们只在
     // priority 1 全部失效时才接管。
+    //
+    // 固定期间也要照常排序：它决定备用池（fallbacks）的顺序。
     usort($valid, function ($a, $b) {
         $pa = (int)($a['priority'] ?? 1);
         $pb = (int)($b['priority'] ?? 1);
@@ -172,19 +208,29 @@ if (!empty($valid)) {
         if ($da === $db) return 0;
         return ($da > $db) ? -1 : 1;
     });
+}
+if ($pinned !== null) {
+    // 人工固定优先：上游源仍照常拉取/校验（上面的健康快照保持完整），
+    // 但 chosen 固定为 pinned，不再被择优覆盖。
+    $chosen = $pinned;
+    echo "{$ts} 选中源: pinned（人工固定 keybox，优先级 0，剩余 {$pinned['validity']['days_remaining']} 天）\n";
+    $pool = $valid;   // 固定期间所有有效上游候选都降级为备用池
+} elseif (!empty($valid)) {
     $chosen = $valid[0];
     echo "{$ts} 选中源: {$chosen['name']}（优先级 {$chosen['priority']}，剩余 {$chosen['validity']['days_remaining']} 天）\n";
-
-    // 备用池：其余有效候选（客户端可在主用失效时回退）
-    foreach (array_slice($valid, 1) as $v) {
-        $fallbacks[] = [
-            'source'          => $v['name'],
-            'sha256'          => $v['sha256'],
-            'size'            => strlen($v['keybox']),
-            'days_remaining'  => $v['validity']['days_remaining'],
-            'min_not_after'   => $v['validity']['min_not_after'],
-        ];
-    }
+    $pool = array_slice($valid, 1);
+} else {
+    $pool = [];
+}
+// 备用池：除主用外的其余有效候选（客户端可在主用失效时回退）
+foreach ($pool as $v) {
+    $fallbacks[] = [
+        'source'          => $v['name'],
+        'sha256'          => $v['sha256'],
+        'size'            => strlen($v['keybox']),
+        'days_remaining'  => $v['validity']['days_remaining'],
+        'min_not_after'   => $v['validity']['min_not_after'],
+    ];
 }
 
 // ---- 3. 没有有效候选时保留上一份，但要把"当前这份还有效吗"如实写进 manifest ----
