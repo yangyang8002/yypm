@@ -16,6 +16,8 @@ MODDIR="${0%/*}"
 # 附属模块包下载失败不算致命，不打断正常周期。
 run_cycle() {
     CYCLE_FAILED=0
+    dbg "== 巡检开始（debug=on）=="
+    dbg "配置: auto_fetch=$(cfg_get auto_fetch on) wifi_only=$(cfg_get wifi_only off) interval=$(cfg_get check_interval 3600) anti_cheat=$(cfg_get anti_cheat on) sp=$(cfg_get security_patch auto) risk=$(cfg_get risk_autohide on) abnormal=$(cfg_get abnormal_auto on) mirror=$(cfg_get mirror_urls on)"
     # 反挂先跑：它可能锁定自身，后面所有功能都要看它的结果
     ac_apply >/dev/null 2>&1
     if ac_locked; then

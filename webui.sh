@@ -269,7 +269,7 @@ case "${1:-status}" in
         while IFS= read -r line; do
             local k=${line%%=*} v=${line#*=}
             case "$k" in
-                auto_fetch|auto_bl|auto_debug|check_interval|pubkey_use|wifi_only|hide_apps_enable|hide_apps|deep_bl|abnormal_paths|anti_cheat|anti_cheat_ids|security_patch|abnormal_auto)
+                auto_fetch|auto_bl|auto_debug|check_interval|pubkey_use|wifi_only|hide_apps_enable|hide_apps|deep_bl|abnormal_paths|anti_cheat|anti_cheat_ids|security_patch|abnormal_auto|risk_autohide|mirror_urls|mirror_url_list|debug)
                     [ "$line" = "$k" ] && continue      # 没有 = 的裸键跳过
                     printf '%s=%s\n' "$k" "$v" >> "$TMP/cfg_clean.txt"
                     ;;
@@ -320,6 +320,12 @@ case "${1:-status}" in
         [ "$2" = "on" ] || [ "$2" = "off" ] || { echo "用法: wifi-only on|off"; exit 1; }
         cfg_set wifi_only "$2"
         echo "WIFI_ONLY=$2"
+        ;;
+    debug-log)
+        [ "$2" = "on" ] || [ "$2" = "off" ] || { echo "用法: debug-log on|off"; exit 1; }
+        cfg_set debug "$2"
+        echo "DEBUG=$2"
+        [ "$2" = "on" ] && log "[·] 调试日志已开启（webui）"
         ;;
     diag)
         export_diag

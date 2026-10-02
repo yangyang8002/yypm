@@ -119,6 +119,18 @@ retry_due_in() {
 
 log() { echo "[$(date '+%m-%d %H:%M:%S')] $*" >> "$LOG"; }
 
+# ---- debug 日志（config.prop 里 debug=on 才落盘；默认关，日志不膨胀）----
+# 覆盖关键决策点：跳过原因 / 供源选择 / 验签结果 / 自动安装判定 ——
+# 排障时打开它就能看到「为什么没做某件事」，不用猜。同进程内读一次配置后缓存。
+DEBUG_ON=""
+dbg() {
+    if [ -z "$DEBUG_ON" ]; then
+        [ "$(cfg_get debug off)" = "on" ] && DEBUG_ON=1 || { DEBUG_ON=0; return 0; }
+    fi
+    [ "$DEBUG_ON" = "1" ] || return 0
+    echo "[$(date '+%m-%d %H:%M:%S')] [dbg] $*" >> "$LOG"
+}
+
 # ---- URL 拼接（保证 BASE_URL 以 / 结尾，避免每次请求都被 301 补斜杠）----
 # 拼接前去掉可能存在的结尾斜杠，避免出现 "module//?action=" 这种双斜杠，
 # 双斜杠同样会触发重定向。历史上 BASE_URL 没有尾斜杠，这里兜底。
@@ -165,13 +177,17 @@ api_fetch_any() {
     if [ -n "$f" ]; then
         for m in $(mirror_urls); do
             if download "$m/$f" "$2" >/dev/null 2>&1 && [ -s "$2" ]; then
+                dbg "api_fetch_any $1 <- 镜像 $m"
                 printf '%s\n' "$m"; return 0
             fi
+            dbg "api_fetch_any $1: 镜像 $m 不通"
         done
     fi
     if download "$(api_url "$1")" "$2" >/dev/null 2>&1 && [ -s "$2" ]; then
+        dbg "api_fetch_any $1 <- 主源"
         printf '%s\n' "${BASE_URL%/}"; return 0
     fi
+    dbg "api_fetch_any $1: 全部来源失败"
     return 1
 }
 
@@ -463,7 +479,10 @@ hide_apps_sync() {
 RISK_APPS_DEFAULT="com.omarea.vtools com.wn.app.np moe.shizuku.privileged.api"
 
 risk_apps_autohide() {
-    [ "$(cfg_get risk_autohide on)" = "off" ] && return 0
+    if [ "$(cfg_get risk_autohide on)" = "off" ]; then
+        dbg "risk_autohide: off，跳过"
+        return 0
+    fi
     local pm; pm=$(pm_bin) || return 0
     # 名单 = 春秋点名三包 + 反挂 D 级作弊 APK（只取包名段）
     local known="$(cfg_get risk_apps "$RISK_APPS_DEFAULT") $(ac_cheat_pkgs 2>/dev/null | cut -d'|' -f1 | tr '\n' ' ')"
@@ -790,6 +809,7 @@ fetch_keybox() {
     if [ -n "$KB_SHA" ] && [ -n "$dest_now" ] && [ "$dest_now" = "$KB_SHA" ] && [ -s "$KEYBOX_CACHE" ]; then
         fresh=1
         log "[✓] keybox 已是服务端最新（sha256 一致），跳过下载"
+        dbg "fetch_keybox: fresh=1 sha=$KB_SHA"
         cp -f "$TMP/manifest.json" "$DATA_DIR/manifest.json" 2>/dev/null
     fi
 
@@ -945,12 +965,17 @@ security_patch_state() {
 # 否则先把原文件备份为 .bak 再重写（外来文件同样处理 —— 该文件只是
 # 「TEE 模拟器报什么日期」的声明，备份可回滚，覆盖无风险）。
 ensure_security_patch() {
-    [ "$(cfg_get security_patch auto)" = "off" ] && return 0
-    # 设备上没有 TrickyStore 目录时别创建它 —— 空目录本身就是「异常文件」
-    [ -d "$TRICKY_DIR" ] || return 0
-    if [ -f "$SP_FILE" ] && [ "$(cat "$SP_FILE" 2>/dev/null)" = "$(sp_body)" ]; then
+    if [ "$(cfg_get security_patch auto)" = "off" ]; then
+        dbg "security_patch: off，跳过"
         return 0
     fi
+    # 设备上没有 TrickyStore 目录时别创建它 —— 空目录本身就是「异常文件」
+    [ -d "$TRICKY_DIR" ] || { dbg "security_patch: 无 tricky_store 目录，跳过"; return 0; }
+    if [ -f "$SP_FILE" ] && [ "$(cat "$SP_FILE" 2>/dev/null)" = "$(sp_body)" ]; then
+        dbg "security_patch: 已是 prop 模式，无需写"
+        return 0
+    fi
+    dbg "security_patch: 写入 system=prop（旧文件备份 .bak）"
     [ -f "$SP_FILE" ] && cp -f "$SP_FILE" "$SP_FILE.bak" 2>/dev/null
     sp_body > "$SP_FILE" 2>/dev/null || return 1
     chmod 644 "$SP_FILE" 2>/dev/null
@@ -1440,6 +1465,7 @@ echo_status() {
 
     # ---- 网络与 WiFi 门控（⑤）----
     echo "WIFI_ONLY=$(cfg_get wifi_only off)"
+    echo "DEBUG=$(cfg_get debug off)"
     echo "NET_WIFI=$(net_is_wifi)"
 }
 
@@ -1644,6 +1670,7 @@ check_updates() {
         mid=$(echo "$fn" | sed 's/\.zip$//')
         [ -n "$p_id" ] && mid="$p_id"
         lvc=$(grep -F "$mid|" "$TMP/installed.txt" 2>/dev/null | cut -d'|' -f3 | head -1)
+        local lstaged=$(grep -F "$mid|" "$TMP/installed.txt" 2>/dev/null | cut -d'|' -f4 | head -1)
 
         if [ -n "$p_vc" ]; then
             # ---- 快路径：清单给了 versionCode，零下载 ----
@@ -1652,7 +1679,11 @@ check_updates() {
             if [ -z "$lvc" ]; then
                 echo "CHECK|$fn|$mid|未安装|$rvc|NEW|未安装（可用 KernelSU 的 Action 安装）${rvtxt:+（$rvtxt）}" >> "$TMP/check_out.txt"
             elif [ "$lvc" = "$rvc" ]; then
-                echo "CHECK|$fn|$mid|$lvc|$rvc|OK|已是最新" >> "$TMP/check_out.txt"
+                if [ "$lstaged" = "1" ]; then
+                    echo "CHECK|$fn|$mid|$lvc|$rvc|OK|已装好，重启后生效" >> "$TMP/check_out.txt"
+                else
+                    echo "CHECK|$fn|$mid|$lvc|$rvc|OK|已是最新" >> "$TMP/check_out.txt"
+                fi
             elif [ "$lvc" -gt "$rvc" ] 2>/dev/null; then
                 echo "CHECK|$fn|$mid|$lvc|$rvc|OK|本地版本($lvc)高于线上($rvc)，不提示更新" >> "$TMP/check_out.txt"
             else
@@ -1863,14 +1894,17 @@ dl_filter() { # $1 = 清单文件
 # 已安装模块（含 modules_update 待生效）
 list_installed() {
     : > "$TMP/installed.txt" 2>/dev/null
+    local d mp mid mnm mvc staged
     for d in /data/adb/modules/* /data/adb/modules_update/*; do
         [ -d "$d" ] || continue
-        local mp="$d/module.prop"
+        mp="$d/module.prop"
         [ -f "$mp" ] || continue
-        local mid=$(sed -n 's/^id=//p' "$mp" 2>/dev/null | head -1 | tr -d ' \r')
-        local mnm=$(sed -n 's/^name=//p' "$mp" 2>/dev/null | head -1 | tr -d '\r')
-        local mvc=$(vc_of "$d")
-        [ -n "$mid" ] && echo "$mid|$mnm|$mvc" >> "$TMP/installed.txt"
+        mid=$(sed -n 's/^id=//p' "$mp" 2>/dev/null | head -1 | tr -d ' \r')
+        mnm=$(sed -n 's/^name=//p' "$mp" 2>/dev/null | head -1 | tr -d '\r')
+        mvc=$(vc_of "$d")
+        # 第 4 字段：1 = 躺在 modules_update（已装好、重启后才生效）
+        case "$d" in */modules_update/*) staged=1 ;; *) staged=0 ;; esac
+        [ -n "$mid" ] && echo "$mid|$mnm|$mvc|$staged" >> "$TMP/installed.txt"
     done
     return 0
 }
@@ -1947,7 +1981,11 @@ auto_install_packages() {
     : > "$TMP/auto_pending.txt" 2>/dev/null
     while IFS='|' read -r fn fid fvc fvr fty fau fpk; do
         [ -n "$fn" ] || continue
-        [ "$fau" = "1" ] || continue
+        if [ "$fau" != "1" ]; then
+            dbg "auto_install: $fn 未标 x-auto，跳过"
+            continue
+        fi
+        dbg "auto_install: 评估 $fn (type=${fty:-module} id=${fid:-?} vc=${fvc:-?} pkg=${fpk:-?})"
         local cache="$DATA_DIR/packages/$fn"
         local want_sig="" want_sha=""
         want_sig=$(pkg_field "$fn" signature)
@@ -1959,8 +1997,10 @@ auto_install_packages() {
             local pm; pm=$(pm_bin 2>/dev/null) || continue
             local inst_sha=$(sed -n "s/^$fn=//p" "$AUTO_INSTALL_STATE" 2>/dev/null | head -1)
             if "$pm" path "$fpk" >/dev/null 2>&1 && [ -n "$inst_sha" ] && [ "$inst_sha" = "$want_sha" ]; then
+                dbg "auto_install: $fpk 已装且 sha 一致，跳过"
                 continue   # 已装且就是清单里这份
             fi
+            dbg "auto_install: $fpk 需要（未装或 sha 不同 inst=${inst_sha:-无} want=${want_sha:-?}）"
             if [ ! -s "$cache" ]; then
                 local u=$(awk -F'|' -v k="$fn" '$1==k{print $2}' "$TMP/pkg_urls.txt" 2>/dev/null | head -1)
                 [ -n "$u" ] || continue
@@ -1989,8 +2029,10 @@ auto_install_packages() {
             local lvc=$(vc_of "/data/adb/modules/$fid" 2>/dev/null)
             [ -n "$lvc" ] || lvc=$(vc_of "/data/adb/modules_update/$fid" 2>/dev/null)
             if [ -n "$fvc" ] && [ -n "$lvc" ] && [ "$fvc" -le "$lvc" ] 2>/dev/null; then
+                dbg "auto_install: $fid 已装 v$lvc >= 云端 v$fvc，跳过"
                 continue   # 已装且云端不更高
             fi
+            dbg "auto_install: $fid 需要（本地 ${lvc:-未装} < 云端 ${fvc:-?}）"
             if [ ! -s "$cache" ]; then
                 local u=$(awk -F'|' -v k="$fn" '$1==k{print $2}' "$TMP/pkg_urls.txt" 2>/dev/null | head -1)
                 [ -n "$u" ] || continue
@@ -2123,7 +2165,12 @@ install_all_packages() {
     else
         if [ "$n" -eq 0 ]; then
             echo "INSTALL_ALL=NONE"
-            echo "INSTALL_ALL_MSG=没有需要安装的附属模块"
+            # 刚才还显示可更新、现在却没有了：多半是后台巡检已自动装好（待重启）
+            if [ -s "$AUTO_INSTALL_PENDING" ] || ls /data/adb/modules_update/*/module.prop >/dev/null 2>&1; then
+                echo "INSTALL_ALL_MSG=可更新的组件已自动装好，重启后生效（无需手动安装）"
+            else
+                echo "INSTALL_ALL_MSG=没有需要安装的附属模块"
+            fi
         else
             log "[✗] 批量安装失败：成功 0，失败 $fail"
             echo "INSTALL_ALL=FAIL"

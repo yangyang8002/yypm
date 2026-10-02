@@ -20,7 +20,7 @@
 :root{
 --primary:#6750A4;--on-primary:#FFFFFF;
 --secondary-container:#E8DEF8;--on-secondary-container:#1D192B;
---error-container:#F9DEDC;--on-error-container:#410E0B;
+--error:#B3261E;--error-container:#F9DEDC;--on-error-container:#410E0B;
 --surface:#FEF7FF;
 --surface-container:#F3EDF7;--surface-container-high:#ECE6F0;--surface-container-highest:#E6E0E9;
 --on-surface:#1D1B20;--on-surface-variant:#49454F;--outline:#79747E;--outline-variant:#CAC4D0;
@@ -30,7 +30,7 @@
 html[data-theme="dark"]{
 --primary:#D0BCFF;--on-primary:#381E72;
 --secondary-container:#4A4458;--on-secondary-container:#E8DEF8;
---error-container:#8C1D18;--on-error-container:#F9DEDC;
+--error:#F2B8B5;--error-container:#8C1D18;--on-error-container:#F9DEDC;
 --surface:#141218;
 --surface-container:#211F26;--surface-container-high:#2B2930;--surface-container-highest:#36343B;
 --on-surface:#E6E0E9;--on-surface-variant:#CAC4D0;--outline:#938F99;--outline-variant:#49454F;
@@ -139,6 +139,9 @@ background:var(--primary);color:var(--on-primary);cursor:pointer;transition:filt
 .btn:active{filter:brightness(.92)}
 .btn.ghost{background:var(--secondary-container);color:var(--on-secondary-container)}
 .btn:disabled{opacity:.38;pointer-events:none}
+.btn.inv{background:#fff;color:#B3261E}
+.warn-title{display:flex;align-items:center;gap:8px;font-weight:700;color:var(--on-error-container);margin-bottom:6px}
+.warn-title .i{width:20px;height:20px}
 .update-strip{display:none;align-items:center;gap:12px;background:var(--secondary-container);
 color:var(--on-secondary-container);border-radius:var(--r-card);padding:14px 16px;margin-bottom:12px;font-size:13.5px}
 .update-strip.show{display:flex}
@@ -160,6 +163,12 @@ border:1px solid var(--outline);border-radius:20px;background:transparent;color:
 font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;transition:background-color .2s,color .2s}
 .theme-btn:active{background:var(--surface-container-high)}
 .note{font-size:12.5px;color:var(--on-surface-variant);margin-top:10px;line-height:1.6}
+.sect{margin:14px 0 6px;font-size:14px;font-weight:600;color:var(--on-surface)}
+.dim{font-size:12px;color:var(--on-surface-variant)}
+.strong{font-size:13px;font-weight:600;color:var(--on-surface)}
+.danger-box{border:2px solid var(--error,#B3261E);border-radius:14px;padding:12px;margin:10px 0}
+.err-text{color:var(--error,#B3261E);margin-top:8px;font-size:12.5px}
+.mt12{margin-top:12px}.mt14{margin-top:14px}
 
 /* 待重启生效横幅（比更新提示更醒目：更新已装但还没重启） */
 .restart-strip{display:none;align-items:center;gap:12px;background:var(--error-container);
@@ -186,7 +195,8 @@ textarea.cfg{width:100%;box-sizing:border-box;margin-top:10px;padding:12px;borde
  border:1px solid var(--outline);background:var(--code-bg);color:var(--code-sub);
  font-family:ui-monospace,'Roboto Mono',SFMono-Regular,monospace;font-size:12px;line-height:1.5;
  resize:vertical;min-height:76px;outline:none}
-.row2{display:flex;gap:10px}
+.row2{display:flex;gap:10px;margin-top:10px}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 .row2 .btn{flex:1}
 #logPanel{height:280px}
 .pill.warn2{background:var(--error-container);color:var(--on-error-container)}
@@ -359,6 +369,15 @@ html[data-lockdown="1"] #acBanner{
 <symbol id="i-upload" viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></symbol>
 <symbol id="i-trash" viewBox="0 0 24 24"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6zM19 4h-3.5l-1-1h-5l-1 1H5v2h14z"/></symbol>
 <symbol id="i-up" viewBox="0 0 24 24"><path d="M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8z"/></symbol>
+<symbol id="i-key" viewBox="0 0 24 24"><path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></symbol>
+<symbol id="i-build" viewBox="0 0 24 24"><path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z"/></symbol>
+<symbol id="i-warning" viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></symbol>
+<symbol id="i-unlock" viewBox="0 0 24 24"><path d="M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6h1.9c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2z"/></symbol>
+<symbol id="i-mail" viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></symbol>
+<symbol id="i-tune" viewBox="0 0 24 24"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></symbol>
+<symbol id="i-dark" viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/></symbol>
+<symbol id="i-light" viewBox="0 0 24 24"><path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zm-9 4c.55 0 1 .45 1 1s-.45 1-1 1H2c-.55 0-1-.45-1-1s.45-1 1-1h1zm18 0c.55 0 1 .45 1 1s-.45 1-1 1h-2c-.55 0-1-.45-1-1s.45-1 1-1h2c.55 0 1 .45 1 1s-.45-1-1-1zm-10-9c.55 0 1 .45 1 1v2c0 .55-.45 1-1 1s-1-.45-1-1V3c0-.55.45-1 1-1zm0 18c.55 0 1 .45 1 1v2c0 .55-.45 1-1 1s-1-.45-1-1v-2c0-.55.45-1 1-1zM5.99 4.58c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0 .39-.39.39-1.03 0-1.41l-1.06-1.06zm1.06-10.96c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41l1.06 1.06c.39-.39.39-1.03 0-1.41zM7.05 18.36c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41l1.06 1.06c.39-.39.39-1.03 0-1.41z"/></symbol>
+<symbol id="i-pageview" viewBox="0 0 24 24"><path d="M11.5 9C10.12 9 9 10.12 9 11.5s1.12 2.5 2.5 2.5 2.5-1.12 2.5-2.5S12.88 9 11.5 9zM20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-3.21 14.21l-2.91-2.91c-.69.44-1.51.7-2.39.7C9.01 16 7 13.99 7 11.5S9.01 7 11.5 7 16 9.01 16 11.5c0 .88-.26 1.7-.7 2.39l2.91 2.9-1.42 1.42z"/></symbol>
 </defs></svg>
 <div class="overlay" id="overlay"><div class="spin"></div></div>
 
@@ -367,17 +386,17 @@ html[data-lockdown="1"] #acBanner{
     <h1>yypm</h1>
     <div class="sub">Keybox 管理 · TEESimulator 挂载 <span class="chip" id="verChip">v-</span></div>
   </div>
-  <button class="theme-btn" id="themeBtn" type="button"><span id="themeIcon">☾</span><span id="themeLabel">浅色</span></button>
+  <button class="theme-btn" id="themeBtn" type="button"><span id="themeIcon"></span><span id="themeLabel">浅色</span></button>
 </div>
 
 <div class="update-strip" id="updateStrip">
-  <span>⬆</span>
+  <svg class="i" aria-hidden="true"><use href="#i-up"/></svg>
   <div class="grow">发现新版本 <b id="upVer"></b>（当前 <span id="upCur"></span>）</div>
   <a class="vlink" href="javascript:void(0)" onclick="confirmUpdate()">更新</a>
 </div>
 
 <div class="restart-strip" id="restartStrip">
-  <span>♻</span>
+  <svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>
   <div class="grow">有更新已安装但<b>尚未重启生效</b>：<span id="restartItems"></span></div>
 </div>
 
@@ -402,14 +421,14 @@ html[data-lockdown="1"] #acBanner{
   <div class="row"><span class="k">选用的源</span><span class="v" id="srvSrc">-</span></div>
   <div class="row"><span class="k">备用源</span><span class="v" id="srvFb">-</span></div>
   <div class="row"><span class="k">本地已验签池</span><span class="v" id="poolCnt">-</span></div>
-  <button class="btn ghost" id="btnRollback"><span>↺</span> 回滚到池中上一份</button>
+  <button class="btn ghost" id="btnRollback"><svg class="i" aria-hidden="true"><use href="#i-undo"/></svg> 回滚到池中上一份</button>
   <p class="note">服务端会校验 keybox 里证书链的有效期与吊销状态；判定失效时模块会自动回滚到本地池中已验签的备份。</p>
 </div>
 
 <div class="card">
   <h2>操作</h2>
-  <button class="btn" id="btnFetch"><span>⬇</span> 手动获取并挂载 keybox</button>
-  <button class="btn ghost" id="btnMount"><span>🔗</span> 挂载到 TEESimulator</button>
+  <button class="btn" id="btnFetch"><svg class="i" aria-hidden="true"><use href="#i-download"/></svg> 手动获取并挂载 keybox</button>
+  <button class="btn ghost" id="btnMount"><svg class="i" aria-hidden="true"><use href="#i-link"/></svg> 挂载到 TEESimulator</button>
 </div>
 </div>
 
@@ -420,7 +439,7 @@ html[data-lockdown="1"] #acBanner{
     <div><div class="lab">定时自动获取 keybox</div><div class="hint">关闭后仅保留手动获取</div></div>
     <div class="switch" id="autoSwitch"></div>
   </div>
-  <div class="lab" style="margin-top:14px">检查间隔</div>
+  <div class="lab mt14">检查间隔</div>
   <div class="hint" id="intervalHint">当前每 6 小时检查一次</div>
   <div class="seg" id="intervalSeg">
     <button type="button" data-h="1">1 小时</button>
@@ -428,13 +447,17 @@ html[data-lockdown="1"] #acBanner{
     <button type="button" data-h="12">12 小时</button>
     <button type="button" data-h="24">24 小时</button>
   </div>
-  <div class="switch-row" style="margin-top:14px">
+  <div class="switch-row mt14">
     <div><div class="lab">仅 WiFi 下自动更新</div><div class="hint">移动数据时不自动拉取，省流量</div></div>
     <div class="switch" id="wifiOnlySwitch"></div>
   </div>
-  <div class="row" style="margin-top:4px"><span class="k">当前网络</span><span class="v" id="netState">-</span></div>
-  <div class="row" style="margin-top:12px"><span class="k"><span id="retryDot" class="dot off"></span>上次失败重试</span><span class="v" id="retryState">正常</span></div>
-  <button class="btn ghost" id="btnUpdate"><span>⟳</span> 检查更新</button>
+  <div class="switch-row mt14">
+    <div><div class="lab">调试日志</div><div class="hint">记录每个决策的跳过原因/供源/验签细节，排障时开（下一轮巡检生效）</div></div>
+    <div class="switch" id="debugSwitch"></div>
+  </div>
+  <div class="row"><span class="k">当前网络</span><span class="v" id="netState">-</span></div>
+  <div class="row mt12"><span class="k"><span id="retryDot" class="dot off"></span>上次失败重试</span><span class="v" id="retryState">正常</span></div>
+  <button class="btn ghost" id="btnUpdate"><svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg> 检查更新</button>
   <p class="note">发现新版本后可一键下载并自动安装；v2.1.6 起装完立即生效，无需重启</p>
 </div>
 
@@ -442,15 +465,15 @@ html[data-lockdown="1"] #acBanner{
   <h2>附属模块更新</h2>
   <div class="row"><span class="k"><span id="modDot" class="dot off"></span>待更新</span><span class="v" id="modCount">未检查</span></div>
   <div class="row"><span class="k">上次检查</span><span class="v" id="modTime">-</span></div>
-  <button class="btn" id="btnCheckMods"><span>⟳</span> 检查附属模块更新</button>
-  <button class="btn ghost" id="btnInstallAll"><span>⤓</span> 一键安装可更新的模块</button>
+  <button class="btn" id="btnCheckMods"><svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg> 检查附属模块更新</button>
+  <button class="btn ghost" id="btnInstallAll"><svg class="i" aria-hidden="true"><use href="#i-download"/></svg> 一键安装可更新的模块</button>
   <p class="note">只检查不安装；「一键安装」会把可更新的附属模块交给 ksud 安装（重启后生效）</p>
 </div>
 
 <div class="card">
   <h2>下载源连通性</h2>
   <div id="healthBox"><div class="note">点下面的按钮检测各下载源的可达性与延迟</div></div>
-  <button class="btn ghost" id="btnHealth"><span>📶</span> 开始检测</button>
+  <button class="btn ghost" id="btnHealth"><svg class="i" aria-hidden="true"><use href="#i-wifi"/></svg> 开始检测</button>
 </div>
 </div>
 
@@ -462,13 +485,13 @@ html[data-lockdown="1"] #acBanner{
     <div><div class="lab">自动隐藏 BL</div><div class="hint">伪造 bootloader 锁定状态</div></div>
     <div class="switch" id="autoBlSwitch"></div>
   </div>
-  <button class="btn ghost" id="btnBl"><span>🛡</span> 手动隐藏 BL</button>
-  <div class="row" style="margin-top:12px"><span class="k"><span id="dbgDot" class="dot off"></span>关闭调试</span><span class="v" id="dbgState">-</span></div>
+  <button class="btn ghost" id="btnBl"><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg> 手动隐藏 BL</button>
+  <div class="row mt12"><span class="k"><span id="dbgDot" class="dot off"></span>关闭调试</span><span class="v" id="dbgState">-</span></div>
   <div class="switch-row">
     <div><div class="lab">自动关闭调试</div><div class="hint">伪装为 release 版本</div></div>
     <div class="switch" id="autoDebugSwitch"></div>
   </div>
-  <button class="btn ghost" id="btnDebug"><span>🔒</span> 手动关闭调试</button>
+  <button class="btn ghost" id="btnDebug"><svg class="i" aria-hidden="true"><use href="#i-lock"/></svg> 手动关闭调试</button>
 </div>
 
 <div class="card">
@@ -480,10 +503,10 @@ html[data-lockdown="1"] #acBanner{
   </div>
   <textarea class="cfg" id="hideAppsBox" placeholder="每行一个包名，例如：&#10;bin.mt.plus&#10;com.eza.hyperglow&#10;com.kiminonawa.HyperLight"></textarea>
   <div class="row2">
-    <button class="btn ghost" id="btnHideAppsSave"><span>✓</span> 保存列表</button>
-    <button class="btn ghost" id="btnHideAppsApply"><span>🫥</span> 立即隐藏</button>
+    <button class="btn ghost" id="btnHideAppsSave"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg> 保存列表</button>
+    <button class="btn ghost" id="btnHideAppsApply"><svg class="i" aria-hidden="true"><use href="#i-eyeoff"/></svg> 立即隐藏</button>
   </div>
-  <button class="btn ghost" id="btnHideAppsRestore"><span>↺</span> 还原隐藏</button>
+  <button class="btn ghost" id="btnHideAppsRestore"><svg class="i" aria-hidden="true"><use href="#i-undo"/></svg> 还原隐藏</button>
   <p class="note">用系统自带的 pm hide 把这些包从「其它应用可见的包列表」里摘掉，可随时还原。
   比 HMA（隐藏应用列表）粒度粗，但不需要 LSPosed；两者可以并存。</p>
 
@@ -493,9 +516,9 @@ html[data-lockdown="1"] #acBanner{
   <h2>应用选择器</h2>
   <div class="row"><span class="k">扫描结果</span><span class="v" id="appsSrc">未扫描</span></div>
   <div class="row2">
-    <button class="btn ghost" id="btnAppsLoad"><span>🔍</span> 扫描应用</button>
-    <button class="btn ghost" id="btnAppsXposed"><span>🧩</span> 只选 LSPosed</button>
-    <button class="btn ghost" id="btnAppsDiag"><span>🩺</span> 诊断</button>
+    <button class="btn ghost" id="btnAppsLoad"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg> 扫描应用</button>
+    <button class="btn ghost" id="btnAppsXposed"><svg class="i" aria-hidden="true"><use href="#i-puzzle"/></svg> 只选 LSPosed</button>
+    <button class="btn ghost" id="btnAppsDiag"><svg class="i" aria-hidden="true"><use href="#i-pageview"/></svg> 诊断</button>
   </div>
   <input class="appsearch" id="appSearch" placeholder="搜索应用名或包名…">
   <div class="pickbar">
@@ -504,9 +527,9 @@ html[data-lockdown="1"] #acBanner{
     <button type="button" class="mini" id="btnAppsNone">清空</button>
   </div>
   <div class="applist" id="appList"><div class="appempty">点「扫描应用」列出已安装应用</div></div>
-  <div class="row2" style="margin-top:10px">
-    <button class="btn ghost" id="btnAppsToHide"><span>🫥</span> 加入隐藏列表</button>
-    <button class="btn ghost" id="btnAppsToTarget"><span>🎯</span> 追加到 target.txt</button>
+  <div class="row2">
+    <button class="btn ghost" id="btnAppsToHide"><svg class="i" aria-hidden="true"><use href="#i-eyeoff"/></svg> 加入隐藏列表</button>
+    <button class="btn ghost" id="btnAppsToTarget"><svg class="i" aria-hidden="true"><use href="#i-target"/></svg> 追加到 target.txt</button>
   </div>
   <div class="row"><span class="k">目标清单 target.txt</span><span class="v" id="ttState">-</span></div>
   <p class="note">应用名由 appinfo.dex 借用系统自己的 PackageManager 解析（root 不受包可见性限制），
@@ -521,8 +544,8 @@ html[data-lockdown="1"] #acBanner{
   注入照样成功、开机也正常，只有依赖硬件认证的应用（支付/银行）会静默失效，在手机上极难排查。
   这里把设备上这份 keybox 与服务端算好的证书链、有效期、吊销结论对齐后一次摊开。</p>
   <div class="row2">
-    <button class="btn ghost" id="btnKbAudit"><span>🔐</span> 开始自检</button>
-    <button class="btn ghost" id="btnKbRepair" style="display:none"><span>🛠️</span> 一键修复</button>
+    <button class="btn ghost" id="btnKbAudit"><svg class="i" aria-hidden="true"><use href="#i-key"/></svg> 开始自检</button>
+    <button class="btn ghost" id="btnKbRepair" style="display:none"><svg class="i" aria-hidden="true"><use href="#i-build"/></svg> 一键修复</button>
   </div>
   <div id="kbFixNote"></div>
   <div id="kbReport"><div class="appempty">点「开始自检」查看证书链与吊销状态</div></div>
@@ -541,29 +564,29 @@ html[data-lockdown="1"] #acBanner{
     <button type="button" data-ac="delete">删除</button>
   </div>
   <div class="row2">
-    <button class="btn ghost" id="btnAcScan"><span>🔎</span> 扫描</button>
-    <button class="btn ghost" id="btnAcApply"><span>🛡️</span> 按配置处理</button>
+    <button class="btn ghost" id="btnAcScan"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg> 扫描</button>
+    <button class="btn ghost" id="btnAcApply"><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg> 按配置处理</button>
   </div>
   <div class="row2">
-    <button class="btn ghost" id="btnAcRestore"><span>↩</span> 还原隔离的模块</button>
+    <button class="btn ghost" id="btnAcRestore"><svg class="i" aria-hidden="true"><use href="#i-undo"/></svg> 还原隔离的模块</button>
   </div>
   <div id="acLockBox"></div>
   <div id="acNotice"></div>
   <div id="acDecide" style="display:none">
-    <div style="border:2px solid #B3261E;border-radius:14px;padding:12px;margin:10px 0">
-      <div style="font-weight:700;color:#B3261E;margin-bottom:6px">⚠ 需要你做出选择</div>
+    <div class="danger-box">
+      <div class="warn-title"><svg class="i" aria-hidden="true"><use href="#i-warning"/></svg> 需要你做出选择</div>
       <p class="note">下面这些模块带有游戏挂的实体特征（注入/内存工具的实体文件）。
       yypm 不会替你决定 —— 但游戏挂和它不能共存：反作弊一旦标记本机，
       依赖硬件认证的应用会跟着一起失效。</p>
       <button class="btn" id="btnAcKeepModule" style="margin-top:6px">继续使用本模块（删除这些挂模块）</button>
-      <button class="btn ghost" id="btnAcKeepCheats" style="color:#B3261E;margin-top:8px">仍然继续用挂（yypm 会卸载自己）</button>
+      <button class="btn ghost" id="btnAcKeepCheats" class="err-text">仍然继续用挂（yypm 会卸载自己）</button>
     </div>
   </div>
   <div class="row2">
-    <button class="btn ghost" id="btnAcUnlock" style="display:none"><span>🔓</span> 解除锁定</button>
+    <button class="btn ghost" id="btnAcUnlock" style="display:none"><svg class="i" aria-hidden="true"><use href="#i-unlock"/></svg> 解除锁定</button>
   </div>
   <div class="row2">
-    <button class="btn ghost" id="btnAcMail"><span>✉️</span> 发邮件反馈</button>
+    <button class="btn ghost" id="btnAcMail"><svg class="i" aria-hidden="true"><use href="#i-mail"/></svg> 发邮件反馈</button>
     <button class="btn ghost" id="btnAcCopy"><span>⧉</span> 复制反馈内容</button>
   </div>
   <div id="acReport"><div class="appempty">点「扫描」检查已安装模块</div></div>
@@ -581,7 +604,7 @@ html[data-lockdown="1"] #acBanner{
   采用 <b>prop 模式</b>：应答实时跟随系统属性，永不错位、永不过时；TEESimulator 即时生效，无需重启。
   已存在的旧文件（固定日期等）会先备份为 .bak 再替换。</p>
   <div class="row2">
-    <button class="btn ghost" id="btnSpFix"><span>🩹</span> 立即对齐</button>
+    <button class="btn ghost" id="btnSpFix"><svg class="i" aria-hidden="true"><use href="#i-tune"/></svg> 立即对齐</button>
   </div>
   <p class="note">② <b>风险应用</b>（Scene / NP管理器 / Shizuku / GG 等）—— <b>全自动</b>：每轮巡检发现
   这些应用已安装，就自动并入上方「隐藏应用列表」（pm hide）。被藏的应用自己也打不开，要用时先到
@@ -592,7 +615,7 @@ html[data-lockdown="1"] #acBanner{
   验签后自动安装（hma-uidfake 是内核模块，重启后生效；FuseFixer 是应用，立即生效）。
   FuseFixer 装完点下面按钮自动配置 LSPosed（启用模块 + 勾选系统框架），
   重启后打开 FuseFixer 确认显示 <code>fuse bpf: supported</code>。</p>
-  <button class="btn ghost" id="btnFuseSetup" style="margin-top:4px"><span>⚙️</span> 一键配置 FuseFixer（LSPosed 启用 + 勾选系统框架）</button>
+  <button class="btn ghost" id="btnFuseSetup"><svg class="i" aria-hidden="true"><use href="#i-settings"/></svg> 一键配置 FuseFixer（LSPosed 启用 + 勾选系统框架）</button>
   <p class="note">「隐藏应用列表已生效」这一项是<b>正常</b>的 —— 说明隐藏手段在工作，不用处理。</p>
 </div>
 
@@ -604,15 +627,15 @@ html[data-lockdown="1"] #acBanner{
     <div><div class="lab">自动深度伪装</div><div class="hint">连同 /proc/cmdline、/proc/bootconfig 一起伪装</div></div>
     <div class="switch" id="deepBlSwitch"></div>
   </div>
-  <button class="btn ghost" id="btnDeepBl"><span>🛡</span> 立即深度伪装</button>
+  <button class="btn ghost" id="btnDeepBl"><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg> 立即深度伪装</button>
   <p class="note">resetprop 改不了内核提供的 /proc/cmdline 与 /proc/bootconfig。没有 SUSFS 内核或
   Shamiko 支撑时不会硬改——bind mount 会在 mountinfo 里留下劫持痕迹，反而更容易被检出。</p>
 
-  <div class="row" style="margin-top:12px"><span class="k">异常文件清理</span><span class="v" id="cleanState">-</span></div>
+  <div class="row mt12"><span class="k">异常文件清理</span><span class="v" id="cleanState">-</span></div>
   <p class="note">每轮巡检会自动清理 MT2 等落地目录（在配置文件里设 <code>abnormal_auto=off</code> 可关闭）。
   MT 管理器本体不会被自动卸载，需要时点下面按钮（卸载后不可恢复，数据丢失自负）。</p>
-  <button class="btn ghost" id="btnUninstallMt" style="margin-top:6px"><span>🗑️</span> 一键卸载 MT 管理器</button>
-  <button class="btn ghost" id="btnClean"><span>🧹</span> 清理 MT2 等落地目录</button>
+  <button class="btn ghost" id="btnUninstallMt"><svg class="i" aria-hidden="true"><use href="#i-trash"/></svg> 一键卸载 MT 管理器</button>
+  <button class="btn ghost" id="btnClean"><svg class="i" aria-hidden="true"><use href="#i-broom"/></svg> 清理 MT2 等落地目录</button>
   <p class="note" id="abnPaths">-</p>
 </div>
 </div>
@@ -634,7 +657,7 @@ pm hide（隐藏应用列表）和 resetprop（属性伪装）；低于 Android 
 
 <div class="card">
   <h2>诊断与排障</h2>
-  <button class="btn ghost" id="btnDiag"><span>📦</span> 导出诊断包到 /sdcard</button>
+  <button class="btn ghost" id="btnDiag"><svg class="i" aria-hidden="true"><use href="#i-box"/></svg> 导出诊断包到 /sdcard</button>
   <p class="note">把状态快照、最近 800 行日志、模块清单、有效性报告打包成一个文件，
   方便发给我或留档，省去连电脑跑 adb。</p>
 </div>
@@ -665,7 +688,7 @@ pm hide（隐藏应用列表）和 resetprop（属性伪装）；低于 Android 
   <h2>运行日志</h2>
   <div class="row2">
     <button class="btn ghost" id="btnLogLoad"><span>↻</span> 加载日志</button>
-    <button class="btn ghost" id="btnLogClear"><span>🗑</span> 清空</button>
+    <button class="btn ghost" id="btnLogClear"><svg class="i" aria-hidden="true"><use href="#i-trash"/></svg> 清空</button>
   </div>
   <div class="output" id="logPanel">点「加载日志」查看模块运行日志</div>
   <div class="note" id="logMeta"></div>
@@ -701,7 +724,7 @@ var THEME_KEY='yypm_theme';
 function applyTheme(t){
   document.documentElement.setAttribute('data-theme',t);
   var i=document.getElementById('themeIcon'),l=document.getElementById('themeLabel');
-  if(i)i.textContent=(t==='dark')?'☀':'☾';
+  if(i)i.innerHTML='<svg class="i" aria-hidden="true"><use href="#i-'+(t==='dark'?'light':'dark')+'"/></svg>';
   if(l)l.textContent=(t==='dark')?'深色':'浅色';
   try{localStorage.setItem(THEME_KEY,t);}catch(e){}
   // 自选配色在深/浅色下是两套推导值，切主题必须重算
@@ -1010,6 +1033,7 @@ async function refresh(){
 
   // ---- 网络与仅 WiFi（⑤）----
   document.getElementById('wifiOnlySwitch').classList.toggle('on',s.WIFI_ONLY==='on');
+  var dbgSw=document.getElementById('debugSwitch'); if(dbgSw) dbgSw.classList.toggle('on',s.DEBUG==='on');
   var nw=s.NET_WIFI||'unknown';
   document.getElementById('netState').textContent=(nw==='yes')?'WiFi':((nw==='no')?'移动数据/未连接':'未知');
 }
@@ -1110,7 +1134,7 @@ async function manualFetch(){
   log('开始手动获取 keybox...','info');
   try{var r=await exec(MODDIR+'/webui.sh fetch');(r.stdout||'').split('\n').forEach(function(l){if(!l.trim())return;if(l.indexOf('FAIL')>=0)log(l,'err');else if(l.indexOf('OK')>=0||l.indexOf('✓')>=0)log(l,'ok');else log(l);});}
   catch(e){log('异常: '+e.message,'err');}
-  b.disabled=false;b.innerHTML='<span>⬇</span> 手动获取并挂载 keybox';
+  b.disabled=false;b.innerHTML='<svg class="i" aria-hidden="true"><use href="#i-download"/></svg> 手动获取并挂载 keybox';
   await refresh();
 }
 
@@ -1251,6 +1275,14 @@ async function toggleWifiOnly(){
   try{await exec(MODDIR+'/webui.sh wifi-only '+(on?'on':'off'));}catch(e){}
   await refresh();
   log('「仅 WiFi 自动更新」已'+(on?'开启':'关闭'),'info');
+}
+
+// ---- 调试日志开关 ----
+async function toggleDebug(){
+  var on=!document.getElementById('debugSwitch').classList.contains('on');
+  try{await exec(MODDIR+'/webui.sh debug-log '+(on?'on':'off'));}catch(e){}
+  await refresh();
+  log('调试日志已'+(on?'开启（下一轮巡检起记录细节）':'关闭'),'info');
 }
 
 // ---- 回滚到本地池 ----
@@ -1587,16 +1619,16 @@ function acLockUI(on,reason,since){
   document.documentElement.setAttribute('data-lockdown',on?'1':'0');
   var b=document.getElementById('acBanner');
   if(b){
-    b.innerHTML=on?('<b>⚠ yypm 已停用全部功能</b><br>'+esc(reason||'检测到可疑游戏挂模块')
+    b.innerHTML=on?('<b><svg class="i" aria-hidden="true" style="vertical-align:-4px"><use href="#i-warning"/></svg> yypm 已停用全部功能</b><br>'+esc(reason||'检测到可疑游戏挂模块')
       +'<br>游戏挂和本模块会互相拖累：反作弊一旦标记本机，依赖硬件认证的应用会跟着一起失效。'
       +'<br>'+(AC_PENDING_ON?'请做出选择 —— 不选，yypm 会一直停用：':'请卸载上面列出的可疑模块，然后到「环境对抗 → 反挂检查」点「解除锁定」。')
       +(since?('<br><span style="opacity:.85">锁定于 '+esc(since)+'</span>'):'')
-      +(AC_PENDING_ON?('<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">'
+      +(AC_PENDING_ON?('<div class="btnrow">'
         +'<button class="btn" id="btnAcKeepModuleTop" style="background:#fff;color:#B3261E">继续使用本模块（删除挂模块）</button>'
         +'<button class="btn" id="btnAcKeepCheatsTop" style="background:rgba(255,255,255,.22);color:#fff">仍然继续用挂（yypm 会卸载自己）</button>'
         +'</div>'):'')
-      +'<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">'
-      +'<button class="btn" id="btnAcMailTop" style="background:#fff;color:#B3261E">✉️ 发邮件反馈</button>'
+      +'<div class="btnrow">'
+      +'<button class="btn inv" id="btnAcMailTop"><svg class="i" aria-hidden="true"><use href="#i-mail"/></svg> 发邮件反馈</button>'
       +'<button class="btn" id="btnAcCopyTop" style="background:rgba(255,255,255,.18);color:#fff">⧉ 复制反馈内容</button>'
       +'</div>')
       :'';
@@ -1708,9 +1740,9 @@ function renderAc(out){
       shown++;
       var hard=(c[1]==='block');
       h+='<div style="border-left:2px solid '+(hard?'#B3261E':'#8B5000')+';padding:2px 0 2px 10px;margin:6px 0">';
-      h+='<div style="font-size:13px;font-weight:600">'+esc(c[0])+' '+acTag(hard?'实锤':'可疑',hard?'err':'warn')+'</div>';
-      h+='<div style="font-size:12px;opacity:.75">'+esc(c[2]||'')+'</div>';
-      h+='<div style="font-size:12px;opacity:.75">'+esc(c[3])+'</div>';
+      h+='<div class="strong">'+esc(c[0])+' '+acTag(hard?'实锤':'可疑',hard?'err':'warn')+'</div>';
+      h+='<div class="dim">'+esc(c[2]||'')+'</div>';
+      h+='<div class="dim">'+esc(c[3])+'</div>';
       h+='</div>';
     }
   }
@@ -1718,12 +1750,12 @@ function renderAc(out){
   var pkgs=(out.match(/AC-PKG-BEGIN\r?\n([\s\S]*?)\r?\nAC-PKG-END/)||[])[1]||'';
   var pls=pkgs?pkgs.split('\n').filter(function(x){return x;}):[];
   if(pls.length){
-    h+='<h3 style="margin:14px 0 6px;font-size:14px">已安装的作弊应用 '+acTag('仅提醒','warn')+'</h3>';
+    h+='<h3 class="sect">已安装的作弊应用 '+acTag('仅提醒','warn')+'</h3>';
     for(var pi=0;pi<pls.length;pi++){
       var pc=pls[pi].split('\t');
       h+='<div style="border-left:2px solid #8B5000;padding:2px 0 2px 10px;margin:6px 0">';
-      h+='<div style="font-size:13px;font-weight:600">'+esc(pc[1]||'')+' '+acTag('作弊应用','warn')+'</div>';
-      h+='<div style="font-size:12px;opacity:.75">'+esc(pc[2]||'')+' —— 仅提醒，不会处理它</div>';
+      h+='<div class="strong">'+esc(pc[1]||'')+' '+acTag('作弊应用','warn')+'</div>';
+      h+='<div class="dim">'+esc(pc[2]||'')+' —— 仅提醒，不会处理它</div>';
       h+='</div>';
     }
   }
@@ -1731,7 +1763,7 @@ function renderAc(out){
   var lg=(out.match(/AC-LSPD-BEGIN\r?\n([\s\S]*?)\r?\nAC-LSPD-END/)||[])[1]||'';
   var gl=lg?lg.split('\n').filter(function(x){return x;}):[];
   if(gl.length){
-    h+='<h3 style="margin:14px 0 6px;font-size:14px">LSPosed 作用域命中游戏 '+acTag('仅提醒','warn')+'</h3>';
+    h+='<h3 class="sect">LSPosed 作用域命中游戏 '+acTag('仅提醒','warn')+'</h3>';
     h+='<p class="note">有 LSPosed 模块的作用域包含下面 '+gl.length+' 个游戏。'
       +'这只能证明「有模块 hook 游戏」，看不出是哪个模块 —— 请到 LSPosed 管理器里逐个检查模块的作用域。仅此提醒，yypm 不会处理。</p>';
     h+='<div style="font-size:12.5px;opacity:.8;word-break:break-all">'+esc(gl.join('　'))+'</div>';
@@ -1826,7 +1858,7 @@ function renderKb(rep,g){
   var exists=g('KEYBOX_EXISTS')==='1';
   var match=(localSha && srvSha && localSha===srvSha);
 
-  h+='<h3 style="margin:14px 0 6px;font-size:14px">设备上的 keybox</h3>';
+  h+='<h3 class="sect">设备上的 keybox</h3>';
   if(!exists){
     h+='<p class="note">'+esc(g('KEYBOX_PATH')||'')+' 不存在 —— 还没有注入过 keybox。</p>';
   } else {
@@ -1838,7 +1870,7 @@ function renderKb(rep,g){
     h+=kbRow('sha256',String(localSha).slice(0,32)+'…');
   }
 
-  h+='<h3 style="margin:14px 0 6px;font-size:14px">与服务端比对</h3>';
+  h+='<h3 class="sect">与服务端比对</h3>';
   if(!srvSha){
     h+='<p class="note">取不到服务端报告，无法比对（检查网络或服务器地址）。</p>';
   } else if(match){
@@ -1852,7 +1884,7 @@ function renderKb(rep,g){
 
   if(rep && rep.validity){
     var v=rep.validity;
-    h+='<h3 style="margin:14px 0 6px;font-size:14px">有效性</h3>';
+    h+='<h3 class="sect">有效性</h3>';
     var lv=v.level||'invalid';
     var tag=lv==='valid'?kbTag('有效','ok'):(lv==='warning'?kbTag('有警告','warn'):kbTag('无效','err'));
     h+='<p class="note">'+tag+'　来源 '+esc(rep.source||'-')+'</p>';
@@ -1862,7 +1894,7 @@ function renderKb(rep,g){
 
     var rv=rep.revocation;
     if(rv){
-      h+='<h3 style="margin:14px 0 6px;font-size:14px">吊销名单</h3>';
+      h+='<h3 class="sect">吊销名单</h3>';
       h+=kbRow('名单来源',rv.source||'-');
       h+=kbRow('名单条数',rv.count);
       h+=kbRow('参与比对',rv.checked);
@@ -1873,7 +1905,7 @@ function renderKb(rep,g){
 
     var chains=v.chains||[];
     if(chains.length){
-      h+='<h3 style="margin:14px 0 6px;font-size:14px">证书链</h3>';
+      h+='<h3 class="sect">证书链</h3>';
       for(var ci=0;ci<chains.length;ci++){
         var cs=chains[ci].certs||[];
         h+='<p class="note" style="margin:8px 0 4px"><b>链 '+(ci+1)+'</b>　共 '+cs.length+' 张</p>';
@@ -1881,10 +1913,10 @@ function renderKb(rep,g){
           var c=cs[i];
           var role=(i===cs.length-1)?'根':(i===0?'叶':'中间');
           h+='<div style="border-left:2px solid var(--outline);padding:2px 0 2px 10px;margin:6px 0">';
-          h+='<div style="font-size:13px;font-weight:600">'+esc(role)+'　'+esc(c.serial||'-')+'</div>';
-          h+='<div style="font-size:12px;opacity:.75">'+esc(c.subject||'-')+'</div>';
-          h+='<div style="font-size:12px;opacity:.75">签发者 '+esc(c.issuer||'-')+'</div>';
-          h+='<div style="font-size:12px;opacity:.75">'+esc(c.not_before||'?')+' → '+esc(c.not_after||'?')+'</div>';
+          h+='<div class="strong">'+esc(role)+'　'+esc(c.serial||'-')+'</div>';
+          h+='<div class="dim">'+esc(c.subject||'-')+'</div>';
+          h+='<div class="dim">签发者 '+esc(c.issuer||'-')+'</div>';
+          h+='<div class="dim">'+esc(c.not_before||'?')+' → '+esc(c.not_after||'?')+'</div>';
           h+='</div>';
         }
       }
@@ -1892,11 +1924,11 @@ function renderKb(rep,g){
 
     var rs=v.reasons||[], ws=v.warnings||[];
     if(rs.length){
-      h+='<h3 style="margin:14px 0 6px;font-size:14px">问题</h3>';
+      h+='<h3 class="sect">问题</h3>';
       for(var a=0;a<rs.length;a++) h+='<p class="note">'+kbTag('×','err')+' '+esc(rs[a])+'</p>';
     }
     if(ws.length){
-      h+='<h3 style="margin:14px 0 6px;font-size:14px">提示</h3>';
+      h+='<h3 class="sect">提示</h3>';
       for(var b=0;b<ws.length;b++) h+='<p class="note">'+esc(ws[b])+'</p>';
     }
   } else if(rep && rep.error){
@@ -2145,6 +2177,7 @@ document.getElementById('btnLogClear').onclick=function(){
 document.getElementById('btnCfgExport').onclick=cfgExport;
 document.getElementById('btnCfgImport').onclick=cfgImport;
 document.getElementById('wifiOnlySwitch').onclick=toggleWifiOnly;
+var _dbgSw=document.getElementById('debugSwitch'); if(_dbgSw) _dbgSw.onclick=toggleDebug;
 document.getElementById('btnRollback').onclick=doRollback;
 document.getElementById('btnDiag').onclick=exportDiag;
 document.getElementById('autoBlSwitch').onclick=toggleBl;
