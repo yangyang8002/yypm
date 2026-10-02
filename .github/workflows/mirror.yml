@@ -1,0 +1,120 @@
+name: 镜像主源数据
+
+# 去中心化分发（P3）：把自建服务器上的【已签名】数据镜像到本仓 ——
+#   mirror 分支：manifest.json / keybox.xml / packages.json（jsDelivr、raw 可直取）
+#   mirror release：module.zip / 各组件包（assets，URL 稳定）
+# 客户端按 镜像 -> 主源 顺序取数据；主源被攻击/宕机/被墙时模块照常工作，
+# 自建服务器只剩 acreport（封禁上报）一个轻量职责。
+#
+# 安全关键：所有内容落盘前先验 Ed25519 签名，验不过整批放弃。
+# 公钥不来自服务器响应（防「假清单带假公钥」），固定配置在仓库变量里：
+#   Settings -> Secrets and variables -> Actions -> Variables
+#     MIRROR_SOURCE      主源 API 地址，如 https://your-server.example.com/api/kernelsu/module
+#     MIRROR_PUBKEY_B64  Ed25519 公钥（raw 32 字节的 base64，即模块里的 pubkey.b64 内容）
+# 没配置这两个变量时 workflow 直接跳过（模板状态）。
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 拉取主源数据并验签
+        env:
+          SRC: ${{ vars.MIRROR_SOURCE }}
+          PUB: ${{ vars.MIRROR_PUBKEY_B64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SRC:-}" ] || [ -z "${PUB:-}" ]; then
+            echo "未配置 MIRROR_SOURCE / MIRROR_PUBKEY_B64 仓库变量 —— 模板状态，跳过"
+            exit 0
+          fi
+          SRC="${SRC%/}"
+          mkdir -p dl mirror
+          curl -fsSL "$SRC/?action=manifest" -o dl/manifest.json
+          curl -fsSL "$SRC/?action=keybox"   -o dl/keybox.xml
+          curl -fsSL "$SRC/?action=packages" -o dl/packages.json
+
+          # Ed25519 公钥（raw32 base64）-> PEM（前缀是固定的 DER 头，12 字节整除 3 可直接拼）
+          { echo "-----BEGIN PUBLIC KEY-----"; echo "MCowBQYDK2VwAyEA${PUB}"; echo "-----END PUBLIC KEY-----"; } > pub.pem
+          verify() { # $1=数据文件  $2=base64 签名
+            echo "$2" | base64 -d > sig.bin
+            openssl pkeyutl -verify -rawin -pubin -inkey pub.pem -sigfile sig.bin -in "$1" >/dev/null
+          }
+
+          verify dl/keybox.xml "$(jq -r '.keybox.signature' dl/manifest.json)"
+          echo "[✓] keybox 验签通过"
+
+          MURL="$(jq -r '.module.url' dl/manifest.json)"
+          curl -fsSL "$MURL" -o dl/module.zip
+          verify dl/module.zip "$(jq -r '.module.signature' dl/manifest.json)"
+          echo "[✓] module.zip 验签通过"
+
+          jq -r '.modules | to_entries[] | "\(.key)\t\(.value.url)\t\(.value.signature)"' dl/packages.json |
+          while IFS=$'\t' read -r name url sig; do
+            [ -n "$name" ] || continue
+            curl -fsSL "$url" -o "dl/$name"
+            verify "dl/$name" "$sig"
+            echo "[✓] $name 验签通过"
+          done
+
+          # 改写成自包含镜像 URL（签名覆盖的是文件字节，URL 改写不影响验签）
+          RAW="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/mirror/mirror"
+          REL="https://github.com/${GITHUB_REPOSITORY}/releases/download/mirror"
+          jq --arg kb "$RAW/keybox.xml" --arg mz "$REL/module.zip" \
+             '.keybox.url = $kb | .module.url = $mz' dl/manifest.json > mirror/manifest.json
+          cp dl/keybox.xml mirror/keybox.xml
+          jq --arg rel "$REL" '.modules |= with_entries(.value.url = ($rel + "/" + .key))' \
+             dl/packages.json > mirror/packages.json
+
+      - name: 上传组件包到 mirror release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ -d dl ] || exit 0
+          gh release create mirror --title "数据镜像" \
+            --notes "由 mirror.yml 自动维护的已签名组件镜像；客户端验签后使用。" 2>/dev/null || true
+          for f in dl/*.zip dl/*.apk; do
+            [ -f "$f" ] || continue
+            gh release upload mirror "$f" --clobber
+            echo "uploaded $(basename "$f")"
+          done
+
+      - name: 提交 mirror 分支
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ -d mirror ] || exit 0
+          rm -rf mirror-repo
+          if git clone --depth 1 --branch mirror "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" mirror-repo 2>/dev/null; then
+            :
+          else
+            git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" mirror-repo
+            (cd mirror-repo && git checkout --orphan mirror && git rm -rf . >/dev/null 2>&1 || true)
+          fi
+          mkdir -p mirror-repo/mirror
+          cp mirror/manifest.json mirror/keybox.xml mirror/packages.json mirror-repo/mirror/
+          cd mirror-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "内容无变化，跳过提交"
+            exit 0
+          fi
+          git commit -m "mirror: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push origin HEAD:mirror

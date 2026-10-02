@@ -393,6 +393,7 @@ html[data-lockdown="1"] #acBanner{
   <div class="row"><span class="k"><span id="valDot" class="dot off"></span>有效性</span><span class="v" id="kbValid">-</span></div>
   <div class="row"><span class="k">证书有效期</span><span class="v" id="kbExpiry">-</span></div>
   <div class="row"><span class="k">TEESimulator</span><span class="v" id="teeState">-</span></div>
+  <div class="row"><span class="k">组件自动安装</span><span class="v" id="autoInstall">-</span></div>
 </div>
 
 <div class="card">
@@ -582,15 +583,16 @@ html[data-lockdown="1"] #acBanner{
   <div class="row2">
     <button class="btn ghost" id="btnSpFix"><span>🩹</span> 立即对齐</button>
   </div>
-  <p class="note">② <b>风险应用</b>（Scene / NP管理器 / Shizuku 等）—— 用 HMA（或 hma-oss）做模板隐藏，
-  并刷入 hma-uidfake 模块配合；确定用不到的直接卸载最干净。
-  yypm 的「隐藏应用列表」（上方卡片）对包可见性检测同样有效。</p>
-  <p class="note">③ <b>MT管理器 / MT2 文件夹 / 异常文件</b> —— 卸载 MT 管理器并删除 /sdcard/MT2 目录；
-  残留的异常文件用下面「深度伪装与异常清理」卡片扫描清理。</p>
-  <p class="note">④ <b>FuseFixer</b> —— 安装后在 LSPosed 里勾选它并 hook 系统框架，重启后打开 FuseFixer
-  界面确认显示 <code>fuse bpf: supported</code>。两个配套地址（长按复制到浏览器打开）：<br>
-  <code style="word-break:break-all">https://github.com/5ec1cff/FuseFixer/releases</code><br>
-  <code style="word-break:break-all">https://github.com/KodateMitsuru/hma-uidfake/releases</code></p>
+  <p class="note">② <b>风险应用</b>（Scene / NP管理器 / Shizuku / GG 等）—— <b>全自动</b>：每轮巡检发现
+  这些应用已安装，就自动并入上方「隐藏应用列表」（pm hide）。被藏的应用自己也打不开，要用时先到
+  隐藏应用卡片还原。设 <code>risk_autohide=off</code> 可关闭。</p>
+  <p class="note">③ <b>MT管理器 / MT2 文件夹 / 异常文件</b> —— MT2 等落地目录每轮自动清理；
+  MT 管理器本体用下面卡片里的「一键卸载 MT 管理器」。</p>
+  <p class="note">④ <b>FuseFixer / hma-uidfake</b> —— <b>全自动</b>：yypm 的服务器会从上游 release 抓取这两个组件，
+  验签后自动安装（hma-uidfake 是内核模块，重启后生效；FuseFixer 是应用，立即生效）。
+  FuseFixer 装完点下面按钮自动配置 LSPosed（启用模块 + 勾选系统框架），
+  重启后打开 FuseFixer 确认显示 <code>fuse bpf: supported</code>。</p>
+  <button class="btn ghost" id="btnFuseSetup" style="margin-top:4px"><span>⚙️</span> 一键配置 FuseFixer（LSPosed 启用 + 勾选系统框架）</button>
   <p class="note">「隐藏应用列表已生效」这一项是<b>正常</b>的 —— 说明隐藏手段在工作，不用处理。</p>
 </div>
 
@@ -607,6 +609,9 @@ html[data-lockdown="1"] #acBanner{
   Shamiko 支撑时不会硬改——bind mount 会在 mountinfo 里留下劫持痕迹，反而更容易被检出。</p>
 
   <div class="row" style="margin-top:12px"><span class="k">异常文件清理</span><span class="v" id="cleanState">-</span></div>
+  <p class="note">每轮巡检会自动清理 MT2 等落地目录（在配置文件里设 <code>abnormal_auto=off</code> 可关闭）。
+  MT 管理器本体不会被自动卸载，需要时点下面按钮（卸载后不可恢复，数据丢失自负）。</p>
+  <button class="btn ghost" id="btnUninstallMt" style="margin-top:6px"><span>🗑️</span> 一键卸载 MT 管理器</button>
   <button class="btn ghost" id="btnClean"><span>🧹</span> 清理 MT2 等落地目录</button>
   <p class="note" id="abnPaths">-</p>
 </div>
@@ -880,6 +885,13 @@ async function refresh(){
     spEl.innerHTML= spv==='ok' ? '<span class="pill ok">已对齐（prop 模式，跟随系统 '+esc(spp)+'）</span>'
       : spv==='fixed' ? '<span class="pill warn2">固定日期模式（易错位，点下方按钮对齐）</span>'
       : '<span class="pill">未生成</span>';
+  }
+  // 组件自动安装：有待重启的自动安装 -> 黄条提示；否则显示开关摘要
+  var aiEl=document.getElementById('autoInstall');
+  if(aiEl){
+    aiEl.innerHTML= s.AUTO_INSTALL_PENDING
+      ? '<span class="pill warn2">已自动装：'+esc(s.AUTO_INSTALL_PENDING)+'（重启后生效）</span>'
+      : '<span class="pill ok">开启</span>';
   }
   document.getElementById('autoSwitch').classList.toggle('on',s.AUTO_FETCH==='on');
   var blHidden=(s.BL_HIDDEN==='1');
@@ -1380,6 +1392,21 @@ async function cleanAbnormal(){
     if(cs) cs.innerHTML=(cn!=='0'?'<span class="pill ok">本次清理 '+esc(cn)+' 个</span>':'<span class="pill ok">干净</span>');
   }catch(e){log('清理异常: '+e.message,'err');}
   busy('btnClean',false);
+}
+// 一键卸载 MT 管理器（春秋整改；只动 bin.mt.plus / bin.mt.plus.canary 两个已知包名）
+function askUninstallMt(){
+  ask('卸载 MT 管理器','将卸载 MT 管理器（bin.mt.plus 及 canary 版）并清理 MT2 残留目录。此操作不可恢复，确定继续？',function(){ uninstallMt(); });
+}
+async function uninstallMt(){
+  busy('btnUninstallMt',true,'卸载中...');
+  log('===== 卸载 MT 管理器 =====','info');
+  try{
+    var out=(await execT(MODDIR+'/webui.sh uninstall-mt',20000)).stdout||'';
+    out.split('\n').forEach(function(l){ l=l.trim(); if(l) log(l,'info'); });
+    var n=((out.match(/^MT_UNINSTALL=(.*)$/m)||[])[1])||'0';
+    toast(n!=='0' ? '已卸载 '+n+' 个 MT 管理器' : '未检测到已安装的 MT 管理器');
+  }catch(e){log('执行异常: '+e.message,'err');}
+  busy('btnUninstallMt',false);
 }
 
 // ---- 应用选择器（appinfo.dex / 兜底包名）----
@@ -2135,6 +2162,22 @@ document.getElementById('deepBlSwitch').onclick=toggleDeepBl;
 document.getElementById('btnClean').onclick=function(){
   ask('清理异常文件？','会删除 MT2 等工具在存储里留下的落地目录，删掉后不可恢复。',cleanAbnormal);
 };
+document.getElementById('btnUninstallMt').onclick=askUninstallMt;
+// 一键配置 FuseFixer：直写 LSPosed 配置库（启用模块 + scope 加系统框架），结果按行 toast
+async function fuseSetup(){
+  var btn=document.getElementById('btnFuseSetup');
+  try{
+    setBusy(btn,true);
+    var out=await run('webui.sh fusefixer-setup',30000);
+    if(/LSPD=OK/.test(out)){ showToast('已配置：重启后生效','ok'); }
+    else{
+      var m=out.match(/LSPD=FAIL\(([^)]*)\)/);
+      showToast(m?('失败：'+m[1]):'失败（输出过长，见日志）','err');
+    }
+  }catch(e){ showToast('执行失败','err'); }
+  setBusy(btn,false);
+}
+document.getElementById('btnFuseSetup').onclick=function(){ ask('配置 FuseFixer','将向 LSPosed 配置库写入：启用 io.github.a13e300.fusefixer，并把「系统框架」加入其作用域。重启后生效。',{ok:'写入'}).then(function(v){ if(v) fuseSetup(); }); };
 document.getElementById('btnAppsLoad').onclick=appsLoad;
 document.getElementById('btnAppsXposed').onclick=appsSelectXposed;
 document.getElementById('btnAppsDiag').onclick=appsDiag;

@@ -25,6 +25,7 @@ run_cycle() {
     if allow_auto_fetch; then
         fetch_keybox_safe || CYCLE_FAILED=1
         download_packages
+        auto_install_packages
         check_module_update
     else
         log "本轮跳过拉取（自动获取已关闭，或非 WiFi 且开启了仅 WiFi 更新）"
@@ -33,12 +34,20 @@ run_cycle() {
     [ "$(cfg_get auto_debug off)" = "on" ] && close_debug
     # 环境对抗：深度伪装启动状态（需要 SUSFS/Shamiko 支撑，否则只记日志不动手）
     [ "$(cfg_get deep_bl off)" = "on" ] && hide_bl_deep
-    # 环境对抗：把隐藏应用列表同步到系统（列表没变时是空操作）
+    # 环境对抗：风险应用自动并入隐藏列表（春秋检测整改），再把列表同步到系统
+    risk_apps_autohide
     hide_apps_sync
+    # 环境对抗：自动清理 MT2 等落地目录（春秋检测「异常文件」整改；abnormal_auto=off 关闭）
+    [ "$(cfg_get abnormal_auto on)" = "on" ] && clean_abnormal >/dev/null 2>&1
     # 安全补丁级别对齐（春秋检测整改；与是否自动拉取无关，TrickyStore 不在时自动跳过）
     ensure_security_patch
     return 0
 }
+
+# 自动安装的组件重启后已生效（modules_update 被 KernelSU 接管清空）-> 撤下「待重启」提示
+if [ -f "$DATA_DIR/auto_install.pending" ] && ! ls /data/adb/modules_update/*/module.prop >/dev/null 2>&1; then
+    rm -f "$DATA_DIR/auto_install.pending" 2>/dev/null
+fi
 
 log "========== 服务启动 =========="
 

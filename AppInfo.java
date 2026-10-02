@@ -25,6 +25,7 @@ import java.io.FileOutputStream;
 import java.io.PrintStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -62,6 +63,28 @@ public class AppInfo {
             }
         }
 
+        // 位置参数（命令模式）：lspd-enable <db路径> <模块包名> <scope包名>
+        // —— 直写 LSPosed modules_config.db：启用模块 + scope 加「系统框架」。
+        List<String> pos = new ArrayList<String>();
+        for (int i = 0; i < args.length; i++) {
+            if ("--icons".equals(args[i]) || "--icon-size".equals(args[i])) { i++; continue; }
+            if (args[i].startsWith("--")) { continue; }
+            pos.add(args[i]);
+        }
+        if (pos.size() >= 4 && "lspd-enable".equals(pos.get(0))) {
+            int lrc = 0;
+            try {
+                lspdEnable(pos.get(1), pos.get(2), pos.get(3));
+            } catch (Throwable t) {
+                out.println("LSPD=FAIL(" + t.getClass().getSimpleName() + ": " + t.getMessage() + ")");
+                lrc = 2;
+            }
+            out.println("#mode=lspd");
+            out.flush();
+            System.exit(lrc);
+            return;
+        }
+
         int code = 0;
         try {
             run();
@@ -74,6 +97,105 @@ public class AppInfo {
         // 必须显式退出：app_process 里的 binder 线程是非 daemon 的，
         // main() 返回后进程不会自己结束，调用方的 $(...) 会一直等 EOF。
         System.exit(code);
+    }
+
+    // ---- LSPosed modules_config.db 直写（「一键配置 FuseFixer」用）----
+    // 全反射（编译期不需要 android.jar）。风险边界：只 UPDATE enabled、
+    // INSERT OR IGNORE 一行 scope；模块行不存在就放弃（LSPosed 扫到 APK 后
+    // 自己会建行），绝不重建表、绝不删数据。失败输出 LSPD=FAIL(原因)。
+    static void lspdEnable(String dbPath, String modulePkg, String scopePkg) throws Exception {
+        Class<?> cDb = Class.forName("android.database.sqlite.SQLiteDatabase");
+        Class<?> cCf = Class.forName("android.database.sqlite.SQLiteDatabase$CursorFactory");
+        Object db = cDb.getMethod("openDatabase", String.class, cCf, int.class)
+                .invoke(null, dbPath, null, Integer.valueOf(0)); // 0 = OPEN_READWRITE
+        try {
+            List<String> modCols = tableColumns(db, "modules");
+            List<String> scopeCols = tableColumns(db, "scope");
+            if (modCols.isEmpty() || scopeCols.isEmpty()) {
+                out.println("LSPD=FAIL(schema 不含 modules/scope 表)");
+                return;
+            }
+            boolean modern = modCols.contains("mid");
+            out.println("LSPD_SCHEMA=" + (modern ? "mid 外键版" : "包名直联版"));
+            String mid = null;
+            if (modern) {
+                List<String[]> r = queryRows(db,
+                        "SELECT mid, enabled FROM modules WHERE module_pkg_name=?",
+                        new String[]{modulePkg}, 2);
+                if (r.isEmpty()) {
+                    out.println("LSPD=FAIL(模块行不存在——先打开一次 LSPosed 管理器让它扫到该模块，再点本按钮)");
+                    return;
+                }
+                mid = r.get(0)[0];
+                if (!"1".equals(r.get(0)[1])) {
+                    execSql(db, "UPDATE modules SET enabled=1 WHERE mid=?", new Object[]{Long.valueOf(mid)});
+                }
+                if (scopeCols.contains("user_id")) {
+                    execSql(db, "INSERT OR IGNORE INTO scope (mid, app_pkg_name, user_id) VALUES (?,?,0)",
+                            new Object[]{Long.valueOf(mid), scopePkg});
+                } else {
+                    execSql(db, "INSERT OR IGNORE INTO scope (mid, app_pkg_name) VALUES (?,?)",
+                            new Object[]{Long.valueOf(mid), scopePkg});
+                }
+            } else {
+                List<String[]> r = queryRows(db,
+                        "SELECT enabled FROM modules WHERE module_pkg_name=?",
+                        new String[]{modulePkg}, 1);
+                if (r.isEmpty()) {
+                    out.println("LSPD=FAIL(模块行不存在——先打开一次 LSPosed 管理器让它扫到该模块，再点本按钮)");
+                    return;
+                }
+                execSql(db, "UPDATE modules SET enabled=1 WHERE module_pkg_name=?", new Object[]{modulePkg});
+                execSql(db, "INSERT OR IGNORE INTO scope (module_pkg_name, app_pkg_name) VALUES (?,?)",
+                        new Object[]{modulePkg, scopePkg});
+            }
+            out.println("LSPD=OK");
+            out.println("LSPD_MODULE=" + modulePkg + (mid != null ? ("(mid=" + mid + ")") : ""));
+            out.println("LSPD_SCOPE_ADDED=" + scopePkg);
+            out.println("LSPD_REBOOT=1");
+        } finally {
+            try { db.getClass().getMethod("close").invoke(db); } catch (Throwable ignored) { }
+        }
+    }
+
+    static List<String> tableColumns(Object db, String table) throws Exception {
+        List<String> cols = new ArrayList<String>();
+        Object cur = db.getClass().getMethod("rawQuery", String.class, String[].class)
+                .invoke(db, "PRAGMA table_info(" + table + ")", (Object) null);
+        try {
+            Method mNext = cur.getClass().getMethod("moveToNext");
+            Method mStr = cur.getClass().getMethod("getString", int.class);
+            while (((Boolean) mNext.invoke(cur)).booleanValue()) {
+                cols.add((String) mStr.invoke(cur, Integer.valueOf(1))); // name 列
+            }
+        } finally {
+            try { cur.getClass().getMethod("close").invoke(cur); } catch (Throwable ignored) { }
+        }
+        return cols;
+    }
+
+    static List<String[]> queryRows(Object db, String sql, String[] args, int ncols) throws Exception {
+        List<String[]> rows = new ArrayList<String[]>();
+        Object cur = db.getClass().getMethod("rawQuery", String.class, String[].class)
+                .invoke(db, sql, (Object) args);
+        try {
+            Method mNext = cur.getClass().getMethod("moveToNext");
+            Method mStr = cur.getClass().getMethod("getString", int.class);
+            while (((Boolean) mNext.invoke(cur)).booleanValue()) {
+                String[] row = new String[ncols];
+                for (int i = 0; i < ncols; i++) {
+                    row[i] = (String) mStr.invoke(cur, Integer.valueOf(i));
+                }
+                rows.add(row);
+            }
+        } finally {
+            try { cur.getClass().getMethod("close").invoke(cur); } catch (Throwable ignored) { }
+        }
+        return rows;
+    }
+
+    static void execSql(Object db, String sql, Object[] args) throws Exception {
+        db.getClass().getMethod("execSQL", String.class, Object[].class).invoke(db, sql, (Object) args);
     }
 
     static void run() throws Exception {

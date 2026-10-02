@@ -129,6 +129,52 @@ api_url() { # $1 = action 名
     echo "$b/?action=$1"
 }
 
+# ---- 去中心化镜像（P3）----
+# 清单 / keybox / 组件包全都带 Ed25519 签名，从任何镜像拿到的内容都可信 ——
+# 这就是敢用免费公共 CDN 的底气。镜像由 GitHub Actions 定时从主源拉取、
+# 验签后发布（.github/workflows/mirror.yml）：主源被攻击 / 宕机 / 被封时，
+# 客户端自动切镜像继续工作，自建服务器只剩 acreport 一个轻量职责。
+# 顺序：镜像在前（分担流量）-> 主源兜底（最新）。mirror_urls=off 整体关闭；
+# mirror_url_list="..." 自定义镜像列表（空格分隔，目录级 URL）。
+MIRROR_URLS_DEFAULT="https://cdn.jsdelivr.net/gh/yourname/yypm@mirror/mirror https://raw.githubusercontent.com/yourname/yypm/mirror/mirror"
+
+mirror_urls() { # stdout：每行一个镜像 base（无尾斜杠）
+    [ "$(cfg_get mirror_urls on)" = "off" ] && return 0
+    local m
+    for m in $(cfg_get mirror_url_list "$MIRROR_URLS_DEFAULT"); do
+        [ -n "$m" ] && printf '%s\n' "${m%/}"
+    done
+}
+
+# action -> 镜像上的静态文件名（镜像是纯静态托管，没有 PHP 路由）
+mirror_file_of() { # $1=action
+    case "$1" in
+        manifest)   echo "manifest.json" ;;
+        keybox)     echo "keybox.xml" ;;
+        revocation) echo "revocation.json" ;;
+        packages)   echo "packages.json" ;;
+        *)          return 1 ;;
+    esac
+}
+
+# 依次尝试 镜像 -> 主源 下载某个 action。$1=action  $2=dest
+# stdout = 实际供源的 base；全部失败返回 1。内容可信度由调用方验签保证。
+api_fetch_any() {
+    local m f=""
+    f=$(mirror_file_of "$1" 2>/dev/null)
+    if [ -n "$f" ]; then
+        for m in $(mirror_urls); do
+            if download "$m/$f" "$2" >/dev/null 2>&1 && [ -s "$2" ]; then
+                printf '%s\n' "$m"; return 0
+            fi
+        done
+    fi
+    if download "$(api_url "$1")" "$2" >/dev/null 2>&1 && [ -s "$2" ]; then
+        printf '%s\n' "${BASE_URL%/}"; return 0
+    fi
+    return 1
+}
+
 # ---- 下载 (curl -> busybox wget -> toybox wget) ----
 download() { # $1 url  $2 out
     if command -v curl >/dev/null 2>&1; then
@@ -407,6 +453,37 @@ hide_apps_sync() {
     hide_apps_apply
 }
 
+# ---- 1.5 风险应用自动隐藏（春秋检测「风险应用」整改）----
+# 春秋 Native check 会查 Scene / NP管理器 / Shizuku 等工具的安装状态，
+# 也会查 GG/幸运破解器这类作弊器（与反挂 D 级同一份名单）。
+# 检测到已安装就自动并入上面的隐藏列表（pm hide，对所有应用的包可见性
+# 查询生效），WebUI 隐藏应用卡片可见、可一键还原。
+# 注意：hide 后这些应用自己也打不开（launcher 同样看不到），要用先还原。
+# 关闭：risk_autohide=off；自定义名单：risk_apps="包名1 包名2"。
+RISK_APPS_DEFAULT="com.omarea.vtools com.wn.app.np moe.shizuku.privileged.api"
+
+risk_apps_autohide() {
+    [ "$(cfg_get risk_autohide on)" = "off" ] && return 0
+    local pm; pm=$(pm_bin) || return 0
+    # 名单 = 春秋点名三包 + 反挂 D 级作弊 APK（只取包名段）
+    local known="$(cfg_get risk_apps "$RISK_APPS_DEFAULT") $(ac_cheat_pkgs 2>/dev/null | cut -d'|' -f1 | tr '\n' ' ')"
+    local cur added="" changed=0 p
+    cur=" $(hide_apps_list | tr '\n' ' ') "
+    for p in $known; do
+        "$pm" path "$p" >/dev/null 2>&1 || continue       # 没装
+        case "$cur" in *" $p "*) continue ;; esac         # 已在隐藏列表
+        cur="${cur}${p} "
+        added="$added $p"
+        changed=1
+    done
+    [ "$changed" = "1" ] || return 0
+    cfg_set hide_apps "$(printf '%s' "$cur" | tr -s ' ')"
+    [ "$(cfg_get hide_apps_enable off)" = "on" ] || cfg_set hide_apps_enable on
+    log "[!] 检测到风险应用（$(echo $added)）→ 已自动并入隐藏应用列表并生效（WebUI 可一键还原）"
+    hide_apps_sync
+    return 0
+}
+
 # ---- 2. 异常文件清理 ----
 # 默认只清 MT 管理器留下的工作目录，可用 abnormal_paths 覆盖（空格分隔）。
 # 安全限制：只允许 /sdcard/ 与 /storage/emulated/0/ 下的路径。
@@ -488,8 +565,8 @@ appinfo_run() {
     # APPINFO_BIN 只给测试用；留空则按 64/默认/32 位顺序找
     for bin in ${APPINFO_BIN:-} /system/bin/app_process64 /system/bin/app_process /system/bin/app_process32; do
         [ -x "$bin" ] || continue
-        # 1) -Djava.class.path（TEESimulator 同款）
-        out=$($TO "$bin" -Djava.class.path="$APPINFO_DEX" "$MODDIR" --nice-name=yypm-appinfo "$APPINFO_CLASS" --icons "$APPINFO_ICON_DIR" 2>"$TMP/appinfo.err")
+        # 1) -Djava.class.path（TEESimulator 同款）；"$@" 透传命令模式（如 lspd-enable）
+        out=$($TO "$bin" -Djava.class.path="$APPINFO_DEX" "$MODDIR" --nice-name=yypm-appinfo "$APPINFO_CLASS" --icons "$APPINFO_ICON_DIR" "$@" 2>"$TMP/appinfo.err")
         rc=$?
         # 认自家的结束标记，避免把 app_process 的告警当成结果
         case "$out" in *'#mode='*) printf '%s\n' "$out"; return 0 ;; esac
@@ -499,7 +576,7 @@ appinfo_run() {
             return 1
         fi
         # 2) CLASSPATH 环境变量（系统自带的 am / pm 就是这么起的，多留一条路）
-        out=$(CLASSPATH="$APPINFO_DEX" $TO "$bin" "$MODDIR" --nice-name=yypm-appinfo "$APPINFO_CLASS" --icons "$APPINFO_ICON_DIR" 2>"$TMP/appinfo.err")
+        out=$(CLASSPATH="$APPINFO_DEX" $TO "$bin" "$MODDIR" --nice-name=yypm-appinfo "$APPINFO_CLASS" --icons "$APPINFO_ICON_DIR" "$@" 2>"$TMP/appinfo.err")
         rc=$?
         case "$out" in *'#mode='*) printf '%s\n' "$out"; return 0 ;; esac
         if [ "$rc" = "124" ]; then
@@ -694,11 +771,13 @@ target_txt_add() { # stdin: 包名列表（逗号/空白分隔都行）
 fetch_keybox() {
     mkdir -p "$TMP"
     log "[·] 拉取 manifest"
-    if ! download_retry "$(api_url manifest)" "$TMP/manifest.json"; then
-        log "[✗] manifest 下载失败（已重试 $NET_RETRY 次）"
+    local served_by=""
+    if ! served_by=$(api_fetch_any manifest "$TMP/manifest.json"); then
+        log "[✗] manifest 下载失败（镜像与主源都不通）"
         retry_note_fail
         return 1
     fi
+    [ -n "$served_by" ] && log "[·] manifest 来自: $served_by"
 
     KB_URL=$(json_get "$TMP/manifest.json" url)
     KB_SHA=$(json_get "$TMP/manifest.json" sha256)
@@ -1270,6 +1349,12 @@ echo_status() {
     # 安全补丁级别对齐状态（春秋检测整改；只读，不在这里写文件）
     echo "SP_STATE=$(security_patch_state)"
     echo "SP_PROP=$(getprop ro.build.version.security_patch 2>/dev/null | tr -d ' \r')"
+    # 组件自动安装（P1）：待重启提示 + 风险应用自动隐藏开关
+    if [ -s "$AUTO_INSTALL_PENDING" ]; then
+        echo "AUTO_INSTALL_PENDING=$(tr '\n' ' ' < "$AUTO_INSTALL_PENDING" 2>/dev/null | sed 's/ $//')"
+    fi
+    echo "RISK_AUTOHIDE=$(cfg_get risk_autohide on)"
+    echo "ABNORMAL_AUTO=$(cfg_get abnormal_auto on)"
     # 隐藏 BL 状态
     echo "AUTO_BL=$(cfg_get auto_bl off)"
     [ "$(getprop ro.boot.verifiedbootstate 2>/dev/null)" = "green" ] && echo "BL_HIDDEN=1" || echo "BL_HIDDEN=0"
@@ -1416,11 +1501,76 @@ zip_version() { # $1 zip file
     return 0
 }
 
+# ---- ksud 统一获取 ----
+# 之前三处口径不一（command -v / /data/adb/ksud / find_ksud），PATH 不对时
+# 会出现「检查通过、执行失败」。统一成这一个函数。
+ksud_bin() {
+    command -v ksud 2>/dev/null && return 0
+    [ -x /data/adb/ksud ] && { echo /data/adb/ksud; return 0; }
+    [ -x /data/adb/ksu/bin/ksud ] && { echo /data/adb/ksu/bin/ksud; return 0; }
+    return 1
+}
+
+# ---- 通用 Ed25519 验签（模块包/附属模块包复用 keybox 的同一把公钥）----
+# 信任根是公钥：内容从任何镜像/CDN 下载都安全，这是去中心化分发的前提。
+# $1=文件 $2=base64 签名
+# rc: 0=验过且通过；1=验了不过；2=验不了（无工具/公钥/签名为空）
+verify_blob_sig() {
+    local f="$1" sig="$2"
+    [ -n "$sig" ] || return 2
+    [ -f "$f" ] || return 1
+    local pk=$(active_pubkey)
+    [ -x "$VERIFY_TOOL" ] && [ -f "$pk" ] || return 2
+    mkdir -p "$TMP" 2>/dev/null
+    printf '%s' "$sig" > "$TMP/blob.sig"
+    "$VERIFY_TOOL" "$pk" "$TMP/blob.sig" "$f" >/dev/null 2>&1
+}
+
+# 从 manifest.json 里取 module 块的字段（嵌套 JSON：先切 module 块再取值）。
+# 优先读 TMP 里的新 manifest，没有再退回 DATA_DIR 缓存。
+manifest_module_field() { # $1 = 字段名（sha256/signature/url/size）
+    local mf="$TMP/manifest.json"
+    [ -f "$mf" ] || mf="$DATA_DIR/manifest.json"
+    [ -f "$mf" ] || return 1
+    sed -n '/"module"[[:space:]]*:[[:space:]]*{/,/^[[:space:]]*}/p' "$mf" 2>/dev/null \
+        | grep -o "\"$1\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 \
+        | sed 's/.*:[[:space:]]*"//; s/"$//'
+}
+
+# 从 packages.json 取某个包的字段（sha256/signature 等）
+pkg_field() { # $1=文件名 $2=字段
+    # check_updates 存 pkg_check.json，download_packages 存 packages.json —— 谁在用谁
+    local src="$TMP/pkg_check.json"
+    [ -f "$src" ] || src="$TMP/packages.json"
+    [ -f "$src" ] || return 1
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c '
+import json, sys
+try:
+    m = json.load(open(sys.argv[1], encoding="utf-8")).get("modules") or {}
+    v = (m.get(sys.argv[2]) or {}).get(sys.argv[3])
+    print("" if v is None else v)
+except Exception:
+    pass
+' "$src" "$1" "$2" 2>/dev/null
+        return 0
+    fi
+    # awk 兜底：服务端固定 PRETTY_PRINT（每字段一行），定位包名所在行后向下找字段
+    awk -v name="\"$1\"" -v key="\"$2\"" '
+        index($0, name) { inblk = 1; next }
+        inblk && index($0, key) {
+            line = $0
+            sub(/^[^:]*:[[:space:]]*"/, "", line)
+            sub(/".*$/, "", line)
+            print line; exit
+        }' "$src" 2>/dev/null
+}
+
 check_updates() {
     mkdir -p "$TMP" 2>/dev/null
     log "[·] 检查附属模块更新"
 
-    if ! download "$(api_url packages)" "$TMP/pkg_check.json" >/dev/null 2>&1; then
+    if ! api_fetch_any packages "$TMP/pkg_check.json" >/dev/null 2>&1; then
         save_update_cache "FAIL" "-" "0" "清单下载失败"
         return 1
     fi
@@ -1437,7 +1587,7 @@ check_updates() {
     # 只认 "X.zip" 这种"键名"（后面紧跟冒号），否则会误命中 url 字段里的文件名。
     # 用 awk 单遍扫描，避免多层引号嵌套的转义坑；文件名在前、url 在后，顺序天然成立。
     awk -F'"' '
-        /\.zip"[[:space:]]*:/ { k = $2 }
+        /\.(zip|apk)"[[:space:]]*:/ { k = $2 }
         /"url"/ {
             u = ""
             for (i = 1; i <= NF; i++) if ($i ~ /^http/) u = $i
@@ -1470,6 +1620,26 @@ check_updates() {
         p_id=$(grep -F "$fn|" "$TMP/pmeta.txt" 2>/dev/null | cut -d'|' -f2 | head -1)
         p_vc=$(grep -F "$fn|" "$TMP/pmeta.txt" 2>/dev/null | cut -d'|' -f3 | head -1)
         p_vr=$(grep -F "$fn|" "$TMP/pmeta.txt" 2>/dev/null | cut -d'|' -f4 | head -1)
+        p_ty=$(grep -F "$fn|" "$TMP/pmeta.txt" 2>/dev/null | cut -d'|' -f5 | head -1)
+        p_pk=$(grep -F "$fn|" "$TMP/pmeta.txt" 2>/dev/null | cut -d'|' -f7 | head -1)
+
+        # ---- APK 条目：已安装看 pm path，更新看安装时记的 sha 与清单 sha ----
+        if [ "$p_ty" = "apk" ]; then
+            local apk_label="${p_pk:-$fn}"
+            local want_sha=$(pkg_field "$fn" sha256)
+            local inst_sha=$(sed -n "s/^$fn=//p" "$AUTO_INSTALL_STATE" 2>/dev/null | head -1)
+            local pm; pm=$(pm_bin 2>/dev/null)
+            if [ -n "$pm" ] && [ -n "$p_pk" ] && "$pm" path "$p_pk" >/dev/null 2>&1; then
+                if [ -n "$inst_sha" ] && [ -n "$want_sha" ] && [ "$inst_sha" != "$want_sha" ]; then
+                    echo "CHECK|$fn|$apk_label|已安装|新版|UPD|应用有新版本" >> "$TMP/check_out.txt"
+                else
+                    echo "CHECK|$fn|$apk_label|已安装|-|OK|已安装（应用）" >> "$TMP/check_out.txt"
+                fi
+            else
+                echo "CHECK|$fn|$apk_label|未安装|-|NEW|未安装（应用，可自动安装）" >> "$TMP/check_out.txt"
+            fi
+            continue
+        fi
 
         mid=$(echo "$fn" | sed 's/\.zip$//')
         [ -n "$p_id" ] && mid="$p_id"
@@ -1590,25 +1760,29 @@ BEGIN { FS = "[,\"]" }
   for (i = 1; i <= n; i++) {
     if (f[i] == "x-id" || f[i] == "module_id" ||
         f[i] == "x-versionCode" || f[i] == "versionCode" ||
-        f[i] == "x-version" || f[i] == "version") {
+        f[i] == "x-version" || f[i] == "version" ||
+        f[i] == "x-type" || f[i] == "x-auto" || f[i] == "x-package") {
       v = f[i+1]
       sub(/^[ \t]*:/, "", v)
       gsub(/[ \t]/, "", v)
       if (v == "" || v == "{") { v = f[i+2]; gsub(/[ \t]/, "", v) }
       if (f[i] == "x-id" || f[i] == "module_id") id = v
       else if (f[i] == "x-versionCode" || f[i] == "versionCode") { gsub(/[^0-9]/, "", v); if (v != "") vc = v }
+      else if (f[i] == "x-type") ty = v
+      else if (f[i] == "x-auto") au = v
+      else if (f[i] == "x-package") pk = v
       else vr = v
-    } else if (f[i] ~ /\.zip$/ && f[i-1] != "url") {
+    } else if (f[i] ~ /\.(zip|apk)$/ && f[i-1] != "url") {
       s = f[i+1]
       sub(/^[ \t]*:/, "", s)
       gsub(/[ \t]/, "", s)
       if (s != "{") continue
-      if (k != "") print k "|" id "|" vc "|" vr
-      k = f[i]; id = ""; vc = ""; vr = ""
+      if (k != "") print k "|" id "|" vc "|" vr "|" ty "|" au "|" pk
+      k = f[i]; id = ""; vc = ""; vr = ""; ty = ""; au = ""; pk = ""
     }
   }
 }
-END { if (k != "") print k "|" id "|" vc "|" vr }
+END { if (k != "") print k "|" id "|" vc "|" vr "|" ty "|" au "|" pk }
 AWKEOF
     rm -f "$TMP/pmeta.txt" 2>/dev/null
     if command -v python3 >/dev/null 2>&1; then
@@ -1624,7 +1798,10 @@ for name, e in mods.items():
     if vc is None:
         vc = e.get("versionCode")
     vr  = e.get("x-version") or e.get("version") or ""
-    print("%s|%s|%s|%s" % (name, vid, "" if vc is None else vc, vr))
+    ty  = e.get("x-type") or ""
+    au  = e.get("x-auto") or ""
+    pk  = e.get("x-package") or ""
+    print("%s|%s|%s|%s|%s|%s|%s" % (name, vid, "" if vc is None else vc, vr, ty, au, pk))
 ' "$src" > "$TMP/pmeta.txt" 2>/dev/null
     fi
     if [ ! -s "$TMP/pmeta.txt" ]; then
@@ -1698,13 +1875,23 @@ list_installed() {
     return 0
 }
 
+# ---- 组件自动安装的状态文件 ----
+# state：APK 安装记录（文件名=安装时的清单 sha256，换版重装靠它判断）
+# pending：本轮自动装过的组件（WebUI 提示「重启后生效」；modules_update 清空后自动销）
+AUTO_INSTALL_STATE="${AUTO_INSTALL_STATE:-$DATA_DIR/apk_installed.sha}"
+AUTO_INSTALL_PENDING="${AUTO_INSTALL_PENDING:-$DATA_DIR/auto_install.pending}"
+
 download_packages() {
-    local list_url="$(api_url packages)"
     log "[·] 拉取模块清单"
-    download_retry "$list_url" "$TMP/packages.json" || { log "[✗] 模块清单下载失败（已重试 $NET_RETRY 次）"; return 1; }
+    api_fetch_any packages "$TMP/packages.json" >/dev/null 2>&1 || { log "[✗] 模块清单下载失败（镜像与主源都不通）"; return 1; }
 
     # 解析清单元信息（含云端 versionCode），用来判断哪些包真的需要下载
     build_pmeta "$TMP/packages.json"
+
+    # 文件名 -> url 映射（auto_install_packages 按需补下载时用）
+    grep -o '"url"[[:space:]]*:[[:space:]]*"[^"]*"' "$TMP/packages.json" 2>/dev/null \
+        | sed 's/.*"\(http[^"]*\)".*/\1/' \
+        | while IFS= read -r u; do [ -n "$u" ] && echo "$(basename "$u")|$u"; done > "$TMP/pkg_urls.txt"
 
     local dest="/data/adb/yypm/packages"
     mkdir -p "$dest"
@@ -1727,11 +1914,110 @@ download_packages() {
         local name=$(basename "$url")
         log "[·] 下载模块: $name"
         if download "$url" "$dest/$name"; then
+            # 下载即校验：缓存里的包必须可信（Action/自动安装直接用这份）
+            local wsig=$(pkg_field "$name" signature)
+            local wsha=$(pkg_field "$name" sha256)
+            if [ -n "$wsig" ]; then
+                if ! verify_blob_sig "$dest/$name" "$wsig"; then
+                    log "[✗] 验签失败，已删除: $name"
+                    rm -f "$dest/$name"
+                    continue
+                fi
+            elif [ -n "$wsha" ] && [ "$(sha256_of "$dest/$name")" != "$wsha" ]; then
+                log "[✗] sha256 不匹配，已删除: $name"
+                rm -f "$dest/$name"
+                continue
+            fi
             log "[✓] 模块已下载: $name"
         else
             log "[✗] 模块下载失败: $name"
         fi
     done < "$TMP/dl_list.txt"
+    return 0
+}
+
+# ---- 组件自动安装（清单里 x-auto=1 的条目，每轮巡检末尾跑）----
+# 模块：未装或云端 versionCode 更高 -> 下载（若无缓存）+ 验签 + ksud install（重启生效）
+# APK：未安装或清单 sha256 与安装记录不同 -> 下载 + 验签 + pm install -r（立即生效）
+# 只动清单里明确标了 x-auto 的条目；验签不过一律不装。失败不致命，下轮再试。
+auto_install_packages() {
+    [ -s "$TMP/pmeta.txt" ] || return 0
+    local fn fid fvc fvr fty fau fpk
+    local n_mod=0 n_apk=0
+    : > "$TMP/auto_pending.txt" 2>/dev/null
+    while IFS='|' read -r fn fid fvc fvr fty fau fpk; do
+        [ -n "$fn" ] || continue
+        [ "$fau" = "1" ] || continue
+        local cache="$DATA_DIR/packages/$fn"
+        local want_sig="" want_sha=""
+        want_sig=$(pkg_field "$fn" signature)
+        want_sha=$(pkg_field "$fn" sha256)
+
+        if [ "$fty" = "apk" ]; then
+            # ---- APK：pm install ----
+            [ -n "$fpk" ] || continue
+            local pm; pm=$(pm_bin 2>/dev/null) || continue
+            local inst_sha=$(sed -n "s/^$fn=//p" "$AUTO_INSTALL_STATE" 2>/dev/null | head -1)
+            if "$pm" path "$fpk" >/dev/null 2>&1 && [ -n "$inst_sha" ] && [ "$inst_sha" = "$want_sha" ]; then
+                continue   # 已装且就是清单里这份
+            fi
+            if [ ! -s "$cache" ]; then
+                local u=$(awk -F'|' -v k="$fn" '$1==k{print $2}' "$TMP/pkg_urls.txt" 2>/dev/null | head -1)
+                [ -n "$u" ] || continue
+                log "[·] 自动下载组件: $fn"
+                download "$u" "$cache" || { rm -f "$cache"; continue; }
+            fi
+            if [ -n "$want_sig" ]; then
+                verify_blob_sig "$cache" "$want_sig" || { log "[✗] $fn 验签失败，不装"; rm -f "$cache"; continue; }
+            elif [ -n "$want_sha" ] && [ "$(sha256_of "$cache")" != "$want_sha" ]; then
+                log "[✗] $fn sha256 不匹配，不装"; rm -f "$cache"; continue
+            fi
+            if "$pm" install -r "$cache" >/dev/null 2>&1; then
+                log "[✓] 已自动安装应用 $fpk（$fn）"
+                mkdir -p "$DATA_DIR" 2>/dev/null
+                grep -v "^$fn=" "$AUTO_INSTALL_STATE" 2>/dev/null > "$AUTO_INSTALL_STATE.tmp"
+                echo "$fn=$want_sha" >> "$AUTO_INSTALL_STATE.tmp"
+                mv "$AUTO_INSTALL_STATE.tmp" "$AUTO_INSTALL_STATE"
+                echo "$fpk（应用）" >> "$TMP/auto_pending.txt"
+                n_apk=$((n_apk + 1))
+            else
+                log "[✗] 自动安装应用失败: $fn"
+            fi
+        else
+            # ---- 模块 zip：ksud install ----
+            [ -n "$fid" ] || continue
+            local lvc=$(vc_of "/data/adb/modules/$fid" 2>/dev/null)
+            [ -n "$lvc" ] || lvc=$(vc_of "/data/adb/modules_update/$fid" 2>/dev/null)
+            if [ -n "$fvc" ] && [ -n "$lvc" ] && [ "$fvc" -le "$lvc" ] 2>/dev/null; then
+                continue   # 已装且云端不更高
+            fi
+            if [ ! -s "$cache" ]; then
+                local u=$(awk -F'|' -v k="$fn" '$1==k{print $2}' "$TMP/pkg_urls.txt" 2>/dev/null | head -1)
+                [ -n "$u" ] || continue
+                log "[·] 自动下载组件: $fn"
+                download "$u" "$cache" || { rm -f "$cache"; continue; }
+            fi
+            if [ -n "$want_sig" ]; then
+                verify_blob_sig "$cache" "$want_sig" || { log "[✗] $fn 验签失败，不装"; rm -f "$cache"; continue; }
+            elif [ -n "$want_sha" ] && [ "$(sha256_of "$cache")" != "$want_sha" ]; then
+                log "[✗] $fn sha256 不匹配，不装"; rm -f "$cache"; continue
+            fi
+            local KS=$(ksud_bin)
+            [ -n "$KS" ] || continue
+            if "$KS" module install "$cache" >/dev/null 2>&1; then
+                log "[✓] 已自动安装模块 $fid（${fvr:-$fvc}，重启后生效）"
+                echo "$fid（模块，重启后生效）" >> "$TMP/auto_pending.txt"
+                n_mod=$((n_mod + 1))
+            else
+                log "[✗] 自动安装模块失败: $fid"
+            fi
+        fi
+    done < "$TMP/pmeta.txt"
+
+    if [ -s "$TMP/auto_pending.txt" ]; then
+        mv "$TMP/auto_pending.txt" "$AUTO_INSTALL_PENDING" 2>/dev/null
+        log "[✓] 组件自动安装完成：模块 $n_mod 个 / 应用 $n_apk 个"
+    fi
     return 0
 }
 
@@ -1749,7 +2035,7 @@ install_all_packages() {
     fi
 
     local n=0 ok=0 fail=0 skip=0
-    local KS=/data/adb/ksud
+    local KS=$(ksud_bin)
     local dest="$DATA_DIR/packages"
     mkdir -p "$dest"
 
@@ -1760,7 +2046,10 @@ install_all_packages() {
         n=$((n + 1))
         echo "→ 安装 $mid $lvc → $rvc"
 
-        if [ ! -x "$KS" ]; then
+        # 类型提前判定：APK 走 pm install，不需要 ksud
+        local p_ty=$(grep -F "$fn|" "$TMP/pmeta.txt" 2>/dev/null | cut -d'|' -f5 | head -1)
+        local p_pk=$(grep -F "$fn|" "$TMP/pmeta.txt" 2>/dev/null | cut -d'|' -f7 | head -1)
+        if [ "$p_ty" != "apk" ] && [ -z "$KS" ]; then
             echo "  [✗] 未找到 ksud，无法自动安装"
             fail=$((fail + 1))
             continue
@@ -1776,6 +2065,41 @@ install_all_packages() {
         if ! download "$url" "$src" || [ ! -s "$src" ]; then
             echo "  [✗] 下载失败"
             fail=$((fail + 1))
+            continue
+        fi
+
+        # 安装前校验：有签名验签（首选），没签名至少对 sha256（旧服务端兼容）
+        local want_sig=$(pkg_field "$fn" signature)
+        if [ -n "$want_sig" ]; then
+            if verify_blob_sig "$src" "$want_sig"; then
+                echo "  [✓] 验签通过"
+            else
+                echo "  [✗] 验签失败，拒绝安装（包可能被篡改）"
+                fail=$((fail + 1))
+                continue
+            fi
+        else
+            local want_sha=$(pkg_field "$fn" sha256)
+            if [ -n "$want_sha" ] && [ "$(sha256_of "$src")" != "$want_sha" ]; then
+                echo "  [✗] sha256 不匹配，拒绝安装"
+                fail=$((fail + 1))
+                continue
+            fi
+        fi
+
+        if [ "$p_ty" = "apk" ]; then
+            local pm; pm=$(pm_bin 2>/dev/null)
+            if [ -n "$pm" ] && "$pm" install -r "$src" >/dev/null 2>&1; then
+                echo "  [✓] 已安装应用 $p_pk（立即生效）"
+                local wsha2=$(pkg_field "$fn" sha256)
+                grep -v "^$fn=" "$AUTO_INSTALL_STATE" 2>/dev/null > "$AUTO_INSTALL_STATE.tmp"
+                echo "$fn=$wsha2" >> "$AUTO_INSTALL_STATE.tmp"
+                mv "$AUTO_INSTALL_STATE.tmp" "$AUTO_INSTALL_STATE"
+                ok=$((ok + 1))
+            else
+                echo "  [✗] 应用安装失败"
+                fail=$((fail + 1))
+            fi
             continue
         fi
 
@@ -1846,6 +2170,11 @@ check_module_update() {
     local cur_vc=$(vc_of "$MODDIR")
     log "[·] 发现新版本 $tag（当前 $cur）"
 
+    # 拉 manifest 拿模块包签名（验签依据；镜像->主源，拉不到就降级为仅 versionCode 校验）
+    api_fetch_any manifest "$TMP/manifest.json" >/dev/null 2>&1 \
+        && cp -f "$TMP/manifest.json" "$DATA_DIR/manifest.json" 2>/dev/null
+    local msig=$(manifest_module_field signature)
+
     local got=""
     for u in "$(api_url module)" "$gh_url"; do
         [ -n "$u" ] || continue
@@ -1856,19 +2185,33 @@ check_module_update() {
         fi
         # 校验包内 versionCode 必须大于当前，防止装到旧包
         local pkg_vc=$(zip_version "$TMP/update.zip" 2>/dev/null)
-        if [ -n "$pkg_vc" ] && [ "$pkg_vc" -gt "$cur_vc" ] 2>/dev/null; then
-            got="$u"
-            log "[✓] 已下载 $tag（versionCode $pkg_vc）"
-            break
+        if [ -z "$pkg_vc" ] || ! [ "$pkg_vc" -gt "$cur_vc" ] 2>/dev/null; then
+            log "[!] 包内 versionCode=$pkg_vc 不高于当前 $cur_vc，丢弃"
+            rm -f "$TMP/update.zip"
+            continue
         fi
-        log "[!] 包内 versionCode=$pkg_vc 不高于当前 $cur_vc，丢弃"
-        rm -f "$TMP/update.zip"
+        # Ed25519 验签：服务器被攻破 / 下载被劫持都推不了假包
+        if [ -n "$msig" ]; then
+            if verify_blob_sig "$TMP/update.zip" "$msig"; then
+                log "[✓] 模块包验签通过"
+            else
+                log "[✗] 模块包验签失败，丢弃（可能下载被篡改）"
+                rm -f "$TMP/update.zip"
+                continue
+            fi
+        else
+            log "[!] 服务端未提供模块签名，仅按 versionCode 校验"
+        fi
+        got="$u"
+        log "[✓] 已下载 $tag（versionCode $pkg_vc）"
+        break
     done
     [ -n "$got" ] || { log "[✗] 所有下载源均失败"; return 0; }
 
     [ -f "$TMP/update.zip" ] || return 0
-    if command -v ksud >/dev/null 2>&1; then
-        ksud module install "$TMP/update.zip" 2>/dev/null && log "[✓] 已通过 ksud 安装更新（重启后生效）"
+    local KS=$(ksud_bin)
+    if [ -n "$KS" ]; then
+        "$KS" module install "$TMP/update.zip" 2>/dev/null && log "[✓] 已通过 ksud 安装更新（重启后生效）"
     else
         log "[!] 新模块已下载到 $TMP/update.zip，请手动安装"
     fi
@@ -2680,11 +3023,12 @@ ac_tok() { head -1 "$AC_TOK_FILE" 2>/dev/null | tr -cd '0-9a-f'; }
 ac_call() { # $1=ev(ping|scan|expire)  $2=hits(csv，可空) -> stdout=响应体
     command -v curl >/dev/null 2>&1 || return 1
     local code=$(ac_device_code)
-    local url="$(api_url acreport)&code=$code&ev=$1"
-    [ -n "$2" ] && url="$url&hits=$2"
+    # v2.8.0 起走 POST：tok 放 body 里，不进 nginx 访问日志（GET 时代码+令牌都在 query 里）
+    local data="code=$code&ev=$1"
+    [ -n "$2" ] && data="$data&hits=$2"
     local tok=$(ac_tok)
-    [ -n "$tok" ] && url="$url&tok=$tok"
-    local body=$(curl -s --connect-timeout 8 --max-time 20 "$url" 2>/dev/null)
+    [ -n "$tok" ] && data="$data&tok=$tok"
+    local body=$(curl -s --connect-timeout 8 --max-time 20 -d "$data" "$(api_url acreport)" 2>/dev/null)
     [ -n "$body" ] || return 1
     case "$body" in
         *'"tok":"'*)
@@ -2704,8 +3048,18 @@ ac_call() { # $1=ev(ping|scan|expire)  $2=hits(csv，可空) -> stdout=响应体
 
 # 联网探测：拿一个轻量端点试连通性。断网时模块停摆，靠的就是它。
 # 能拿到响应体就算在线（哪怕业务上被拒绝，也说明网络通、服务在）。
+# 主源不通（被攻击/维护）时退到镜像探活：镜像清单能拿到就算「降级在线」——
+# 封禁状态冻结在本地最后一次已知结果，扫描上报排队到主源恢复。
 ac_online() {
-    ac_call ping "" >/dev/null 2>&1
+    ac_call ping "" >/dev/null 2>&1 && return 0
+    local m
+    for m in $(mirror_urls); do
+        if curl -s --connect-timeout 5 --max-time 10 -o /dev/null "$m/manifest.json" 2>/dev/null; then
+            log "[·] 主源不可达，镜像在线（降级模式：封禁冻结、上报排队）"
+            return 0
+        fi
+    done
+    return 1
 }
 
 # 上报：$1 = 事件（ping/scan/expire）  $2 = 命中 id（换行分隔）

@@ -39,9 +39,28 @@ get_sha() { # $1 文件名  $2 清单文件
     grep -A3 '"'$1'"' "$2" | grep '"sha256"' | head -1 | sed 's/.*"\([0-9a-fA-F]*\)".*/\1/'
 }
 
+# 从清单里提取指定模块的 Ed25519 签名（新版服务端有；没有时退回 sha256 校验）
+get_sig() { # $1 文件名  $2 清单文件
+    grep -A8 '"'$1'"' "$2" | grep '"signature"' | head -1 | sed 's/.*"signature"[[:space:]]*:[[:space:]]*"//; s/".*//'
+}
+
+SELF_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
+VERIFY_TOOL="$SELF_DIR/verify_tool"
+PUBKEY="$SELF_DIR/pubkey.b64"
+
+# Ed25519 验签（与 keybox 同一把公钥）。rc: 0=通过 1=不过 2=验不了
+verify_sig() { # $1 file $2 sig-b64
+    [ -n "$2" ] || return 2
+    [ -x "$VERIFY_TOOL" ] && [ -f "$PUBKEY" ] || return 2
+    printf '%s' "$2" > "$TMP/pkg.sig"
+    "$VERIFY_TOOL" "$PUBKEY" "$TMP/pkg.sig" "$1" >/dev/null 2>&1
+}
+
+# 输出 ksud 路径（之前只检查存在却调裸 ksud，PATH 不对时检查通过执行失败）
 find_ksud() {
-    command -v ksud >/dev/null 2>&1 && return 0
-    [ -x /data/adb/ksu/bin/ksud ] && return 0
+    command -v ksud 2>/dev/null && return 0
+    [ -x /data/adb/ksud ] && { echo /data/adb/ksud; return 0; }
+    [ -x /data/adb/ksu/bin/ksud ] && { echo /data/adb/ksu/bin/ksud; return 0; }
     return 1
 }
 
@@ -59,7 +78,7 @@ fi
 urls="$(grep -o '"url"[[:space:]]*:[[:space:]]*"[^"]*"' "$TMP/packages.json" | sed 's/.*"\(http[^"]*\)".*/\1/')"
 [ -n "$urls" ] || { ui_print "[!] 清单无模块"; exit 0; }
 
-find_ksud && HAVE_KSUD=1 || HAVE_KSUD=0
+KSUD_BIN="$(find_ksud)"; [ -n "$KSUD_BIN" ] && HAVE_KSUD=1 || HAVE_KSUD=0
 
 OK_LIST=""
 FAIL=0
@@ -75,9 +94,18 @@ for url in $urls; do
     fi
 
     ui_print "[*] 校验本体 $name ..."
+    sig="$(get_sig "$name" "$TMP/packages.json")"
     expected="$(get_sha "$name" "$TMP/packages.json")"
     actual="$(sha256_of "$TMP/$name")"
-    if [ -n "$expected" ] && [ "$expected" = "$actual" ]; then
+    if [ -n "$sig" ]; then
+        if verify_sig "$TMP/$name" "$sig"; then
+            ui_print "[+] 验签通过（Ed25519）"
+            OK_LIST="$OK_LIST $name"
+        else
+            ui_print "[x] 验签失败！包可能被篡改，拒绝安装"
+            FAIL=1
+        fi
+    elif [ -n "$expected" ] && [ "$expected" = "$actual" ]; then
         ui_print "[+] 校验通过 ($actual)"
         OK_LIST="$OK_LIST $name"
     elif [ -z "$expected" ]; then
@@ -95,7 +123,7 @@ if [ -n "$OK_LIST" ]; then
     for name in $OK_LIST; do
         if [ "$HAVE_KSUD" = "1" ]; then
             ui_print "[*] 安装 $name ..."
-            ksud module install "$TMP/$name" 2>&1 | grep -v '^$'
+            "$KSUD_BIN" module install "$TMP/$name" 2>&1 | grep -v '^$'
             [ $? -eq 0 ] && ui_print "[+] 已安装 $name" || ui_print "[x] 安装失败 $name"
         else
             ui_print "[!] 未找到 ksud，$name 已下载到 $TMP/$name"

@@ -72,7 +72,7 @@ sync_live() {
 
 # 用 ksud 把 update.zip 装进 modules_update（重启后生效）
 install_self() {
-    KS=/data/adb/ksud
+    KS=$(ksud_bin)
     Z="$DATA_DIR/update.zip"
     [ -s "$Z" ] || { echo "INSTALL=FAIL(没有已下载的包)"; return 1; }
     # 版本防回退：包内 versionCode 不高于当前就丢弃，避免误降级
@@ -85,7 +85,22 @@ install_self() {
         rm -f "$Z"
         return 0
     fi
-    [ -x "$KS" ] || { echo "INSTALL=FAIL(未找到 ksud)"; echo "SAVED=$Z"; return 1; }
+    # Ed25519 验签：拉 manifest 拿 module.signature，验不过拒绝安装。
+    # 签名缺失（旧服务端）才降级为仅版本号校验。
+    download_retry "$(api_url manifest)" "$TMP/manifest.json" >/dev/null 2>&1
+    msig=$(manifest_module_field signature)
+    if [ -n "$msig" ]; then
+        if verify_blob_sig "$Z" "$msig"; then
+            echo "VERIFY=OK"
+        else
+            echo "INSTALL=FAIL(验签失败，包可能被篡改)"
+            rm -f "$Z"
+            return 1
+        fi
+    else
+        echo "VERIFY=SKIP(服务端无签名字段)"
+    fi
+    [ -n "$KS" ] || { echo "INSTALL=FAIL(未找到 ksud)"; echo "SAVED=$Z"; return 1; }
     lsout=$("$KS" module install "$Z" 2>&1)
     rc=$?
     echo "$lsout"
@@ -411,6 +426,37 @@ case "${1:-status}" in
         ;;
     clean-abnormal)
         clean_abnormal
+        echo "ABNORMAL_AUTO=$(cfg_get abnormal_auto on)"
+        ;;
+    fusefixer-setup)
+        # P1-⑨：直写 LSPosed modules_config.db —— 启用 FuseFixer 并把系统框架加入作用域。
+        # dex 只 UPDATE enabled / INSERT OR IGNORE scope，写不进去就如实报错，绝不清库。
+        local db=/data/adb/lspd/config/modules_config.db
+        if [ ! -f "$db" ]; then
+            echo "LSPD=FAIL(未检测到 LSPosed：没有 modules_config.db)"
+            exit 1
+        fi
+        appinfo_run lspd-enable "$db" io.github.a13e300.fusefixer android
+        ;;
+
+    uninstall-mt)
+        # 一键卸载 MT 管理器（春秋检测「MT管理器」整改）。只碰这两个已知包名。
+        # 卸载是用户点按钮触发的，不属于自动行为。
+        mt_n=0
+        mt_pm=$(pm_bin) || { echo "MT_UNINSTALL=FAIL(无 pm)"; exit 1; }
+        for mt_pkg in bin.mt.plus bin.mt.plus.canary; do
+            if "$mt_pm" path "$mt_pkg" >/dev/null 2>&1; then
+                if "$mt_pm" uninstall "$mt_pkg" >/dev/null 2>&1; then
+                    log "[✓] 已卸载 MT 管理器（$mt_pkg）"
+                    mt_n=$((mt_n + 1))
+                else
+                    log "[✗] 卸载失败（$mt_pkg）"
+                fi
+            fi
+        done
+        # 顺手清掉残留目录
+        clean_abnormal >/dev/null 2>&1
+        echo "MT_UNINSTALL=$mt_n"
         ;;
     deep-bl)
         hide_bl_deep
