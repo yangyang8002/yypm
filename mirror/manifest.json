@@ -3,7 +3,7 @@
   "version_code": 285,
   "base_url": "https://yangyang8002.xin/api/kernelsu/module",
   "keybox": {
-    "updated_at": "2026-10-03 19:30:19",
+    "updated_at": "2026-10-04 00:00:19",
     "source": "pinned",
     "size": 12713,
     "sha256": "bb72001d8161618aeb0ceeca8d9f8965d15fa70c8c44b47e2c7e450a40e77353",
@@ -13,7 +13,7 @@
       "ok": true,
       "reasons": [],
       "warnings": [],
-      "checked_at": "2026-10-03 19:30:19",
+      "checked_at": "2026-10-04 00:00:19",
       "min_not_after": "2040-04-08",
       "days_remaining": 4935,
       "cert_count": 6,
@@ -135,6 +135,13 @@
         "min_not_after": "2030-04-27"
       },
       {
+        "source": "keyboxstatus/1120",
+        "sha256": "3a6da8f88f878df87b0803a8b39dec5265e7efc6e2f9bb0bd64d029883f2f3bb",
+        "size": 12712,
+        "days_remaining": 4935,
+        "min_not_after": "2040-04-08"
+      },
+      {
         "source": "keyboxhub/keybox_7ab1758a25",
         "sha256": "85165468926f4fcbc8aacc30426424675517b0cc9bf41eeb67ef5b0feacd4009",
         "size": 12754,
@@ -146,7 +153,7 @@
       "source": "purainity(缓存)",
       "count": 517,
       "fresh": true,
-      "fetched_at": 1790942363,
+      "fetched_at": 1791028804,
       "checked": 517,
       "tried": []
     },
@@ -160,7 +167,7 @@
     "signature": "2rqxoW5oNMgsHaV7S2K5zcI+vV9oOxfVzpaK50PMYr5GnQCTM9vNuZwNWUGHRHgALtOWuGCAar74ESKdKCP+BA=="
   },
   "server": {
-    "updated_at": "2026-10-03 19:30:19",
+    "updated_at": "2026-10-04 00:00:19",
     "revoked_count": 517,
     "sources": [
       {
@@ -184,12 +191,12 @@
         "why": ""
       },
       {
-        "source": "keyboxstatus",
-        "ok": false,
-        "why": "目录取样失败"
+        "source": "keyboxstatus/1120",
+        "ok": true,
+        "why": ""
       }
     ],
     "candidate_count": 5,
-    "valid_count": 4
+    "valid_count": 5
   }
 }
