@@ -604,8 +604,8 @@ case "${1:-status}" in
             echo "CQ_SP=无"
         fi
         # ③ 检测应用是否已在 TrickyStore 目标清单
-        if [ -f "$TT_FILE" ] && grep -qxF "com.chunqiuna" "$TT_FILE" 2>/dev/null; then
-            echo "CQ_TARGET=含 com.chunqiuna"
+        if [ -f "$TT_FILE" ] && { grep -qxF "com.chunqiunativecheck" "$TT_FILE" 2>/dev/null || grep -qxF "com.chunqiuna" "$TT_FILE" 2>/dev/null; }; then
+            echo "CQ_TARGET=含春秋（真实包名 com.chunqiunativecheck 已进目标清单）"
         else
             echo "CQ_TARGET=不含"
         fi

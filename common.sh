@@ -621,7 +621,7 @@ risk_apps_autohide() {
 # configVersion 必须与服务端构建一致（oss-173 = 93），不符会被整份拒收。
 HMA_MOD_ID="hma_oss_zygisk"           # HMA-OSS 的模块 id（其 module.prop）
 HMA_TPL_NAME="yypm-auto"              # 我们的模板名 = 配置归属标记
-HMA_SCOPE_DEFAULT="com.chunqiuna"    # 默认拦截其包列表查询的检测应用（春秋）
+HMA_SCOPE_DEFAULT="com.chunqiunativecheck com.chunqiuna"    # 春秋检测真实包名（JinBei 修复工具硬编码实证）+ 旧称双保险
 HMA_CONFIG_VERSION=93                   # oss-173 的 JsonConfig.configVersion
 HMA_MGR_PKG="org.frknkrc44.hma_oss"  # 管理器应用包名（固定不改名）
 HMA_MODULES_DIR="/data/adb/modules"           # 以下三项允许测试覆盖
@@ -700,6 +700,48 @@ hma_oss_autocfg() {
     printf '%s' "$want" > "$cfg" 2>/dev/null || return 0
     chmod 644 "$cfg" 2>/dev/null
     log "[✓] HMA-OSS 已自动配置：对春秋等检测应用隐藏 $(hma_hidden_apps | grep -c . | tr -d ' ') 个风险应用（管理 App 里可查看修改，重启后生效）"
+    # 配置刚写入：顺手清掉预装组件进程里「列表已生效」的残留视图（春秋检测项：隐藏应用列表生效(2)）
+    hma_stale_view_refresh
+    return 0
+}
+
+# ---- 春秋「检测隐藏应用列表生效(2)」修复（v2.8.6）----
+# 原理（JinBeiChunQiuFixToolPro2 f_hideapp_kill 实证 + 社区文档）：HMA 类注入后，
+# 部分预装组件的应用层进程（uid>=10000）是配置生效前拉起的，残留「列表已生效」的
+# 可见旧状态，检测器正是从这些进程读出藏前视图。配置写入后结束这些非必要组件，
+# 系统重新拉起的新进程带新配置，残留视图清零。
+# 三道自家保险：必要组件 15 类关键词不碰（launcher/systemui/输入法等，杀了会闪屏）、
+# 春秋本体不碰（它正被隐藏着，闪退会给用户看到）、前台应用不碰（体验）。
+# 只在配置实际写入之后由 hma_oss_autocfg 调用 —— 巡检无变动时零打扰。
+hma_stale_view_refresh() {
+    [ "$(cfg_get hma_stale_fix on)" = "off" ] && { dbg "stale_view: hma_stale_fix=off，跳过"; return 0; }
+    # 只收预装（系统）包及其 uid（Android 11+ 的 pm -s -U；拿不到就静默跳过）
+    local map
+    map=$(pm list packages -s -U 2>/dev/null | sed 's/^package://; s/ uid:/|/' | grep -E '^[^|]+\|[0-9]+$')
+    [ -n "$map" ] || { dbg "stale_view: pm -s -U 不可用，跳过"; return 0; }
+    # ps 只收数字 uid/pid 行（toybox 不支持 -o uid 时输出为空，同样跳过，避免误杀）
+    local procs
+    procs=$(ps -A -o uid,pid 2>/dev/null | awk '/^[ \t]*[0-9]+[ \t]+[0-9]+/ { u=$1+0; p=$2+0; if (u>=10000 && p>1) printf "%d %d\n", u, p }')
+    [ -n "$procs" ] || { dbg "stale_view: 无应用层进程，跳过"; return 0; }
+    # 前台应用不杀（dumpsys 解析失败就空着 —— 宁可少杀，不误杀前台）
+    local top_pkg
+    top_pkg=$(dumpsys activity activities 2>/dev/null | grep -E 'mResumedActivity|topResumedActivity' | head -n 1 | sed -n 's/.* \([A-Za-z0-9_.][A-Za-z0-9_.]*\)\/.*/\1/p')
+    local u pid pkg n=0
+    while read -r u pid; do
+        # 只碰预装组件（uid 必须命中 -s 包表）；用户应用（游戏/微信等）一概不碰
+        pkg=$(printf '%s\n' "$map" | grep "|$u\$" | head -n 1 | cut -d'|' -f1)
+        [ -n "$pkg" ] || continue
+        case "$pkg" in
+            *launcher*|*home*|*systemui*|*inputmethod*|*settings*|*permissioncontroller*|*telecom*|*phone*|*bluetooth*|*nfc*|*camera*|*deskclock*|*provider*|*framework*) continue ;;
+            com.chunqiunativecheck|com.chunqiuna) continue ;;
+            "$top_pkg") [ -n "$top_pkg" ] && continue ;;
+        esac
+        kill -9 "$pid" 2>/dev/null && n=$((n + 1))
+    done <<EOF
+$procs
+EOF
+    [ "$n" -gt 0 ] && log "[✓] 已刷新 $n 个预装组件进程（清除「隐藏应用列表生效」残留视图，系统会自动重新拉起）"
+    dbg "stale_view: 刷新 $n 个进程"
     return 0
 }
 
@@ -1154,7 +1196,7 @@ target_txt_add() { # stdin: 包名列表（逗号/空白分隔都行）
 # 它不在 target.txt 里时，认证请求直通真实 TEE，真 TEE 一答就露馅（报 26）。
 # 所以光注入 keybox 不够 —— 必须把「检测方自己」也加进目标清单，让它的认证走模拟。
 # 名单内置、只增不删；config.prop 里 auto_target=off 可整体关闭。
-AUTO_TARGET_APPS="com.chunqiuna"
+AUTO_TARGET_APPS="com.chunqiunativecheck com.chunqiuna"    # 真实包名在前，pm path 只对装了的生效
 
 auto_target_known_apps() {
     if [ "$(cfg_get auto_target on)" = "off" ]; then
