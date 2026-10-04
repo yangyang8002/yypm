@@ -416,22 +416,18 @@ case "${1:-status}" in
         V=$(hide_apps_normalize < "$TMP/hide_apps_in.txt" | tr '\n' ' ')
         V=${V% }   # 去掉 tr 留下的结尾空格
         cfg_set hide_apps "$V"
-        log "[·] 隐藏应用列表已更新（$(printf '%s' "$V" | wc -w | tr -d ' ') 个）"
+        log "[·] 隐藏应用名单已更新（$(printf '%s' "$V" | wc -w | tr -d ' ') 个）"
+        # v2.8.7 自动化：写完立即同步进 HMA-OSS 配置（查询级隐藏），无需再手动「应用」
+        hide_apps_sync
         echo "HIDE_APPS_SET=OK"
         echo "HIDE_APPS_COUNT=$(hide_apps_list | wc -l | tr -d ' ')"
         ;;
     hide-apps-auto)
         case "${2:-}" in on|off) cfg_set hide_apps_enable "$2" ;; *) echo "用法: hide-apps-auto on|off"; exit 1 ;; esac
-        log "[·] 自动应用隐藏列表已设为 ${2}"
+        # v2.8.7 自动化：开关一翻立即同步配置；残留清除由 service.sh 开机迁移自动做
+        hide_apps_sync
+        log "[·] 隐藏名单自动同步已设为 ${2}（查询级隐藏，经 HMA-OSS 生效）"
         echo "HIDE_APPS_ENABLE=$2"
-        ;;
-    hide-apps-apply)
-        hide_apps_apply
-        echo "HIDE_APPS_APPLIED=$(hide_apps_applied)"
-        ;;
-    hide-apps-restore)
-        hide_apps_restore
-        echo "HIDE_APPS_APPLIED=$(hide_apps_applied)"
         ;;
     hma-cfg)
         # 手动触发：HMA-OSS 自动配置 + 旧组件清退 + SUSFS 加固，并回报最新状态
@@ -453,10 +449,6 @@ case "${1:-status}" in
             echo "HMA_MGR=missing"
         fi
         ;;
-    clean-abnormal)
-        clean_abnormal
-        echo "ABNORMAL_AUTO=$(cfg_get abnormal_auto on)"
-        ;;
     fusefixer-setup)
         # P1-⑨：直写 LSPosed modules_config.db —— 启用 FuseFixer 并把系统框架加入作用域。
         # dex 只 UPDATE enabled / INSERT OR IGNORE scope，写不进去就如实报错，绝不清库。
@@ -468,25 +460,6 @@ case "${1:-status}" in
         appinfo_run lspd-enable "$db" io.github.a13e300.fusefixer android
         ;;
 
-    uninstall-mt)
-        # 一键卸载 MT 管理器（春秋检测「MT管理器」整改）。只碰这两个已知包名。
-        # 卸载是用户点按钮触发的，不属于自动行为。
-        mt_n=0
-        mt_pm=$(pm_bin) || { echo "MT_UNINSTALL=FAIL(无 pm)"; exit 1; }
-        for mt_pkg in bin.mt.plus bin.mt.plus.canary; do
-            if "$mt_pm" path "$mt_pkg" >/dev/null 2>&1; then
-                if "$mt_pm" uninstall "$mt_pkg" >/dev/null 2>&1; then
-                    log "[✓] 已卸载 MT 管理器（$mt_pkg）"
-                    mt_n=$((mt_n + 1))
-                else
-                    log "[✗] 卸载失败（$mt_pkg）"
-                fi
-            fi
-        done
-        # 顺手清掉残留目录
-        clean_abnormal >/dev/null 2>&1
-        echo "MT_UNINSTALL=$mt_n"
-        ;;
     deep-bl)
         hide_bl_deep
         echo "DEEP_BL_RESULT=$?"
@@ -625,27 +598,30 @@ case "${1:-status}" in
         # ⑥ 可疑进程数（复用 suspicious_procs，先抓完整输出再解析，避免管道并发）
         cq_procs=$(suspicious_procs)
         echo "CQ_PROC=$(printf '%s\n' "$cq_procs" | sed -n 's/^PROC_COUNT=//p' | head -1)"
-        # ⑦ KernelSU 管理器。只报状态、绝不自动处理：
-        # pm hide 掉管理器后用户连 WebUI 都打不开，无法自己还原，属于自锁。
-        if [ -n "$cq_pm" ] && "$cq_pm" path me.weishu.kernelsu >/dev/null 2>&1; then
-            echo "CQ_KSUAPP=已装 me.weishu.kernelsu"
+        # ⑦ KSU 管理器家族（含 SukiSU Ultra / KSU Next / APatch 等）。只报状态、不自动处理：
+        # 管理器是用户必需品；查询级隐藏对作用域检测器生效即可，应用保持可打开。
+        cq_ksu=$(ksu_manager_pkg 2>/dev/null)
+        if [ -n "$cq_ksu" ]; then
+            echo "CQ_KSUAPP=已装 $cq_ksu"
         else
             echo "CQ_KSUAPP=未装"
         fi
         ;;
-    cq-fix)
-        # 一键整改可自动项（春秋 4.5.8）：单项失败只说明、不中断，最后统一收尾。
-        # 只动「能自动做且不改变用户数据语义」的项：
-        #   安全补丁级别对齐 / 检测应用入目标清单 / 异常目录清理。
-        # 不在这里面的事：隐藏 KernelSU 管理器（自锁，见 cq-check 注释）、卸载应用（用户手动）。
+    detect-prep)
+        # 一键「检测前预备」（v2.8.7，接替 cq-fix 并扩容）：
+        #   名单同步进 HMA-OSS 配置（查询级隐藏）/ 安全补丁对齐 / 检测应用入目标清单 /
+        #   停隐藏名单进程 + drop_caches（释放目录缓存）/ 非破坏式清痕迹 + 报告文件痕迹。
+        # 立场不变：不卸载任何应用、不删任何有内容的目录或文件（只报告 + 指引）。
+        echo "== 名单同步（HMA-OSS 查询级隐藏）=="
+        hide_apps_sync
         echo "== 安全补丁级别对齐 =="
         ensure_security_patch || echo "[!] 安全补丁级别对齐失败（详见运行日志）"
-        echo "== 检测应用加入目标清单 =="
+        echo "== 检测应用加入 TrickyStore 目标清单 =="
         auto_target_known_apps || echo "[!] 目标清单追加失败（详见运行日志）"
-        echo "== 异常目录清理 =="
-        clean_abnormal || echo "[!] 异常目录清理失败（详见运行日志）"
-        log "[✓] 春秋整改一键执行完成"
-        echo "CQ_FIX=OK"
+        echo "== 环境收敛（停进程 + 清缓存 + 清痕迹）=="
+        yypm_detect_prep
+        log "[✓] 检测前预备一键执行完成"
+        echo "DETECT_PREP=OK"
         ;;
 
     status|*)

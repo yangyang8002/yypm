@@ -36,7 +36,7 @@ run_cycle() {
     [ "$(cfg_get auto_debug off)" = "on" ] && close_debug
     # 环境对抗：深度伪装启动状态（需要 SUSFS/Shamiko 支撑，否则只记日志不动手）
     [ "$(cfg_get deep_bl off)" = "on" ] && hide_bl_deep
-    # 环境对抗：风险应用自动并入隐藏列表（春秋检测整改），再把列表同步到系统
+    # 环境对抗：风险应用自动并入隐藏名单（查询级，经 HMA-OSS 生效），再同步进配置
     risk_apps_autohide
     hide_apps_sync
     # 环境对抗：自动清理 MT2 等落地目录（春秋检测「异常文件」整改；abnormal_auto=off 关闭）
@@ -69,6 +69,13 @@ if ac_locked; then
     log "[✗] 反挂锁定中，本次启动不加载任何功能：$(ac_lock_reason)"
     log "[✗] 解除方法：在 WebUI「反挂检查」里处理掉可疑模块后点「解除锁定」"
     exit 0
+fi
+
+# v2.8.7 一次性迁移：清掉 ≤2.8.6 版 pm hide 的全部残留（unhide 后标记已迁移）。
+# 此后模块不再有任何 pm hide 路径；标记文件防止每轮重跑。
+if [ -f "$HIDE_APPS_MARK" ] && [ ! -f "$DATA_DIR/pmhide_migrated" ]; then
+    hide_apps_restore
+    touch "$DATA_DIR/pmhide_migrated" 2>/dev/null
 fi
 log "fetch=$(get_auto) wifi_only=$(cfg_get wifi_only off) bl=$(cfg_get auto_bl off) debug=$(cfg_get auto_debug off) deep_bl=$(cfg_get deep_bl off) hide_apps=$(cfg_get hide_apps_enable off) 间隔=$(($(get_interval) / 3600))h"
 

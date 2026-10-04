@@ -54,10 +54,16 @@ keybox 不随模块分发，而是由服务端从多个公开上游源拉取、�
   始终回答系统当前属性值，OTA 后不再出现跨组件日期错位；他人的固定日期文件会被
   备份（`.bak`）后替换，`security_patch=off` 可整体关闭
 - **风险应用自动隐藏**：检测到 Scene/Shizuku/NP 管理器等风险应用已安装时，自动并入
-  隐藏列表并开启隐藏（`risk_autohide=off` 可关）
-- **异常环境自动清理**：发现 MT 管理器残留等异常时自动处置（`abnormal_auto=off` 可关）
-- **FuseFixer / hma-uidfake**：服务器自动跟踪上游 release，验签后**自动安装**；
-  WebUI 一键把 FuseFixer 写进 LSPosed 配置库（启用模块 + 勾选系统框架）
+  HMA-OSS 查询级隐藏名单（只对检测器隐藏查询结果，应用本体照常可用；
+  `risk_autohide=off` 可关）
+- **异常痕迹清理（非破坏式）**：只清理空的残留目录；有内容的一律保留并报告，
+  绝不自动删除 —— MT 管理器目录的根治办法是去 MT「设置 → 主目录」自行改位置
+  （`abnormal_auto=off` 可关）
+- **FuseFixer / HMA-OSS**：服务器自动跟踪上游 release，验签后**自动安装**（APK 已装
+  判定三级：pm path → pm list → cmd package path）；WebUI 一键把 FuseFixer 写进
+  LSPosed 配置库（启用模块 + 勾选系统框架）
+- **检测前预备（v2.8.7）**：跑检测器前一键收敛到「检测视图干净」状态 —— 结束隐藏
+  名单内应用进程 + drop_caches + 非破坏清目录 + 报告已知文件痕迹（只报告，绝不删）
 
 #### 3. 组件包分发（带签名的应用商店）
 - 服务端维护组件清单（LSPosed / Zygisk-Next / PlayIntegrityFix / TEESimulator 等）
@@ -87,8 +93,9 @@ keybox 不随模块分发，而是由服务端从多个公开上游源拉取、�
 - 包内版本不低于云端时不打扰（防回滚）
 
 #### 7. WebUI
-状态总览、keybox 自检报告、组件管理、一键整改（补丁对齐 / 风险隐藏 / FuseFixer 配置 /
-MT 卸载）、配置编辑、日志查看。
+状态总览（启动走本地缓存，秒开 + 版本号常驻）、keybox 自检报告、组件管理、
+一键整改（补丁对齐 / 风险隐藏 / FuseFixer 配置 / 检测前预备）、配置编辑、日志查看。
+更新检查带 release 说明展示，非镜像更新装完自动提供重启入口。
 
 ### 信任模型
 
@@ -153,7 +160,9 @@ Highlights:
 - keybox fetch → verify (Ed25519 + sha256) → atomic inject, with a local verified pool
   and automatic rollback
 - automatic rectification for common integrity-check findings (security-patch prop mode,
-  risk-app auto-hiding, FuseFixer/HMA-uidfake auto-install, one-tap LSPosed scoping)
+  query-level risk-app hiding, FuseFixer/HMA-OSS auto-install with 3-tier installed
+  detection, one-tap LSPosed scoping, pre-check prep that stops/frops/report —
+  never deletes content; cleanup is non-destructive by design)
 - signed component distribution channel (KSU modules + APKs) with upstream release
   tracking
 - decentralized mirrors via GitHub Actions (jsDelivr / raw / release assets) — the

@@ -403,7 +403,9 @@ html[data-lockdown="1"] #acBanner{
 
 <div class="update-strip" id="updateStrip">
   <svg class="i" aria-hidden="true"><use href="#i-up"/></svg>
-  <div class="grow">发现新版本 <b id="upVer"></b>（当前 <span id="upCur"></span>）</div>
+  <div class="grow">发现新版本 <b id="upVer"></b>（当前 <span id="upCur"></span>）
+    <div class="note" id="upNotes"></div>
+  </div>
   <a class="vlink" href="javascript:void(0)" onclick="confirmUpdate()">更新</a>
 </div>
 
@@ -615,18 +617,19 @@ html[data-lockdown="1"] #acBanner{
   应答里的日期对不上。yypm 自动维护 <code>security_patch.txt</code>（与 keybox 同目录，TrickyStore 的正常配置项），
   采用 <b>prop 模式</b>：应答实时跟随系统属性，永不错位、永不过时；TEESimulator 即时生效，无需重启。
   已存在的旧文件（固定日期等）会先备份为 .bak 再替换。</p>
-  <p class="note">② <b>风险应用</b>（Scene / NP管理器 / Shizuku / GG 等）—— <b>全自动</b>：每轮巡检发现
-  这些应用已安装，就自动用系统的 pm hide 藏起来（被藏的应用自己也打不开；
-  同时也会并入 HMA-OSS 的隐藏名单，对春秋等检测应用一并隐藏）。设 <code>risk_autohide=off</code> 可关闭；
-  还原用终端执行 <code>webui.sh hide-apps-restore</code>。</p>
-  <p class="note">③ <b>MT管理器 / MT2 文件夹 / 异常文件</b> —— MT2 等落地目录每轮自动清理；
-  MT 管理器本体用下面卡片里的「一键卸载 MT 管理器」。</p>
+  <p class="note">② <b>风险应用</b>（Scene / NP管理器 / Shizuku / GG / 各 root 管理器等）—— <b>全自动</b>：
+  每轮巡检发现这些应用已安装，就自动并入 HMA-OSS 隐藏名单（<b>查询级隐藏</b>：春秋等作用域
+  检测器查不到它们；你自己从桌面照常打开、数据不受影响。v2.8.7 起不再用 pm hide）。
+  设 <code>risk_autohide=off</code> 可关闭。</p>
+  <p class="note">③ <b>MT管理器 / MT2 文件夹 / 异常文件</b> —— 巡检每轮自动清理 MT2 等落地<b>空</b>目录
+  （有内容的一律保留、绝不自动删）。MT 目录位置的根治办法：去 MT 管理器「设置 → 主目录」
+  改掉主目录位置，改完后旧目录即可自行删除。</p>
   <p class="note">④ <b>FuseFixer / HMA-OSS</b> —— <b>全自动</b>：yypm 的服务器会从上游 release 抓取这两个组件，
   验签后自动安装（HMA-OSS 是 Zygisk 模块，需要 Zygisk（Zygisk-Next 会一并自动装），重启后生效，
-  自带管理 App，装好打开勾选要隐藏的应用；FuseFixer 是应用，立即生效）。
-  FuseFixer 装完点下面按钮自动配置 LSPosed（启用模块 + 勾选系统框架），
-  重启后打开 FuseFixer 确认显示 <code>fuse bpf: supported</code>。</p>
-  <p class="note">「隐藏应用列表已生效」这一项是<b>正常</b>的 —— 说明隐藏手段在工作，不用处理。</p>
+  自带管理 App，装好打开勾选要隐藏的应用）。FuseFixer 是 LSPosed 模块，装完点下面按钮一键配置
+  （启用模块 + 作用域勾选系统框架），重启后即对 Android/data 探测生效。</p>
+  <p class="note">「隐藏应用列表生效」—— 先用「一键检测前预备」再测。预备会停掉隐藏名单里在跑的应用、
+  清目录缓存并收敛痕迹；之后再测仍命中，说明有新的残留视图，看日志里的痕迹报告定位。</p>
   </div></details>
   <div class="row2">
     <button class="btn ghost" id="btnSpFix"><svg class="i" aria-hidden="true"><use href="#i-tune"/></svg> 立即对齐</button>
@@ -635,23 +638,26 @@ html[data-lockdown="1"] #acBanner{
 </div>
 
 <div class="card wide">
-  <h2>春秋 4.5.8 整改对照</h2>
-  <p class="note">对照春秋 Native check-Eros 4.5.8 的 6 个报告项逐项排查。
-  「按春秋项自检」只读不改；「一键整改」只做可自动项：安全补丁级别对齐、
-  把春秋等检测应用加入 TrickyStore 目标清单、清理 MT2/MT 残留目录。</p>
-  <div class="row"><span class="k">Found ksu/免解设备</span><span class="v" id="cqKsu">本机即 KernelSU（模块自身运行环境），无法自隐藏；可用 KernelSU 自带隐藏/Shamiko 缓解</span></div>
+  <h2>春秋检测对照与预备（v2.8.7）</h2>
+  <p class="note">对照春秋 Native check-Eros 的报告项逐项排查与预备。
+  「按春秋项自检」只读不改；「一键检测前预备」跑春秋前用：同步隐藏名单进 HMA-OSS 配置（查询级）、
+  对齐安全补丁级别、把检测应用加入 TrickyStore 目标清单、停掉隐藏名单里在跑的应用并清目录缓存
+  （收敛「隐藏应用列表生效」类残留）、非破坏式清空目录痕迹并报告文件痕迹。
+  不卸载任何应用、不删任何有内容的文件。</p>
+  <div class="row"><span class="k">Found ksu/免解设备</span><span class="v" id="cqKsu">本机即 KernelSU（模块自身运行环境）；检测器的 stat 计时类向量天然不命中，无需自隐藏</span></div>
   <div class="row"><span class="k">异常进程</span><span class="v" id="cqProc">未检测</span></div>
   <div class="row"><span class="k">MT2/异常文件</span><span class="v" id="cqMt">未检测</span></div>
-  <div class="row"><span class="k">风险应用 me.weishu.kernelsu</span><span class="v" id="cqKsuApp">未检测</span></div>
+  <div class="row"><span class="k">KSU 管理器家族</span><span class="v" id="cqKsuApp">未检测</span></div>
   <div class="row"><span class="k">Tampered Attestation Key(26)</span><span class="v" id="cqKey">未检测</span></div>
-  <div class="row"><span class="k">System compromised</span><span class="v" id="cqSys">上面各项全过即为通过</span></div>
+  <div class="row"><span class="k">System compromised</span><span class="v" id="cqSys">上面各项全过即为通过（26 为系统级公钥黑名单项，属已知接受项）</span></div>
   <div class="row2">
     <button class="btn ghost" id="btnCqCheck"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg> 按春秋项自检</button>
-    <button class="btn ghost" id="btnCqFix"><svg class="i" aria-hidden="true"><use href="#i-build"/></svg> 一键整改可自动项</button>
+    <button class="btn ghost" id="btnCqFix"><svg class="i" aria-hidden="true"><use href="#i-build"/></svg> 一键检测前预备</button>
   </div>
-  <details class="fold"><summary><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg>为什么「风险应用 me.weishu.kernelsu」只显示不自动处理</summary>
-  <div class="fd"><p class="note">「风险应用 me.weishu.kernelsu」只显示状态、永不自动处理：管理器被 pm hide 后
-  WebUI 会随它一起从桌面消失，没法再从网页还原，属于自锁。要缓解请用 KernelSU 自带的隐藏或 Shamiko。</p></div></details>
+  <details class="fold"><summary><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg>为什么管理器（KernelSU / SukiSU 等）只显示不自动处理</summary>
+  <div class="fd"><p class="note">管理器是用户必需品，只报状态、不自动处理。v2.8.7 起 root 管理器家族
+  （KernelSU / SukiSU Ultra / KSU Next / APatch 等）已并入 HMA-OSS 查询级隐藏名单：春秋等作用域检测器
+  查不到它们，而你自己从桌面照常打开、WebUI 不受影响 —— 不存在旧方案 pm hide 的自锁问题。</p></div></details>
 </div>
 
 <div class="card">
@@ -667,11 +673,10 @@ html[data-lockdown="1"] #acBanner{
   <div class="fd"><p class="note">resetprop 改不了内核提供的 /proc/cmdline 与 /proc/bootconfig。没有 SUSFS 内核或
   Shamiko 支撑时不会硬改——bind mount 会在 mountinfo 里留下劫持痕迹，反而更容易被检出。</p></div></details>
 
-  <div class="row mt12"><span class="k">异常文件清理</span><span class="v" id="cleanState">-</span></div>
-  <p class="note">每轮巡检会自动清理 MT2 等落地目录（在配置文件里设 <code>abnormal_auto=off</code> 可关闭）。
-  MT 管理器本体不会被自动卸载，需要时点下面按钮（卸载后不可恢复，数据丢失自负）。</p>
-  <button class="btn ghost" id="btnUninstallMt"><svg class="i" aria-hidden="true"><use href="#i-trash"/></svg> 一键卸载 MT 管理器</button>
-  <button class="btn ghost" id="btnClean"><svg class="i" aria-hidden="true"><use href="#i-broom"/></svg> 清理 MT2 等落地目录</button>
+  <div class="row mt12"><span class="k">异常痕迹清理</span><span class="v" id="cleanState">-</span></div>
+  <p class="note">每轮巡检自动清理 MT2 等落地<b>空</b>目录（<code>abnormal_auto=off</code> 可关闭）；
+  有内容的一律保留、绝不自动删（v2.8.7 起全程非破坏式）。MT 目录位置的根治办法：
+  去 MT 管理器「设置 → 主目录」改掉主目录位置，改完后旧目录即可自行删除。</p>
   <p class="note" id="abnPaths">-</p>
 </div>
 </div>
@@ -915,12 +920,16 @@ function busy(id,on,text){
   else{b.disabled=false;if(b.dataset.html)b.innerHTML=b.dataset.html;}
 }
 
-async function readVersion(){
-  try{var r=await exec('sed -n "s/^version=//p" '+MODDIR+'/module.prop');var v=(r.stdout||'').trim();if(v)document.getElementById('verChip').textContent=/^v/i.test(v)?v:'v'+v;}catch(e){}
-}
-
-async function refresh(){
-  var s;try{s=parseKv((await exec(MODDIR+'/webui.sh status')).stdout);}catch(e){return;}
+async function refresh(useCache){
+  var s;
+  // 首屏提速（v2.8.7）：useCache 只用上次缓存秒渲染（不发 exec）；无缓存直接返回，由随后的实时刷新拉取
+  if(useCache){try{var c=JSON.parse(localStorage.getItem('yypmStatus')||'null');s=(c&&c.kv)||null;}catch(e){s=null;}if(!s)return;}
+  else{
+    try{s=parseKv((await exec(MODDIR+'/webui.sh status')).stdout);}catch(e){return;}
+    try{localStorage.setItem('yypmStatus',JSON.stringify({t:Date.now(),kv:s}));}catch(e2){}
+  }
+  // 版本号已并入 status 输出（v2.8.7），不再单独 exec 一次 sed
+  if(s.VERSION){var vchip=document.getElementById('verChip');if(vchip)vchip.textContent=/^v/i.test(s.VERSION)?s.VERSION:'v'+s.VERSION;}
   // 锁定中：status 被 webui.sh 闸门拦截，只会回 AC_LOCKED 三行，其余字段全缺。
   // 这时不能把空值渲染成「未挂载/未隐藏/0 份」之类的假状态 —— 统一标「已锁定」。
   // （锁定横幅由 acLockCheck/acLockUI 负责，这里只管别撒谎。）
@@ -1102,14 +1111,18 @@ async function manualDebug(){
   await refresh();
 }
 
+var UP_NOTES='';   // 最近一次检查到的更新说明（release 正文摘要，v2.8.7）
 async function checkUpdate(){
   log('检查更新...','info');
   busy('btnUpdate',true,'检查中...');
   try{var r=await exec(MODDIR+'/webui.sh update');var s=parseKv(r.stdout);
+    UP_NOTES=s.NOTES||'';
     if(s.UPDATE==='AVAILABLE'){
       document.getElementById('upVer').textContent=ver(s.REMOTE_VERSION);
       document.getElementById('upCur').textContent=ver(s.LOCAL_VERSION);
       document.getElementById('updateStrip').classList.add('show');
+      var un=document.getElementById('upNotes');
+      if(un)un.textContent=UP_NOTES?('更新说明：'+UP_NOTES):'';
       log('发现新版本 '+ver(s.REMOTE_VERSION),'ok');
     }else if(s.UPDATE==='NONE'){
       document.getElementById('updateStrip').classList.remove('show');
@@ -1120,7 +1133,7 @@ async function checkUpdate(){
 }
 
 function confirmUpdate(){
-  ask('更新模块','发现新版本将立即下载并安装（重启后完全生效）。继续吗？',function(){ doUpdate(); });
+  ask('更新模块','发现新版本将立即下载并安装（重启后完全生效）。'+(UP_NOTES?('\n\n更新说明：'+UP_NOTES):'')+'\n\n继续吗？',function(){ doUpdate(); });
 }
 async function doUpdate(){
   log('开始更新模块 ...','info');
@@ -1143,7 +1156,7 @@ async function doUpdate(){
         log('新版本已安装并立即生效（无需重启）','ok');
       }else{
         log('新版本已安装到待生效区，重启后生效','ok');
-        log('请重启手机完成更新（也可在 KernelSU 管理器里点重启）','info');
+        ask('重启生效','新版本已就绪，现在重启手机让更新完全生效？（未保存的工作先收尾）',function(){ exec('reboot'); });
       }
       document.getElementById('updateStrip').classList.remove('show');
     }else if(out.indexOf('INSTALL=SKIP')>=0){
@@ -1432,34 +1445,6 @@ async function toggleDeepBl(){
   await refresh();
   log('自动深度伪装已'+(on?'开启':'关闭'),'info');
 }
-async function cleanAbnormal(){
-  log('正在清理异常文件...','info');
-  busy('btnClean',true,'清理中...');
-  try{
-    var s=parseKv((await exec(MODDIR+'/webui.sh clean-abnormal')).stdout);
-    var cn=s.CLEAN_ABNORMAL||'0';
-    log('已清理 '+cn+' 个目录','ok');
-    var cs=document.getElementById('cleanState');
-    if(cs) cs.innerHTML=(cn!=='0'?'<span class="pill ok">本次清理 '+esc(cn)+' 个</span>':'<span class="pill ok">干净</span>');
-  }catch(e){log('清理异常: '+e.message,'err');}
-  busy('btnClean',false);
-}
-// 一键卸载 MT 管理器（春秋整改；只动 bin.mt.plus / bin.mt.plus.canary 两个已知包名）
-function askUninstallMt(){
-  ask('卸载 MT 管理器','将卸载 MT 管理器（bin.mt.plus 及 canary 版）并清理 MT2 残留目录。此操作不可恢复，确定继续？',function(){ uninstallMt(); });
-}
-async function uninstallMt(){
-  busy('btnUninstallMt',true,'卸载中...');
-  log('===== 卸载 MT 管理器 =====','info');
-  try{
-    var out=(await execT(MODDIR+'/webui.sh uninstall-mt',20000)).stdout||'';
-    out.split('\n').forEach(function(l){ l=l.trim(); if(l) log(l,'info'); });
-    var n=((out.match(/^MT_UNINSTALL=(.*)$/m)||[])[1])||'0';
-    toast(n!=='0' ? '已卸载 '+n+' 个 MT 管理器' : '未检测到已安装的 MT 管理器');
-  }catch(e){log('执行异常: '+e.message,'err');}
-  busy('btnUninstallMt',false);
-}
-
 // ---- 应用选择器（appinfo.dex / 兜底包名）----
 var APPS=[];
 var APPS_SRC='';
@@ -1552,7 +1537,7 @@ function acDecide(choice){
 var AC_LAST_SCAN='';
 var AC_LOCK_REASON='';
 var AC_LOCK_SINCE='';
-var AC_FEEDBACK_MAIL='your-email@example.com';
+var AC_FEEDBACK_MAIL='yangyang8002@qq.com';
 
 function acG(out,k){
   var m=(out||'').match(new RegExp('^'+k+'=(.*)$','m'));
@@ -1907,25 +1892,25 @@ async function cqCheck(){
   }catch(e){cqFailAll();log('春秋自检异常: '+e.message,'err');}
   busy('btnCqCheck',false);
 }
-function cqFixAsk(){
-  ask('一键整改可自动项？','将依次执行：安全补丁级别对齐（prop 模式）、把春秋等检测应用加入 TrickyStore 目标清单、清理 MT2/MT 残留目录。不卸载任何应用。',function(){ cqFix(); });
+function detectPrepAsk(){
+  ask('一键检测前预备？','将依次执行：同步隐藏名单进 HMA-OSS 配置（查询级隐藏）、安全补丁级别对齐、把检测应用加入 TrickyStore 目标清单、停掉隐藏名单里在跑的应用进程并清目录缓存、非破坏式清空目录痕迹并报告文件痕迹。不卸载任何应用、不删任何有内容的文件。',function(){ detectPrep(); });
 }
-async function cqFix(){
-  busy('btnCqFix',true,'整改中...');
-  log('===== 春秋整改 =====','info');
+async function detectPrep(){
+  busy('btnCqFix',true,'预备中...');
+  log('===== 检测前预备 =====','info');
   try{
-    var r=await execT(MODDIR+'/webui.sh cq-fix',40000);
+    var r=await execT(MODDIR+'/webui.sh detect-prep',60000);
     var out=r.stdout||'';
     var ls=out.split('\n');
     for(var i=0;i<ls.length;i++){var l=ls[i].trim();if(l)log(l,'info');}
-    if(/CQ_FIX=OK/.test(out)){
-      toast('整改完成，正在刷新对照状态');
-      await cqCheck();   // 整改完立刻复测，对照卡片直接反映最新状态
+    if(/DETECT_PREP=OK/.test(out)){
+      toast('检测前预备完成，现在可以打开春秋检测了');
+      await cqCheck();   // 预备完立刻复测，对照卡片直接反映最新状态
       refresh();
     }else{
-      toast('整改未完整执行，详见操作记录');
+      toast('预备未完整执行，详见操作记录');
     }
-  }catch(e){log('整改异常: '+e.message,'err');}
+  }catch(e){log('预备异常: '+e.message,'err');}
   busy('btnCqFix',false);
 }
 // ---- 密钥自检 ----
@@ -2263,10 +2248,6 @@ document.getElementById('btnHmaCfg').onclick=hmaCfg;
 document.getElementById('btnHmaMgr').onclick=hmaMgr;
 document.getElementById('btnDeepBl').onclick=deepBlNow;
 document.getElementById('deepBlSwitch').onclick=toggleDeepBl;
-document.getElementById('btnClean').onclick=function(){
-  ask('清理异常文件？','会删除 MT2 等工具在存储里留下的落地目录，删掉后不可恢复。',cleanAbnormal);
-};
-document.getElementById('btnUninstallMt').onclick=askUninstallMt;
 // 一键配置 FuseFixer：直写 LSPosed 配置库（启用模块 + scope 加系统框架），结果按行 toast
 async function fuseSetup(){
   var btn=document.getElementById('btnFuseSetup');
@@ -2305,7 +2286,7 @@ document.getElementById('btnAcMail').onclick=acMailto;
 document.getElementById('btnAcCopy').onclick=acCopyFeedback;
 document.getElementById('btnSpFix').onclick=spFix;
 document.getElementById('btnCqCheck').onclick=cqCheck;
-document.getElementById('btnCqFix').onclick=cqFixAsk;
+document.getElementById('btnCqFix').onclick=detectPrepAsk;
 document.getElementById('appSearch').oninput=appsRender;
 document.getElementById('appList').addEventListener('change',function(e){
   var t=e.target;
@@ -2398,15 +2379,15 @@ document.getElementById('btnAppsNone').onclick=function(){
   }
 })();
 
-// 开机先问一次锁定状态：锁定横幅必须在第一屏就出现，不能等用户点进反挂卡片。
+// 首屏提速（v2.8.7）：上次状态先秒渲染（localStorage 缓存），真实状态并发拉取覆盖。
+// 启动期的独立 exec（锁定横幅 / 系统版本 / 状态 / 更新检查）全部同时发出，不再排队。
 acLockCheck();
-// 系统版本也一样，它挂在「安全」卡片上，属于进页面就该有值的信息。
 sdkLoad();
+refresh(true);   // 秒渲染缓存（不发 exec；无缓存时无事，等下面的实时拉取即可）
+refresh();      // 实时状态（返回后覆盖渲染并写缓存）
+checkUpdate();
 
 setTimeout(function(){overlay.classList.add('hide');},600);
-readVersion();
-refresh();
-checkUpdate();
 setTimeout(function(){ if(document.getElementById('modTime').textContent==='-') modCheck(); }, 1200);
 </script>
 </body>

@@ -52,7 +52,7 @@ if [ -n "$SDK" ]; then
     REL=$(getprop ro.build.version.release 2>/dev/null | tr -d ' \r')
     if [ "$SDK" -lt 33 ] 2>/dev/null; then
         echo "  [!] 本模块适配 Android 13-17（API 33-37），当前是 Android $REL (API $SDK)"
-        echo "      低版本缺少 app_process / pm hide 的现代行为，部分功能可能不可用。"
+        echo "      低版本缺少 app_process / resetprop 的现代行为，部分功能可能不可用。"
     elif [ "$SDK" -gt 37 ] 2>/dev/null; then
         echo "  [!] 当前是 Android $REL (API $SDK)，高于已验证的 Android 17（API 37）"
         echo "      可能有兼容问题，遇到异常请反馈。"

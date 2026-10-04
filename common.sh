@@ -6,8 +6,8 @@
 # ---- 配置 ----
 # 注意结尾的斜杠：少了它 nginx 会先回 301 补斜杠，而重定向目标带 :444 端口，
 # 客户端要白跳两跳（实测 655ms -> 1937ms，慢 3 倍）。下面有 api_url 兜底归一化。
-BASE_URL="https://your-server.example.com/api/kernelsu/module/"
-GITHUB_REPO="yourname/yypm"   # GitHub 仓库（owner/repo），检查更新用
+BASE_URL="https://yangyang8002.xin/api/kernelsu/module/"
+GITHUB_REPO="yangyang8002/yypm"   # GitHub 仓库（owner/repo），检查更新用
 # MODDIR 优先用调用方（webui.sh/service.sh）已设好的值，否则用默认路径
 MODDIR="${MODDIR:-/data/adb/modules/yypm}"
 DATA_DIR="/data/adb/yypm"
@@ -16,8 +16,8 @@ CONFIG="$DATA_DIR/config.prop"
 # 适配范围：Android 13 (API 33) ~ Android 17 (API 37)。
 # 依赖的系统能力：
 #   app_process   —— appinfo.dex 跑在它上面（按 app_process64 -> app_process -> app_process32 探测）
-#   pm hide       —— 隐藏应用列表
 #   resetprop     —— 属性伪装（KernelSU / Magisk 提供）
+#   （v2.8.7 起不再用 pm hide：隐藏一律 HMA-OSS 查询级，应用保持可正常打开）
 # 低于 API 33 时这些能力的现代行为不齐，不保证可用；高于 API 37 属未验证区间。
 SDK_MIN=33
 SDK_MAX=37
@@ -160,7 +160,7 @@ api_url() { # $1 = action 名
 # mirror_test_ttl 测速缓存秒数（默认 86400：一天只测一次，不是每次拉取都测）。
 MIRROR_NODES_DEFAULT="gcore.jsdelivr.net cdn.jsdelivr.net fastly.jsdelivr.net testingcf.jsdelivr.net raw.githubusercontent.com"
 # 测速关闭/测速失败时的静态兜底顺序（gcore 在前）
-MIRROR_URLS_DEFAULT="https://gcore.jsdelivr.net/gh/yourname/yypm@mirror-data/mirror https://cdn.jsdelivr.net/gh/yourname/yypm@mirror-data/mirror https://raw.githubusercontent.com/yourname/yypm/mirror-data/mirror"
+MIRROR_URLS_DEFAULT="https://gcore.jsdelivr.net/gh/yangyang8002/yypm@mirror-data/mirror https://cdn.jsdelivr.net/gh/yangyang8002/yypm@mirror-data/mirror https://raw.githubusercontent.com/yangyang8002/yypm/mirror-data/mirror"
 
 mirror_speed_test_enabled() { [ "$(cfg_get mirror_speed_test on)" != "off" ]; }
 
@@ -487,10 +487,11 @@ hide_bl_deep() {
     return 0
 }
 
-# ---- 1. 可定制隐藏应用列表 ----
-# 用系统自带 pm hide 把指定包从「其它应用可见的包列表」里摘掉。
-# 与 HMA（隐藏应用列表）的分工：pm hide 是系统级、对所有应用生效但粒度粗；
-# HMA 按应用定制可见性、更精细。两者可以并存。
+# ---- 1. 可定制隐藏应用名单 ----
+# v2.8.7 语义：名单只作为 HMA-OSS 隐藏模板的输入（查询级隐藏）——
+# 作用域应用（春秋等检测器）查不到这些包，用户自己照常从桌面打开它们。
+# 不再用 pm hide：pm hide 会让应用整体不可启动，一叶障目（v2.8.7 起全部移除）。
+# HIDE_APPS_MARK 只承载历史版本 pm hide 的记录，专供 hide_apps_restore 清残留。
 HIDE_APPS_MARK="$DATA_DIR/hide_apps.applied"
 
 hide_apps_enabled() { [ "$(cfg_get hide_apps_enable off)" = "on" ]; }
@@ -518,72 +519,67 @@ apk_installed() { # $1 = 应用包名
     local p="$1" pm
     [ -n "$p" ] || return 1
     pm=$(pm_bin 2>/dev/null) || { dbg "apk_installed: 无 pm，视为未装"; return 1; }
-    if "$pm" path "$p" >/dev/null 2>&1; then dbg "apk_installed: $p 由 pm path 判定已装"; return 0; fi
-    if "$pm" list packages 2>/dev/null | grep -xq -e "$p" -e "package:$p"; then dbg "apk_installed: $p 由 pm list packages 判定已装"; return 0; fi
-    if command -v cmd >/dev/null 2>&1 && cmd package path "$p" >/dev/null 2>&1; then dbg "apk_installed: $p 由 cmd package path 判定已装"; return 0; fi
+    # v2.8.7 修（实测 Android 16 vermeer）：pm/cmd 的 binder 事务在「标准 fd 搭在
+    # /data/adb 下的文件（SELinux 标签 adb_data_file）」上时会整批失败
+    # （cmd: Failure calling service package: Failed transaction）。
+    # check_updates / auto_install 的 while-read 用 done < 清单会把 fd0 借给
+    # 循环内所有命令 —— 循环里 apk_installed 三级全灭、FuseFixer 永远「未安装」、
+    # pm install 也装不上。每级显式 </dev/null 断开毒 fd。
+    if "$pm" path "$p" </dev/null >/dev/null 2>&1; then dbg "apk_installed: $p 由 pm path 判定已装"; return 0; fi
+    if "$pm" list packages </dev/null 2>/dev/null | grep -xq -e "$p" -e "package:$p"; then dbg "apk_installed: $p 由 pm list packages 判定已装"; return 0; fi
+    if command -v cmd >/dev/null 2>&1 && cmd package path "$p" </dev/null >/dev/null 2>&1; then dbg "apk_installed: $p 由 cmd package path 判定已装"; return 0; fi
     dbg "apk_installed: $p 三级判定均为未装"
     return 1
 }
 
-# 已隐藏的包数（以本模块的记录为准）
+# 名单应用数（v2.8.7：查询级隐藏没有「系统已隐藏」计数，展示用户名单数）
 hide_apps_applied() {
-    [ -f "$HIDE_APPS_MARK" ] || { echo 0; return 0; }
-    grep -cv '^#' "$HIDE_APPS_MARK" 2>/dev/null
+    hide_apps_list 2>/dev/null | wc -l | tr -d ' '
 }
 
 hide_apps_apply() {
-    local pm; pm=$(pm_bin) || { log "[✗] 未找到 pm，无法隐藏应用"; return 1; }
     local list; list=$(hide_apps_list)
-    [ -n "$list" ] || { log "[!] 隐藏应用列表为空，跳过"; return 1; }
-    mkdir -p "$DATA_DIR" 2>/dev/null
-    printf '#%s\n' "$(printf '%s' "$list" | tr '\n' ',')" > "$HIDE_APPS_MARK"
-    local n=0 ok=0 p
-    for p in $list; do
-        n=$((n + 1))
-        if "$pm" hide "$p" >/dev/null 2>&1; then
-            ok=$((ok + 1)); echo "$p" >> "$HIDE_APPS_MARK"
-        else
-            log "[!] 隐藏失败：$p（未安装或系统不允许）"
-        fi
-    done
-    log "[✓] 隐藏应用列表已应用：$ok/$n"
+    [ -n "$list" ] || { log "[!] 隐藏应用名单为空，跳过"; return 1; }
+    # v2.8.7：不再 pm hide。名单经 hma_hidden_apps 并入 HMA-OSS 配置（查询级隐藏）。
+    if [ "$(cfg_get hma_auto on)" = "on" ]; then
+        hma_oss_autocfg
+        log "[✓] 隐藏应用名单已并入 HMA-OSS 配置：$(printf '%s\n' "$list" | wc -l | tr -d ' ') 个应用（查询级隐藏，重启后生效；应用可正常打开）"
+    else
+        log "[·] 名单已保存（$(printf '%s\n' "$list" | wc -l | tr -d ' ') 个）。HMA 自动配置已关（hma_auto=off）：请在 HMA-OSS 管理器里手动把这些应用加入隐藏模板"
+    fi
     return 0
 }
 
+# 清历史残留：旧版本（≤2.8.6）用 pm hide 藏过的应用在这里统一 unhide。
+# v2.8.7 起 pm hide 路径全部移除，本函数只做一次性迁移/清残留。
 hide_apps_restore() {
     local pm; pm=$(pm_bin) || return 1
-    [ -f "$HIDE_APPS_MARK" ] || { log "[·] 没有已隐藏的应用"; return 0; }
+    [ -f "$HIDE_APPS_MARK" ] || { log "[·] 没有 pm hide 历史残留"; return 0; }
     local n=0 p
-    while read -r p; do
+    # fd3 读名单：fd0 不能搭在 /data/adb 文件上（pm binder 会失败，见 apk_installed 注释）
+    while read -r p <&3; do
         case "$p" in ''|'#'*) continue ;; esac
-        "$pm" unhide "$p" >/dev/null 2>&1 && n=$((n + 1))
-    done < "$HIDE_APPS_MARK"
+        "$pm" unhide "$p" </dev/null >/dev/null 2>&1 && n=$((n + 1))
+    done 3< "$HIDE_APPS_MARK"
     rm -f "$HIDE_APPS_MARK" 2>/dev/null
     log "[✓] 已还原 $n 个应用"
     return 0
 }
 
-# 列表没变就不重复执行（重复 pm hide 会报 already hidden，白刷日志）
+# 名单变化同步进 HMA-OSS 配置（幂等：配置内容一致时内部直接跳过，不重复写）
 hide_apps_sync() {
     hide_apps_enabled || return 0
-    # 指纹要和 hide_apps_apply 写进标记文件首行的格式完全一致
-    # （命令替换会吃掉结尾换行，直接用管道会多出一个逗号，导致每轮都重来）
-    local fp; fp="#$(printf '%s' "$(hide_apps_list)" | tr '\n' ',')"
-    local cur=""
-    [ -f "$HIDE_APPS_MARK" ] && cur=$(head -n 1 "$HIDE_APPS_MARK" 2>/dev/null)
-    [ "$fp" = "$cur" ] && return 0
-    hide_apps_restore >/dev/null 2>&1
-    hide_apps_apply
+    hma_oss_autocfg
+    return 0
 }
 
-# ---- 1.5 风险应用自动隐藏（春秋检测「风险应用」整改）----
-# 春秋 Native check 会查 Scene / NP管理器 / Shizuku 等工具的安装状态，
-# 也会查 GG/幸运破解器这类作弊器（与反挂 D 级同一份名单）。
-# 检测到已安装就自动并入上面的隐藏列表（pm hide，对所有应用的包可见性
-# 查询生效），WebUI 隐藏应用卡片可见、可一键还原。
-# 注意：hide 后这些应用自己也打不开（launcher 同样看不到），要用先还原。
+# ---- 1.5 风险应用自动并入隐藏名单（春秋检测「风险应用」整改）----
+# 春秋 Native check 会查 Scene / NP管理器 / Shizuku / 各 root 管理器等工具
+# 的安装状态，也会查 GG/幸运破解器这类作弊器（与反挂 D 级同一份名单）。
+# 检测到已安装就并入上面的隐藏名单（v2.8.7 起只喂 HMA-OSS 查询级隐藏：
+# 作用域检测器查不到它们，用户照常从桌面打开），WebUI 卡片可见可管理。
 # 关闭：risk_autohide=off；自定义名单：risk_apps="包名1 包名2"。
-RISK_APPS_DEFAULT="com.omarea.vtools com.wn.app.np moe.shizuku.privileged.api"
+RISK_APPS_DEFAULT="com.omarea.vtools com.wn.app.np moe.shizuku.privileged.api com.sukisu.ultra"
 
 risk_apps_autohide() {
     if [ "$(cfg_get risk_autohide on)" = "off" ]; then
@@ -596,7 +592,7 @@ risk_apps_autohide() {
     local cur added="" changed=0 p
     cur=" $(hide_apps_list | tr '\n' ' ') "
     for p in $known; do
-        "$pm" path "$p" >/dev/null 2>&1 || continue       # 没装
+        "$pm" path "$p" </dev/null >/dev/null 2>&1 || continue       # 没装（</dev/null 防毒 fd，见 apk_installed 注释）
         case "$cur" in *" $p "*) continue ;; esac         # 已在隐藏列表
         cur="${cur}${p} "
         added="$added $p"
@@ -605,7 +601,7 @@ risk_apps_autohide() {
     [ "$changed" = "1" ] || return 0
     cfg_set hide_apps "$(printf '%s' "$cur" | tr -s ' ')"
     [ "$(cfg_get hide_apps_enable off)" = "on" ] || cfg_set hide_apps_enable on
-    log "[!] 检测到风险应用（$(echo $added)）→ 已自动并入隐藏应用列表并生效（WebUI 可一键还原）"
+    log "[!] 检测到风险应用（$(echo $added)）→ 已并入隐藏名单（查询级隐藏，经 HMA-OSS 生效；应用可正常打开）"
     hide_apps_sync
     return 0
 }
@@ -638,7 +634,11 @@ hma_data_dir() {
     return 1
 }
 
-# 默认要隐藏的应用：内置风险应用 + 各管理器 + 反挂 D 级作弊包 + 用户隐藏列表
+# 检测兼容名单文件（社区整理的风险应用全量名单；没装也无害，列着即可）
+DETECT_RISK_APPS_FILE="$MODDIR/detect_risk_apps.txt"
+
+# 默认要隐藏的应用：内置静态名单 + KSU 管理器家族 + 检测兼容名单文件 +
+# 反挂 D 级作弊包 + 用户隐藏名单（scope 自身在 hma_build_config 里自排除）
 hma_hidden_apps() {
     {
         echo bin.mt.plus                 # MT 管理器（春秋「风险应用」点名）
@@ -647,18 +647,27 @@ hma_hidden_apps() {
         echo moe.shizuku.privileged.api  # Shizuku
         echo org.frknkrc44.hma_oss       # HMA-OSS 管理器（藏好藏人的工具本身）
         echo me.weishu.kernelsu          # KernelSU 管理器（默认包名）
+        echo com.sukisu.ultra            # SukiSU Ultra（不注册 ksu:// 深链，反查漏它 —— v2.8.7 修）
+        echo com.rifsxd.ksunext          # KSU Next（管理器家族）
+        echo me.bmax.apatch              # APatch（管理器家族）
+        echo me.yuki.folk                # Yuki（管理器家族）
         ksu_manager_pkg 2>/dev/null      # 管理器改随机包名时动态反查（ksu:// 深链应答者）
         echo org.lsposed.manager         # LSPosed 管理器（没装列着也无害）
         echo io.github.a13e300.fusefixer
+        [ -f "$DETECT_RISK_APPS_FILE" ] && cat "$DETECT_RISK_APPS_FILE" 2>/dev/null
         ac_cheat_pkgs 2>/dev/null | cut -d'|' -f1 | tr '\n' ' '
         hide_apps_list 2>/dev/null | tr '\n' ' '
     } | tr ' ' '\n' | grep -E '^[A-Za-z0-9_.]+$' | sort -u
 }
 
-# 生成整份配置 JSON（黑名单模板 + 每个 scope 条目挂模板）
+# 生成整份配置 JSON（黑名单模板 + 每个 scope 条目挂模板）。
+# 铁律（v2.8.6 春秋自锁事故实证）：scope 里的检测应用自身绝不进隐藏名单 ——
+# 检测器把自己藏了 = 自查询/自启动被拦 = 打不开。
 hma_build_config() {
     local apps_json="" p first=1
+    local scope=" $(cfg_get hma_scope "$HMA_SCOPE_DEFAULT" | tr '\n' ' ') "
     for p in $(hma_hidden_apps); do
+        case "$scope" in *" $p "*) dbg "hma_build_config: 自排除 $p（scope 自身）"; continue ;; esac
         [ "$first" = "1" ] || apps_json="$apps_json,"
         apps_json="$apps_json\"$p\""
         first=0
@@ -774,15 +783,16 @@ cleanup_replaced_mods() {
 # b/c 与官方 ksu_module_susfs 演示模块同款命令集；没有 SUSFS 内核时这两类做不了，
 # 只记调试日志不动手（伪装一半比不伪装更容易被比对出来）。
 
-# KSU 管理器真实包名：改过随机包名也能找到 —— 管理器不管改成什么包名，
-# manifest 里的 ksu:// 深链注册始终跟着走；用 pm 反查谁在应答 ksu://webui。
+# KSU 管理器真实包名：先按家族静态包名逐个探（SukiSU Ultra 等不注册 ksu://
+# 深链，反查会漏 —— v2.8.7 修），再兜底 ksu://webui 反查（管理器改成随机
+# 包名后深链注册仍跟着走）。
 ksu_manager_pkg() {
-    if pm path me.weishu.kernelsu >/dev/null 2>&1; then
-        echo "me.weishu.kernelsu"
-        return 0
-    fi
-    local out p
-    out=$(pm query-intent-activities --brief -a android.intent.action.VIEW -d 'ksu://webui' 2>/dev/null) || return 1
+    local p out
+    for p in me.weishu.kernelsu com.sukisu.ultra com.rifsxd.ksunext me.bmax.apatch me.yuki.folk; do
+        pm path "$p" </dev/null >/dev/null 2>&1 && { echo "$p"; return 0; }
+    done
+    # pm/cmd 调用统一 </dev/null：标准 fd 搭在 /data/adb 文件上时 binder 事务会失败（见 apk_installed 注释）
+    out=$(pm query-intent-activities --brief -a android.intent.action.VIEW -d 'ksu://webui' </dev/null 2>/dev/null) || return 1
     p=$(printf '%s\n' "$out" | grep -E '^[A-Za-z0-9_.]+/' | head -n 1 | cut -d'/' -f1)
     [ -n "$p" ] || return 1
     echo "$p"
@@ -867,16 +877,17 @@ hma_cfg_state() {
 
 
 
-# ---- 2. 异常文件清理 ----
-# 默认只清 MT 管理器留下的工作目录，可用 abnormal_paths 覆盖（空格分隔）。
-# MT 的落地点有两代：老版本用 /sdcard/MT2，新版本退回 /sdcard/MT；
-# 应用私有目录（Android/data|media/bin.mt.plus）卸载后也会残留，春秋同样算「异常文件」。
-# 安全限制：只允许 /sdcard/ 与 /storage/emulated/0/ 下的路径。
-ABNORMAL_DEFAULT="/sdcard/MT2 /storage/emulated/0/MT2 /sdcard/MT /storage/emulated/0/MT /sdcard/Android/data/bin.mt.plus /sdcard/Android/media/bin.mt.plus"
+# ---- 2. 异常痕迹清理（v2.8.7 起全程非破坏式）----
+# MT 管理器的公共工作目录：老版本 /sdcard/MT2、新版本 /sdcard/MT（应用会自动重建）。
+# 安全规则（v2.8.7）：只对「空目录」rmdir —— 有内容的一律不动、只报告并指引。
+# MT 目录位置的根治办法在 MT 自己身上：去 MT 管理器「设置 → 主目录」改掉主目录
+# 位置，改完后旧目录即可自行删除；模块绝不代改、绝不删内容。
+# 可用 abnormal_paths 覆盖（空格分隔）。安全限制：只允许 /sdcard/ 与 /storage/emulated/0/ 下。
+ABNORMAL_DEFAULT="/sdcard/MT2 /storage/emulated/0/MT2 /sdcard/MT /storage/emulated/0/MT"
 
 clean_abnormal() {
     local list; list=$(cfg_get abnormal_paths "$ABNORMAL_DEFAULT")
-    local n=0 p
+    local n=0 r=0 p
     for p in $list; do
         [ -n "$p" ] || continue
         case "$p" in
@@ -884,14 +895,52 @@ clean_abnormal() {
             *) log "[!] 跳过不在 /sdcard 下的路径：$p"; continue ;;
         esac
         [ -e "$p" ] || continue
-        if rm -rf "$p" 2>/dev/null; then
-            n=$((n + 1)); log "[✓] 已清理：$p"
+        if [ -d "$p" ] && rmdir "$p" 2>/dev/null; then
+            n=$((n + 1)); log "[✓] 已清理空目录：$p（应用需要时会自动重建）"
         else
-            log "[!] 清理失败：$p"
+            r=$((r + 1)); log "[!] 痕迹有内容、已保留（不自动删）：$p —— 根治办法：去 MT 管理器「设置 → 主目录」改掉主目录位置，改完旧目录自行删除"
         fi
     done
-    [ "$n" = "0" ] && log "[·] 没有需要清理的目录"
+    [ "$n" = "0" ] && [ "$r" = "0" ] && log "[·] 没有需要清理的痕迹"
     echo "CLEAN_ABNORMAL=$n"
+    echo "CLEAN_ABNORMAL_KEPT=$r"
+    return 0
+}
+
+# ---- 2.2 检测前预备（v2.8.7）----
+# 一键把环境收敛到「检测视图干净」状态（跑春秋前用；平时不需要）：
+#   ① 停掉隐藏名单里正在跑的应用 —— 释放其目录 dentry 缓存（春秋(2)向量：
+#      目录 stat 命中 dcache 不走 FUSE 过滤；应用停了缓存才可被 drop 掉。
+#      用户要用时从桌面照常打开，零损失）
+#   ② sync + drop_caches(2) —— 只清 dentry/inode 缓存，不动页面缓存
+#   ③ 非破坏式清空目录痕迹（复用 clean_abnormal）
+#   ④ 报告已知文件痕迹（detect_trace_paths.txt；只列存在项，绝不删内容）
+DETECT_TRACE_PATHS_FILE="$MODDIR/detect_trace_paths.txt"
+
+yypm_detect_prep() {
+    local stopped=0 p procs
+    procs=$(ps -A -o NAME 2>/dev/null)
+    if [ -n "$procs" ]; then
+        for p in $(hma_hidden_apps); do
+            printf '%s\n' "$procs" | grep -Eq "^$p(:|$)" || continue
+            am force-stop "$p" </dev/null >/dev/null 2>&1 && { stopped=$((stopped + 1)); dbg "detect_prep: 已停 $p"; }
+        done
+    fi
+    sync
+    echo 2 > /proc/sys/vm/drop_caches 2>/dev/null && dbg "detect_prep: drop_caches 完成"
+    clean_abnormal >/dev/null 2>&1
+    local warned=0 tp
+    if [ -f "$DETECT_TRACE_PATHS_FILE" ]; then
+        while read -r tp <&3; do
+            [ -n "$tp" ] || continue
+            [ -e "$tp" ] || continue
+            warned=$((warned + 1))
+            log "[!] 检测可见痕迹：$tp —— 检测器会把它计为异常。自行确认后移动或删除（模块绝不自动删内容）"
+        done 3< "$DETECT_TRACE_PATHS_FILE"
+    fi
+    log "[✓] 检测前预备完成：停 $stopped 个隐藏应用进程、清空目录、报告 $warned 条文件痕迹（详见日志）"
+    echo "DETECT_PREP_STOPPED=$stopped"
+    echo "DETECT_PREP_TRACES=$warned"
     return 0
 }
 
@@ -1080,7 +1129,7 @@ apk_is_xposed() {
 apps_list_fallback() {
     local pm; pm=$(pm_bin) || return 1
     local line pkg
-    "$pm" list packages -3 2>/dev/null | while IFS= read -r line; do
+    "$pm" list packages -3 </dev/null 2>/dev/null | while IFS= read -r line; do
         pkg=${line#package:}
         [ -n "$pkg" ] || continue
         printf '%s\t%s\t\n' "$pkg" "$pkg"
@@ -1113,7 +1162,7 @@ apk_has_xposed_mark() { # $1 apk
 apps_xposed_scan() {
     local pm; pm=$(pm_bin) || return 1
     local line apk pkg
-    "$pm" list packages -f -3 2>/dev/null | while IFS= read -r line; do
+    "$pm" list packages -f -3 </dev/null 2>/dev/null | while IFS= read -r line; do
         apk=${line#package:}; apk=${apk%=*}; pkg=${line##*=}
         [ -n "$pkg" ] || continue
         apk_has_xposed_mark "$apk" && printf '%s\n' "$pkg"
@@ -1209,7 +1258,7 @@ auto_target_known_apps() {
     local p
     for p in $AUTO_TARGET_APPS; do
         # pm path 成功才算真的装了（包名出现在名单里 ≠ 设备上装着）
-        "$pm" path "$p" >/dev/null 2>&1 || continue
+        "$pm" path "$p" </dev/null >/dev/null 2>&1 || continue
         # 已在清单里的不重复追加（target_txt_add 自身也查重，这里先挡一层）
         grep -qxF "$p" "$TT_FILE" 2>/dev/null && continue
         if printf '%s\n' "$p" | target_txt_add >/dev/null 2>&1; then
@@ -1799,6 +1848,8 @@ health_check() {
 
 # ---- 状态输出（供 WebUI 解析，key=value 格式）----
 echo_status() {
+    # v2.8.7：VERSION 并入状态输出（首屏 5 个 exec 合并成 1 个的关键）
+    echo "VERSION=$(sed -n 's/^version=//p' "$MODDIR/module.prop" 2>/dev/null)"
     echo "AUTO_FETCH=$(get_auto)"
     if [ -f "$KEYBOX_DEST" ]; then
         echo "KEYBOX_MOUNTED=1"
@@ -2093,7 +2144,7 @@ check_updates() {
     list_installed
 
     : > "$TMP/check_out.txt" 2>/dev/null
-    while IFS='|' read -r fn u; do
+    while IFS='|' read -r fn u <&3; do   # v2.8.7：fd3 读清单，fd0 不搭 /data/adb 文件（pm binder 会失败）
         [ -n "$fn" ] || continue
         # 清单自带版本信息（服务端 scan_packages.py 生成）时，直接用清单判定，不下载任何包；
         # 老版清单没有这些字段 -> rvc 为空 -> 退回"下载包再读 module.prop"。
@@ -2196,7 +2247,7 @@ check_updates() {
         else
             echo "CHECK|$fn|$mid|$lvc|$rvc|UPD|发现新版本" >> "$TMP/check_out.txt"
         fi
-    done < "$TMP/plist.txt"
+    done 3< "$TMP/plist.txt"
 
     # 清掉本轮的临时下载（不占用手机存储）
     rm -f "$TMP"/*.zip 2>/dev/null
@@ -2439,7 +2490,7 @@ auto_install_packages() {
     local fn fid fvc fvr fty fau fpk
     local n_mod=0 n_apk=0
     : > "$TMP/auto_pending.txt" 2>/dev/null
-    while IFS='|' read -r fn fid fvc fvr fty fau fpk; do
+    while IFS='|' read -r fn fid fvc fvr fty fau fpk <&3; do   # fd3 读，fd0 不搭 /data/adb 文件
         [ -n "$fn" ] || continue
         if [ "$fau" != "1" ]; then
             dbg "auto_install: $fn 未标 x-auto，跳过"
@@ -2472,7 +2523,7 @@ auto_install_packages() {
             elif [ -n "$want_sha" ] && [ "$(sha256_of "$cache")" != "$want_sha" ]; then
                 log "[✗] $fn sha256 不匹配，不装"; rm -f "$cache"; continue
             fi
-            if "$pm" install -r "$cache" >/dev/null 2>&1; then
+            if "$pm" install -r "$cache" </dev/null >/dev/null 2>&1; then
                 log "[✓] 已自动安装应用 $fpk（$fn）"
                 mkdir -p "$DATA_DIR" 2>/dev/null
                 grep -v "^$fn=" "$AUTO_INSTALL_STATE" 2>/dev/null > "$AUTO_INSTALL_STATE.tmp"
@@ -2514,7 +2565,7 @@ auto_install_packages() {
                 log "[✗] 自动安装模块失败: $fid"
             fi
         fi
-    done < "$TMP/pmeta.txt"
+    done 3< "$TMP/pmeta.txt"
 
     if [ -s "$TMP/auto_pending.txt" ]; then
         mv "$TMP/auto_pending.txt" "$AUTO_INSTALL_PENDING" 2>/dev/null
@@ -2541,7 +2592,7 @@ install_all_packages() {
     local dest="$DATA_DIR/packages"
     mkdir -p "$dest"
 
-    while IFS='|' read -r tag fn mid lvc rvc st msg; do
+    while IFS='|' read -r tag fn mid lvc rvc st msg <&3; do   # fd3 读，fd0 不搭 /data/adb 文件
         [ -n "$fn" ] || continue
         # 装"确实有新版本"(UPD)与"未安装"(NEW)的条目。
         # 界面的可更新计数包含 NEW —— 一键安装必须与计数同口径，否则显示 N 项待更新、
@@ -2594,7 +2645,7 @@ install_all_packages() {
 
         if [ "$p_ty" = "apk" ]; then
             local pm; pm=$(pm_bin 2>/dev/null)
-            if [ -n "$pm" ] && "$pm" install -r "$src" >/dev/null 2>&1; then
+            if [ -n "$pm" ] && "$pm" install -r "$src" </dev/null >/dev/null 2>&1; then
                 echo "  [✓] 已安装应用 $p_pk（立即生效）"
                 local wsha2=$(pkg_field "$fn" sha256)
                 grep -v "^$fn=" "$AUTO_INSTALL_STATE" 2>/dev/null > "$AUTO_INSTALL_STATE.tmp"
@@ -2616,7 +2667,7 @@ install_all_packages() {
             echo "  [✗] 安装失败"
             fail=$((fail + 1))
         fi
-    done < "$TMP/check_out.txt"
+    done 3< "$TMP/check_out.txt"
 
     # 把本模块自身也纳入"待重启"判定：附属模块装好后同样需要重启
     if [ "$ok" -gt 0 ]; then
@@ -2658,6 +2709,8 @@ check_github_release() {
     local url=$(grep -o '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]*"' "$TMP/release.json" | head -1 | sed 's/.*"\(http[^"]*\)".*/\1/')
     echo "REMOTE_VERSION=$tag"
     echo "DOWNLOAD_URL=$url"
+    # v2.8.7：更新说明（release 正文压成单行，截 500 字，更新弹窗里展示）
+    echo "NOTES=$(json_get "$TMP/release.json" body | tr '\r' ' ' | tr '\n' ' ' | sed 's/[[:space:]]\{1,\}/ /g; s/^ //; s/ $//' | head -c 500)"
     if [ -n "$tag" ] && [ "$tag" != "$cur" ]; then
         echo "UPDATE=AVAILABLE"
     else
