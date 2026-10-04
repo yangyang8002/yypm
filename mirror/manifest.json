@@ -1,9 +1,9 @@
 {
-  "version": "v2.8.6",
-  "version_code": 286,
+  "version": "v2.8.7",
+  "version_code": 287,
   "base_url": "https://yangyang8002.xin/api/kernelsu/module",
   "keybox": {
-    "updated_at": "2026-10-04 22:00:20",
+    "updated_at": "2026-10-05 00:32:16",
     "source": "pinned",
     "size": 12713,
     "sha256": "bb72001d8161618aeb0ceeca8d9f8965d15fa70c8c44b47e2c7e450a40e77353",
@@ -13,7 +13,7 @@
       "ok": true,
       "reasons": [],
       "warnings": [],
-      "checked_at": "2026-10-04 22:00:20",
+      "checked_at": "2026-10-05 00:32:16",
       "min_not_after": "2040-04-08",
       "days_remaining": 4934,
       "cert_count": 6,
@@ -142,11 +142,11 @@
         "min_not_after": "2040-04-08"
       },
       {
-        "source": "keyboxhub/keybox_7ab1758a25",
-        "sha256": "85165468926f4fcbc8aacc30426424675517b0cc9bf41eeb67ef5b0feacd4009",
-        "size": 12754,
-        "days_remaining": 2675,
-        "min_not_after": "2034-01-31"
+        "source": "keyboxhub/keybox_7af67d9884",
+        "sha256": "25f73d0c11ce6999f82ac0486444b1a6f4576e5e8f4d5153d5aff0a9331fd074",
+        "size": 12750,
+        "days_remaining": 2836,
+        "min_not_after": "2034-07-11"
       }
     ],
     "revocation": {
@@ -161,13 +161,13 @@
     "sign_public": "4+b3y4zvxtwJrNYDvD/1sCOy+rABnw5AbD3ivXpSg+E="
   },
   "module": {
-    "sha256": "71189c1e43a8029c8c4f99c35d6ad3294e896b275e387538328e040e8b3c724e",
-    "size": 893954,
+    "sha256": "ba20931ba694f4d8466aac66fdc16ab4e6f70574390294927c8245c240e605ba",
+    "size": 898532,
     "url": "https://github.com/yangyang8002/yypm/releases/download/mirror/module.zip",
-    "signature": "vkQpz01T3dnwtiut5QRcW91kTZOWqcKlMNRtmM7XGkHQw9m9WFvDmdZwn2wp/S/Wz6B0nB1Q/ZNERCfoYMMHCQ=="
+    "signature": "UV1ooy0Pait4o/bhNjZ0+odyOSiwOSUyBCzxCeKIa8wkaeYfxGH1GEQU2LUMRI1gd/AUQKx8d6RVDfYxhPHhBA=="
   },
   "server": {
-    "updated_at": "2026-10-04 22:00:20",
+    "updated_at": "2026-10-05 00:32:16",
     "revoked_count": 517,
     "sources": [
       {
@@ -186,7 +186,7 @@
         "why": ""
       },
       {
-        "source": "keyboxhub/keybox_7ab1758a25",
+        "source": "keyboxhub/keybox_7af67d9884",
         "ok": true,
         "why": ""
       },
