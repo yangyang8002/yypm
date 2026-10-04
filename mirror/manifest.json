@@ -1,9 +1,9 @@
 {
-  "version": "v2.8.5",
-  "version_code": 285,
+  "version": "v2.8.6",
+  "version_code": 286,
   "base_url": "https://yangyang8002.xin/api/kernelsu/module",
   "keybox": {
-    "updated_at": "2026-10-04 09:30:18",
+    "updated_at": "2026-10-04 14:03:20",
     "source": "pinned",
     "size": 12713,
     "sha256": "bb72001d8161618aeb0ceeca8d9f8965d15fa70c8c44b47e2c7e450a40e77353",
@@ -13,7 +13,7 @@
       "ok": true,
       "reasons": [],
       "warnings": [],
-      "checked_at": "2026-10-04 09:30:18",
+      "checked_at": "2026-10-04 14:03:20",
       "min_not_after": "2040-04-08",
       "days_remaining": 4934,
       "cert_count": 6,
@@ -114,16 +114,16 @@
     },
     "fallbacks": [
       {
+        "source": "megatron",
+        "sha256": "f9c3b27b8668ba812a0ff2a4966ed08cabcd35cfd523d8f0759943f2b9717eaa",
+        "size": 12546,
+        "days_remaining": 1937,
+        "min_not_after": "2032-01-24"
+      },
+      {
         "source": "yurikey",
         "sha256": "a0a3da9c044555e2aa004172694e78ca9310f28fe70f21a33a6756f64f82b23b",
         "size": 12596,
-        "days_remaining": 1453,
-        "min_not_after": "2030-09-27"
-      },
-      {
-        "source": "megatron",
-        "sha256": "041b17e646b3774aaa3698fd29fed4ad5dd64d8a5828abf34bc19003d2ce3abc",
-        "size": 11049,
         "days_remaining": 1453,
         "min_not_after": "2030-09-27"
       },
@@ -161,13 +161,13 @@
     "sign_public": "4+b3y4zvxtwJrNYDvD/1sCOy+rABnw5AbD3ivXpSg+E="
   },
   "module": {
-    "sha256": "952d2c3c1c2203caa23cf3d86152bd961cc2288d5c75292e41ee7b6e9e5a6a07",
-    "size": 892658,
+    "sha256": "71189c1e43a8029c8c4f99c35d6ad3294e896b275e387538328e040e8b3c724e",
+    "size": 893954,
     "url": "https://github.com/yangyang8002/yypm/releases/download/mirror/module.zip",
-    "signature": "2rqxoW5oNMgsHaV7S2K5zcI+vV9oOxfVzpaK50PMYr5GnQCTM9vNuZwNWUGHRHgALtOWuGCAar74ESKdKCP+BA=="
+    "signature": "vkQpz01T3dnwtiut5QRcW91kTZOWqcKlMNRtmM7XGkHQw9m9WFvDmdZwn2wp/S/Wz6B0nB1Q/ZNERCfoYMMHCQ=="
   },
   "server": {
-    "updated_at": "2026-10-04 09:30:19",
+    "updated_at": "2026-10-04 14:03:20",
     "revoked_count": 517,
     "sources": [
       {
