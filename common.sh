@@ -956,6 +956,44 @@ EOF
     return 0
 }
 
+# ---- 2.17 侧信道自检之二（v2.8.9）：faccessat vs fchownat hook 计时 ----
+# 复刻看雪 thread-288928 银行 App 的「时间侧信道」检测：KSU 内核 hook faccessat
+# （每次 +~100-400ns）而不 hook fchownat；正常时 faccessat 天然快于 fchownat。
+# 双方各采 10000 次、排序后逐对比较（faccessat[i] > fchownat[i]+1 计异常），
+# 异常 > 7000 判 hook 暴露。appinfo.dex sidebench 以 uid 2000（App 视角）采样；
+# 临时文件由本函数（root）先建好并 chown 2000，事后清理 —— appinfo 降权后
+# 建不了、删不了，root 侧兜底；下一轮自检开头也清残留。
+SIDEBENCH_TMP="/data/local/tmp/.yypm_sidebench"
+
+side_check() {
+    rm -f "$SIDEBENCH_TMP" 2>/dev/null
+    : > "$SIDEBENCH_TMP" && chown 2000:2000 "$SIDEBENCH_TMP" 2>/dev/null
+    local out tag k v extra verdict anomaly
+    out=$(appinfo_run sidebench 2>/dev/null)
+    rm -f "$SIDEBENCH_TMP" 2>/dev/null
+    verdict=""; anomaly=""
+    while IFS='|' read -r tag k v extra; do
+        [ "$tag" = "SIDE" ] || continue
+        case "$k" in
+            DROP) echo "SIDE|降权|$v" ;;
+            faccessat) echo "SIDE|faccessat（每次）|中位 ${v}ns" ;;
+            fchownat) echo "SIDE|fchownat（每次）|中位 ${v}ns" ;;
+            anomaly) anomaly=$v; echo "SIDE|异常对计数|$v / $extra" ;;
+            verdict) verdict=$v ;;
+        esac
+    done <<EOF
+$out
+EOF
+    if [ -z "$verdict" ]; then
+        echo "SIDE=FAIL(appinfo sidebench 无输出，详见日志)"
+        log "[!] 侧信道自检（faccessat）：无输出 —— $out"
+        return 1
+    fi
+    echo "SIDE_CHECK=$verdict"
+    log "[✓] 侧信道自检（faccessat vs fchownat）：verdict=$verdict anomaly=${anomaly:-?}/7000"
+    return 0
+}
+
 # ---- 2.2 检测前预备（v2.8.7）----
 # 一键把环境收敛到「检测视图干净」状态（跑春秋前用；平时不需要）：
 #   ① 停掉隐藏名单里正在跑的应用 —— 释放其目录 dentry 缓存（春秋(2)向量：
@@ -968,6 +1006,12 @@ DETECT_TRACE_PATHS_FILE="$MODDIR/detect_trace_paths.txt"
 
 yypm_detect_prep() {
     local stopped=0 p procs
+    # v2.8.9 守护先行：先存无障碍原值、解绑、写回过滤列表，再强停 ——
+    # 若放在强停之后，系统可能已按「服务崩溃」把条目摘掉（崩禁），就存不到原值了；
+    # 先解绑再停进程，系统也不会把它当崩溃处理（它已不在绑定列表）。
+    if [ "$1" = "guard" ]; then
+        a11y_guard_start
+    fi
     procs=$(ps -A -o NAME 2>/dev/null)
     if [ -n "$procs" ]; then
         for p in $(hma_hidden_apps); do
@@ -990,6 +1034,158 @@ yypm_detect_prep() {
     log "[✓] 检测前预备完成：停 $stopped 个隐藏应用进程、清空目录、报告 $warned 条文件痕迹（详见日志）"
     echo "DETECT_PREP_STOPPED=$stopped"
     echo "DETECT_PREP_TRACES=$warned"
+    return 0
+}
+
+# ---- 2.4.1 检测窗口守护（v2.8.9）：停绑 + 禁用压死 + 轮询压制 ----
+# 根因（2026-10-05 真机实证）：隐藏名单应用的「系统绑定服务」（无障碍类）被
+# force-stop 后系统几秒内重新拉起（无障碍由系统 c:android 绑定）；开机预备跑完
+# 它才自启（STIME 11:59:46 vs 开机预备 11:59:3x），跑春秋时它又在 /proc 里活着、
+# 包却被 HMA 隐藏 → 春秋(2)「隐藏应用列表生效」。杀进程防不住系统重绑，
+# 唯一不破坏的办法是检测窗口内临时停绑、结束后原样恢复：
+#   ① a11y_guard_start：读 enabled_accessibility_services，筛出隐藏名单包名的条目，
+#      原值原子落盘（先存后改），写回去掉这些条目后的列表（其它应用条目原样保留），
+#      force-stop 让进程退出；再把自包含守护脚本落盘 nohup 拉起
+#   ② 停绑的同时对这些包 pm disable-user（真机实证：omarea 有自家看门狗，解绑后 ~30 秒
+#      进程照样自启，(2) 照漏 —— 禁用后 receiver/service 全哑火，force-stop 才死得透；
+#      恢复时 pm enable 原样解禁，save 第 3 行记录被禁的包）
+#   ③ 守护脚本（TMP/detect_guard.sh）：单循环轮询（每 2 秒）——等检测器出现（600 秒不来
+#      即恢复）→ 出现后活满 60 秒即恢复（报告页进程常驻不退出，不能干等用户关 App）；
+#      检测器连续 3 次落空（≥6 秒，防重启间隙误判）+ 宽限 15 秒后恢复；轮询期间顺手
+#      压制任何隐藏应用进程复活（ps 快照比对，见了就 force-stop）
+#   ③ a11y_guard_restore：save 在即恢复（service.sh 开机兜底 + 下次预备自愈）
+# 绝不卸载应用、绝不改用户无障碍开关的最终状态；恢复 = 原字符串写回原处。
+# 只挂在手动预备（yypm_detect_prep guard）上；开机预备不守护（开机不开检测器，
+# 否则无障碍会被停 15 分钟）。
+A11Y_GUARD_SAVE="$DATA_DIR/a11y_guard.save"
+A11Y_GUARD_PID="$DATA_DIR/a11y_guard.pid"
+
+a11y_guard_restore() {
+    [ -f "$A11Y_GUARD_SAVE" ] || return 0
+    # 守护进程还活着 = 检测窗口进行中，不抢恢复（开机时旧守护必死，自然走恢复）
+    local wpid
+    wpid=$(cat "$A11Y_GUARD_PID" 2>/dev/null)
+    if [ -n "$wpid" ] && kill -0 "$wpid" 2>/dev/null; then
+        dbg "无障碍守护：守护进程在跑（pid $wpid），跳过恢复"
+        return 0
+    fi
+    local list enabled dis p
+    list=$(sed -n '1p' "$A11Y_GUARD_SAVE")
+    enabled=$(sed -n '2p' "$A11Y_GUARD_SAVE")
+    dis=$(sed -n '3p' "$A11Y_GUARD_SAVE" 2>/dev/null)
+    settings put secure enabled_accessibility_services "$list" </dev/null >/dev/null 2>&1
+    settings put secure accessibility_enabled "$enabled" </dev/null >/dev/null 2>&1
+    rm -f "$A11Y_GUARD_SAVE"
+    # v2 save 第 3 行：被 pm disable-user 压过的包 —— 原样解禁（顺序：先解禁再写回列表）
+    for p in $dis; do pm enable "$p" </dev/null >/dev/null 2>&1; done
+    log "[✓] 无障碍守护：恢复原状态（$list${dis:+，解禁 $dis}）"
+    return 0
+}
+
+a11y_guard_start() {
+    local raw list enabled hidden pkg entry kept n=0 p wpid
+    # 上次守护的 save 还在：守护进程已死则先恢复原状态再重开；活着则直接续用
+    if [ -f "$A11Y_GUARD_SAVE" ]; then
+        wpid=$(cat "$A11Y_GUARD_PID" 2>/dev/null)
+        if [ -n "$wpid" ] && kill -0 "$wpid" 2>/dev/null; then
+            dbg "无障碍守护：已有守护在跑（pid $wpid），续用现有 save"
+            echo "DETECT_PREP_GUARD=continued"
+            return 0
+        fi
+        a11y_guard_restore   # 上次被打断：先恢复，再重新采集
+    fi
+    raw=$(settings get secure enabled_accessibility_services </dev/null 2>/dev/null)
+    enabled=$(settings get secure accessibility_enabled </dev/null 2>/dev/null)
+    case "$raw" in ''|null) dbg "无障碍守护：无已启用的无障碍服务，无需停绑"
+        echo "DETECT_PREP_GUARD=0"; return 0 ;; esac
+    hidden=$(hma_hidden_apps | tr '
+' ' ')
+    [ -n "$hidden" ] || { echo "DETECT_PREP_GUARD=0"; return 0; }
+    # 条目格式 pkg/.Svc 或 pkg/com.full.Svc，':' 分隔；只动隐藏名单包名的
+    kept=""
+    local OLD_IFS="$IFS"; IFS=':'
+    for entry in $raw; do
+        [ -n "$entry" ] || continue
+        pkg=${entry%%/*}
+        case " $hidden " in *" $pkg "*) n=$((n + 1)); dbg "无障碍守护：停绑 $entry"; continue ;; esac
+        kept="${kept:+$kept:}$entry"
+    done
+    IFS="$OLD_IFS"
+    if [ "$n" -eq 0 ]; then dbg "无障碍守护：隐藏名单里无被启用的无障碍服务"
+        echo "DETECT_PREP_GUARD=0"; return 0; fi
+    # save 三行：①原列表 ②原 enabled ③本次被禁压的包（恢复时解禁）
+    disabled=""
+    for entry in $raw; do
+        [ -n "$entry" ] || continue
+        pkg=${entry%%/*}
+        case " $hidden " in *" $pkg "*) disabled="${disabled:+$disabled }$pkg" ;; esac
+    done
+    printf '%s\n%s\n%s\n' "$raw" "$enabled" "$disabled" > "$A11Y_GUARD_SAVE.tmp" && mv -f "$A11Y_GUARD_SAVE.tmp" "$A11Y_GUARD_SAVE"
+    settings put secure enabled_accessibility_services "$kept" </dev/null >/dev/null 2>&1
+    # 禁用压死（看门狗 receiver/service 全哑火）再 force-stop：系统不会重绑（条目已移走），
+    # 自家看门狗也起不来（已禁用）—— 双保险死透；恢复时 pm enable 原样解禁
+    for p in $disabled; do
+        pm disable-user --user 0 "$p" </dev/null >/dev/null 2>&1
+    done
+    for p in $(hma_hidden_apps); do
+        case "$raw" in *"$p"/*) am force-stop "$p" </dev/null >/dev/null 2>&1 ;; esac
+    done
+    # 自包含守护脚本落盘 + nohup 拉起（输出进 yypm.log）
+    cat > "$TMP/detect_guard.sh" <<'GUARD_EOF'
+#!/system/bin/sh
+SAVE="__SAVE__"
+LOGF="__LOG__"
+HIDDEN="__HIDDEN__"
+ts() { date '+%m-%d %H:%M:%S'; }
+restore() {
+    [ -f "$SAVE" ] || exit 0
+    list=$(sed -n '1p' "$SAVE"); enabled=$(sed -n '2p' "$SAVE"); dis=$(sed -n '3p' "$SAVE")
+    for p in $dis; do pm enable "$p" >/dev/null 2>&1; done
+    settings put secure enabled_accessibility_services "$list" >/dev/null 2>&1
+    settings put secure accessibility_enabled "$enabled" >/dev/null 2>&1
+    rm -f "$SAVE"
+    echo "[$(ts)] [✓] 无障碍守护：检测结束，已恢复无障碍原状态" >> "$LOGF"
+}
+# 压制：隐藏名单里谁复活就掐谁（ps 快照比对，见了 force-stop；真机实证 omarea
+# 有自家看门狗会 ~30 秒自启 —— 停绑挡得住系统重绑，挡不住看门狗，所以两手都要）
+sup() {
+    snap=$(ps -A -o NAME 2>/dev/null)
+    for p in $HIDDEN; do
+        case "$snap" in *"$p"*) am force-stop "$p" </dev/null >/dev/null 2>&1 ;; esac
+    done
+}
+# 单循环：600 秒内等检测器出现（每 2 秒一轮，期间持续压制）；
+# 出现后活满 60 秒即恢复（检测在启动后 ~15-30 秒内跑完，报告页常驻进程不退出，
+# 不能干等用户关 App）；检测器连续 3 次落空（≥6 秒，防重启间隙误判）+ 宽限
+# 15 秒后恢复；先到先恢复。
+seen=0; miss=0
+deadline=$(( $(date +%s) + 600 ))
+while [ "$(date +%s)" -lt "$deadline" ]; do
+    sup
+    if pidof com.chunqiunativecheck >/dev/null 2>&1; then
+        if [ "$seen" = 0 ]; then
+            seen=1
+            deadline=$(( $(date +%s) + 75 ))
+            echo "[$(ts)] [dbg] 无障碍守护：检测器已启动，守护检测窗口（60 秒）" >> "$LOGF"
+        fi
+        miss=0
+    else
+        if [ "$seen" = 1 ]; then
+            miss=$(( miss + 1 ))
+            [ "$miss" -ge 3 ] && break
+        fi
+    fi
+    sleep 2
+done
+[ "$miss" -ge 3 ] && sleep 15   # 真退出：宽限 15 秒再恢复；活满窗口/超时：立即恢复
+[ "$seen" = 0 ] && echo "[$(ts)] [dbg] 无障碍守护：600 秒未见检测器，按超时恢复" >> "$LOGF"
+restore
+GUARD_EOF
+    sed -i "s|__SAVE__|$A11Y_GUARD_SAVE|; s|__LOG__|$LOG|; s|__HIDDEN__|$hidden|" "$TMP/detect_guard.sh"
+    nohup sh "$TMP/detect_guard.sh" >/dev/null 2>&1 &
+    echo $! > "$A11Y_GUARD_PID"
+    log "[✓] 无障碍守护：已临时停绑 $n 个隐藏应用的无障碍服务，检测结束自动恢复（守护 pid $(cat "$A11Y_GUARD_PID")）"
+    echo "DETECT_PREP_GUARD=$n"
     return 0
 }
 

@@ -54,9 +54,12 @@ keybox 不随模块分发，而是由服务端从多个公开上游源拉取、�
   自动执行、切换立即生效；关 = 只留手动按钮**。覆盖：风险应用隐藏 / 异常痕迹清理 /
   安全补丁对齐 / HMA 隐藏配置 / FuseFixer 配置 / 检测前预备 / SUSFS 加固。
   手动按钮不受开关拦截（如「自动配置 HMA」走 force，关了自动照样能手动跑）
-- **侧信道延迟自检（v2.8.8）**：in-process 对 `stat()` 系统调用计时（每路径 2000 次
+- **侧信道延迟自检（v2.8.8/v2.8.9 两路）**：① in-process 对 `stat()` 系统调用计时（每路径 2000 次
   取最优均值），给出基线 vs `/data/adb` 叠层路径的延迟增量 —— 只读测量不写任何东西，
-  帮你判断本机侧信道信号强度（同类工具宣称 ~20µs 级）
+  帮你判断本机侧信道信号强度（同类工具宣称 ~20µs 级）；② `faccessat` vs `fchownat` hook
+  计时（v2.8.9，复刻看雪 thread-288928 银行 App 的检测算法：以 App 视角双基准各采
+  10000 次、排序逐对比较，异常对 > 7000 判内核 hook 暴露；真机验证 PASS = 未暴露）
+  —— 压低手段为内核级（SUSFS 隐藏 + 换带 SUSFS 的新版内核），用户态模块改不了 syscall 路径
 - **安全补丁级别**：自动写入 `security_patch.txt`（`system=prop` 模式），attestation
   始终回答系统当前属性值，OTA 后不再出现跨组件日期错位；他人的固定日期文件会被
   备份（`.bak`）后替换，`security_patch=off` 可整体关闭
@@ -70,9 +73,18 @@ keybox 不随模块分发，而是由服务端从多个公开上游源拉取、�
   判定三级：pm path → pm list → cmd package path）；FuseFixer 的 LSPosed 启用 +
   勾选系统框架由「FuseFixer 自动配置」开关开机自动直写（幂等：只 UPDATE enabled /
   INSERT OR IGNORE scope，写不进如实报错，绝不清库），WebUI 也有手动按钮
-- **检测前预备（v2.8.7，v2.8.8 起可开机自动执行）**：跑检测器前一键收敛到「检测视图
+- **检测前预备（v2.8.7，v2.8.8 起可开机自动执行；v2.8.9 手动预备带检测窗口守护）**：
+  跑检测器前一键收敛到「检测视图
   干净」状态 —— 结束隐藏名单内应用进程 + drop_caches + 非破坏清目录 + 报告已知
-  文件痕迹（只报告，绝不删）
+  文件痕迹（只报告，绝不删）；
+- **检测窗口守护（v2.8.9，只跟手动预备走）**：真机实证根因 —— 隐藏名单里的
+  「系统绑定服务」（如无障碍）force-stop 后系统几秒内重绑、应用自家看门狗 ~30 秒
+  自启，进程一复活春秋 (2)「隐藏应用列表生效」就漏。守护 = 检测窗口内把隐藏名单
+  应用被系统绑定的服务**临时停绑**（原值原子落盘）+ **禁用压死**（pm disable-user，
+  看门狗 receiver/service 全哑火）+ 轮询压制（谁复活掐谁）；检测器出现后活满 60 秒
+  或退出（连续 3 次落空 + 15 秒宽限）自动**原样恢复**（无障碍原值写回 + pm enable
+  解禁，真机验证：春秋报告只剩第 26 项）。安全兜底：检测器 600 秒不来也恢复、
+  开机自愈（service.sh）、下次预备自愈；绝不卸载、绝不动用户无障碍开关的最终状态
 
 #### 3. 组件包分发（带签名的应用商店）
 - 服务端维护组件清单（LSPosed / Zygisk-Next / PlayIntegrityFix / TEESimulator 等）
@@ -181,6 +193,15 @@ Highlights:
   (manual actions bypass the auto gate via `force`, so a switch never bricks a button);
   covers risk-app hiding, trace cleanup, security-patch, HMA config, FuseFixer LSPosed
   scoping, pre-check prep and SUSFS hardening
+- detection-window guardian (v2.8.9, manual prep only): on-device root cause — hidden
+  apps' system-bound services (e.g. accessibility) get rebound by the system within seconds
+  after force-stop, and their own watchdogs self-restart in ~30s, so any live process
+  resurfaces as detector item (2). The guard temporarily unbinds those services (atomic
+  save of the original value), disables those packages (pm disable-user — watchdog
+  receivers/services all go quiet), and suppresses any resurrection during the window;
+  after the detector runs 60s (or exits, 3-consecutive-miss + 15s grace) it restores
+  everything exactly (original accessibility strings written back, packages re-enabled).
+  Verified on-device: the detector report drops to only item 26. Boot self-heal included.
 - side-channel latency self-check (v2.8.8): in-process `stat()` timing (best-of-3 batches
   × 2000 calls per path) reporting the baseline vs `/data/adb` overlay delta — read-only
   measurement (similar tools advertise ~20µs)

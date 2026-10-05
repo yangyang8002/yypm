@@ -514,8 +514,17 @@ case "${1:-status}" in
         echo "SUSFS_AUTO=$2"
         ;;
     latency-check)
-        # v2.8.8 侧信道延迟自检：stat() 耗时计时（只读测量，不动任何东西）
+        # v2.8.9 侧信道延迟自检（两路都测，只读测量，不动任何东西）：
+        #   ① stat() 逐路径计时（v2.8.8）—— 叠层路径 vs 基线的延迟增量（µs 级）
+        #   ② faccessat vs fchownat hook 计时（v2.8.9，看雪 288928 复刻）—— 内核
+        #      hook 是否在 syscall 路径上暴露（ns 级 + 异常对计数 + PASS/FAIL）
+        # 一路失败不拦另一路；side-check 可单测第二路
         latency_check
+        side_check
+        ;;
+    side-check)
+        # v2.8.9 侧信道自检之二单测：faccessat vs fchownat（latency-check 已包含本路）
+        side_check
         ;;
     keybox-audit)
         # 密钥自检：本地 keybox 的 sha256/DeviceID/证书数 + 服务端算好的证书链与
@@ -666,8 +675,8 @@ case "${1:-status}" in
         echo "== 检测应用加入 TrickyStore 目标清单 =="
         auto_target_known_apps || echo "[!] 目标清单追加失败（详见运行日志）"
         echo "== 环境收敛（停进程 + 清缓存 + 清痕迹）=="
-        yypm_detect_prep
-        log "[✓] 检测前预备一键执行完成"
+        yypm_detect_prep guard
+        log "[✓] 检测前预备一键执行完成"（守护：隐藏名单无障碍服务检测结束自动恢复）
         echo "DETECT_PREP=OK"
         ;;
 

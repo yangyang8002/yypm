@@ -33,6 +33,8 @@ run_cycle() {
         log "本轮跳过拉取（自动获取已关闭，或非 WiFi 且开启了仅 WiFi 更新）"
     fi
     [ "$(cfg_get auto_bl off)" = "on" ] && hide_bl
+    # v2.8.9：无障碍守护遗留自愈（上次检测窗口被打断时恢复原状态；守护活着则跳过）
+    a11y_guard_restore
     [ "$(cfg_get auto_debug off)" = "on" ] && close_debug
     # 环境对抗：深度伪装启动状态（需要 SUSFS/Shamiko 支撑，否则只记日志不动手）
     [ "$(cfg_get deep_bl off)" = "on" ] && hide_bl_deep

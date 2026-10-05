@@ -85,6 +85,51 @@ public class AppInfo {
             return;
         }
 
+        // statbench <路径>...：侧信道延迟自检（v2.8.8）—— in-process 对每个路径做
+        // stat() 系统调用计时（反射 android.system.Os.stat，直映射 syscall），
+        // 预热后 3 批 × 2000 次取最优均值。输出 BENCH|<路径>|<每次纳秒>|<次数> 行。
+        // 只读测量，不写任何东西；单路径失败只记 ERR 不中断其它路径。
+        if (pos.size() >= 2 && "statbench".equals(pos.get(0))) {
+            int brc = 0;
+            try {
+                statBench(pos.subList(1, pos.size()));
+            } catch (Throwable t) {
+                out.println("BENCH=FAIL(" + t.getClass().getSimpleName() + ": " + t.getMessage() + ")");
+                brc = 2;
+            }
+            out.println("#mode=statbench");
+            out.flush();
+            System.exit(brc);
+            return;
+        }
+
+        // sidebench：复刻看雪 thread-288928 银行 App「时间侧信道」检测（v2.8.9）。
+        // 原理：KSU 内核 hook 了 faccessat（每次 +~100-400ns），fchownat 没 hook；
+        // 正常时 faccessat 天然快于 fchownat。检测方：两个调用各采 10000 次、
+        // 各自排序后逐对比较，faccessat[i] > fchownat[i]+1 计一次异常，
+        // 异常 > 7000（0x1B58）判内核 hook 在路上（时间侧信道暴露）。
+        // 复刻方式：Os.access(真路径, F_OK) → bionic access() → faccessat syscall；
+        // Os.chown(真路径, -1, -1) → bionic chown() → fchownat syscall（aarch64 无
+        // 独立 access/chown 号，bionic 全走 at 变体）。用真实存在、属主为降权后
+        // uid 的临时文件让两次调用都成功返回（ErrnoException 的构造开销会淹没
+        // 纳秒级信号）；同路径两侧共享解析噪声、排序后逐对抵消。计时
+        // System.nanoTime()（常数开销两侧抵消）。采样前降权到 uid 2000：root 会被
+        // KSU 视作已授权进程走别的路径，普通身份才等价 App 视角；降权不可逆，
+        // 本进程测完即退。临时文件由调用方（root）事后清理。
+        if (pos.size() >= 1 && "sidebench".equals(pos.get(0))) {
+            int brc = 0;
+            try {
+                sideBench();
+            } catch (Throwable t) {
+                out.println("SIDE=FAIL(" + t.getClass().getSimpleName() + ": " + t.getMessage() + ")");
+                brc = 2;
+            }
+            out.println("#mode=sidebench");
+            out.flush();
+            System.exit(brc);
+            return;
+        }
+
         int code = 0;
         try {
             run();
@@ -97,6 +142,75 @@ public class AppInfo {
         // 必须显式退出：app_process 里的 binder 线程是非 daemon 的，
         // main() 返回后进程不会自己结束，调用方的 $(...) 会一直等 EOF。
         System.exit(code);
+    }
+
+    // ---- 侧信道延迟自检（v2.8.8）：stat() 计时 ----
+    // 检测器可以通过 stat 耗时差分辨挂载叠层/隐藏层处理的路径（时间侧信道）。
+    // 同一进程内逐路径计时：预热（JIT + dentry 缓存稳定）后跑 3 批 × 2000 次、
+    // 取最优批的均值（纳秒/次）。基线路径（/data/local/tmp 等）与叠层路径
+    // （/data/adb 及子目录）的差值就是本机的侧信道信号强度 —— 数值越小越平。
+    static void statBench(List<String> paths) throws Exception {
+        Class<?> cOs = Class.forName("android.system.Os");
+        java.lang.reflect.Method mStat = cOs.getMethod("stat", String.class);
+        final int WARM = 400, BATCHES = 3, N = 2000;
+        for (String p : paths) {
+            try {
+                mStat.invoke(null, p); // 存在性验证
+                for (int i = 0; i < WARM; i++) mStat.invoke(null, p);
+                long best = Long.MAX_VALUE;
+                for (int b = 0; b < BATCHES; b++) {
+                    long t0 = System.nanoTime();
+                    for (int i = 0; i < N; i++) mStat.invoke(null, p);
+                    long d = System.nanoTime() - t0;
+                    if (d < best) best = d;
+                }
+                out.println("BENCH|" + p + "|" + (best / N) + "|" + N);
+            } catch (Throwable t) {
+                out.println("BENCH|" + p + "|ERR|" + t.getClass().getSimpleName());
+            }
+        }
+    }
+
+    // ---- 侧信道自检之二（v2.8.9）：faccessat vs fchownat hook 计时（看雪 288928 复刻）----
+    // 临时文件由调用方（root）建好、属主改成 2000；本方法先降权（setgid 后 setuid，
+    // 都到 2000）再采样 —— root 会被 KSU 视作已授权进程走别的路径，普通身份才等价
+    // App 视角。降权不可逆：本进程测完即退，不影响同进程后续（本模式独占进程）。
+    static void sideBench() throws Exception {
+        final int WARM = 500, N = 10000, THRESH = 7000;
+        Class<?> cOs = Class.forName("android.system.Os");
+        Object fOk = Class.forName("android.system.OsConstants").getField("F_OK").get(null);
+        java.lang.reflect.Method mAccess = cOs.getMethod("access", String.class, int.class);
+        java.lang.reflect.Method mChown = cOs.getMethod("chown", String.class, int.class, int.class);
+        String fake = "/data/local/tmp/.yypm_sidebench";
+        try {
+            cOs.getMethod("setgid", int.class).invoke(null, Integer.valueOf(2000));
+            cOs.getMethod("setuid", int.class).invoke(null, Integer.valueOf(2000));
+            out.println("SIDE|DROP|ok（uid 2000 视角）");
+        } catch (Throwable t) {
+            out.println("SIDE|DROP|FAIL(" + t.getClass().getSimpleName() + "，降不了权，按 root 视角测）");
+        }
+        // 预热（JIT + dentry 缓存稳定）
+        for (int i = 0; i < WARM; i++) { mAccess.invoke(null, fake, fOk); mChown.invoke(null, fake, -1, -1); }
+        long[] fa = new long[N], fc = new long[N];
+        long t0, t1;
+        for (int i = 0; i < N; i++) {
+            t0 = System.nanoTime(); mAccess.invoke(null, fake, fOk); t1 = System.nanoTime();
+            fa[i] = t1 - t0;
+        }
+        for (int i = 0; i < N; i++) {
+            t0 = System.nanoTime(); mChown.invoke(null, fake, -1, -1); t1 = System.nanoTime();
+            fc[i] = t1 - t0;
+        }
+        java.util.Arrays.sort(fa);
+        java.util.Arrays.sort(fc);
+        int anomaly = 0;
+        for (int i = 0; i < N; i++) if (fa[i] > fc[i] + 1) anomaly++;
+        long faSum = 0, fcSum = 0;
+        for (int i = 0; i < N; i++) { faSum += fa[i]; fcSum += fc[i]; }
+        out.println("SIDE|faccessat|" + fa[N / 2] + "|" + (faSum / N));
+        out.println("SIDE|fchownat|" + fc[N / 2] + "|" + (fcSum / N));
+        out.println("SIDE|anomaly|" + anomaly + "|" + THRESH);
+        out.println("SIDE|verdict|" + (anomaly > THRESH ? "FAIL" : "PASS") + "|");
     }
 
     // ---- LSPosed modules_config.db 直写（「一键配置 FuseFixer」用）----

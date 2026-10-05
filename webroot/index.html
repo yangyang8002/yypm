@@ -533,7 +533,7 @@ html[data-lockdown="1"] #acBanner{
     <div class="switch" id="ffLspdAutoSwitch"></div>
   </div>
   <div class="switch-row">
-    <div><div class="lab">检测前预备开机执行</div><div class="hint">停隐藏应用 + 清目录缓存 + 痕迹报告</div></div>
+    <div><div class="lab">检测前预备开机执行</div><div class="hint">停隐藏应用 + 清缓存 + 痕迹报告（手动预备含检测窗口守护）</div></div>
     <div class="switch" id="prepAutoSwitch"></div>
   </div>
   <div class="switch-row">
@@ -576,9 +576,16 @@ html[data-lockdown="1"] #acBanner{
   MT 主目录位置的根治：去 MT 管理器「设置 → 主目录」改掉，旧目录再自行删除。</p>
   <p class="note">④ <b>FuseFixer / HMA-OSS</b> —— 服务器自动从上游抓取验签安装（HMA-OSS 需 Zygisk，Zygisk-Next 一并自动装）。
   FuseFixer 装好后由「FuseFixer 自动配置」开关/按钮直写 LSPosed 配置库（启用 + 勾选系统框架），重启生效。</p>
-  <p class="note"><b>侧信道延迟</b> —— 检测器可经 stat() 耗时差分辨叠层处理的路径。「侧信道延迟自检」在本机
-  in-process 实测（每路径 2000 次取最优均值）：基线 vs /data/adb 系列的增量越小越平（同类工具宣称 ~20µs 级）。
-  压低手段：SUSFS 内核级路径隐藏（本模块已自动加 sus_path /data/adb）+ 保持内核 SUSFS 为新版。</p>
+  <p class="note"><b>侧信道延迟（两路）</b> —— ① stat() 路径计时：检测器可经耗时差分辨叠层处理路径；
+  自检在本机 in-process 实测（每路径 2000 次取最优均值），基线 vs /data/adb 系列增量越小越平
+  （同类工具宣称 ~20µs 级）。② faccessat vs fchownat hook 计时（看雪 thread-288928 银行 App 手法）：
+  内核 hook 了 faccessat（每次 +~100-400ns）而不 hook fchownat；自检以 uid 2000（App 视角）
+  双基准各采 10000 次、排序逐对比较，异常对 > 7000 判 hook 暴露（PASS = 未暴露）。
+  压低手段（内核级，用户态模块改不了 syscall 路径）：SUSFS 内核级隐藏（本模块已自动下发
+  sus_path /data/adb）+ 换带 SUSFS 的新版内核。</p>
+  <p class="note">「检测前预备」（v2.8.9）新增检测窗口守护：隐藏名单里被系统绑定的服务（无障碍类，
+  force-stop 后几秒就会被系统重绑复活）在检测窗口内临时停绑、春秋跑完自动恢复原样（恢复兜底：
+  检测器 600 秒没来也恢复、硬顶 900 秒、开机自愈、下次预备自愈）——只动绑定不动数据。</p>
   <p class="note">「隐藏应用列表生效」—— 先用「一键检测前预备」再测；仍命中看日志里的痕迹报告定位。
   管理器家族只报状态不自动处理：v2.8.7 起已并入查询级隐藏，桌面照常打开、WebUI 不受影响。</p>
   </div></details>
@@ -2290,6 +2297,8 @@ async function latencyCheck(){
     (r.stdout||'').split('\n').forEach(function(l){
       var p=l.split('|');
       if(p[0]==='LAT'&&p.length>=3){ html+='<div class="row"><span class="k">'+esc(p[1])+'</span><span class="v">'+esc(p[2])+'</span></div>'; }
+      else if(p[0]==='SIDE'&&p.length>=3){ html+='<div class="row"><span class="k">'+esc(p[1])+'</span><span class="v">'+esc(p[2])+'</span></div>'; }
+      else if(l.indexOf('SIDE_CHECK=')===0){ var sv=l.slice(11); html+='<div class="row"><span class="k">faccessat hook 侧信道判定</span><span class="v"><b style="color:'+(sv==='PASS'?'#4caf50':'#f44336')+'">'+esc(sv)+'</b>'+(sv==='PASS'?'（内核 hook 未在 syscall 路径暴露）':'（内核 hook 在 syscall 路径暴露——SUSFS 内核级隐藏可压低，详见折叠说明）')+'</span></div>'; }
       else if(l.indexOf('LATENCY_BASE=')===0){ html+='<div class="row"><span class="k">基线（/data/local/tmp）</span><span class="v">'+esc(l.slice(13))+'</span></div>'; }
       else if(l.indexOf('LATENCY_DELTA=')===0){ html+='<div class="row"><span class="k">最大增量（叠层路径 vs 基线）</span><span class="v">'+esc(l.slice(14))+'</span></div>'; }
     });
