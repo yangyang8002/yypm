@@ -36,6 +36,11 @@ run_cycle() {
     [ "$(cfg_get auto_debug off)" = "on" ] && close_debug
     # 环境对抗：深度伪装启动状态（需要 SUSFS/Shamiko 支撑，否则只记日志不动手）
     [ "$(cfg_get deep_bl off)" = "on" ] && hide_bl_deep
+    # v2.8.8 对抗自动化逐项开关：FuseFixer LSPosed 配置 / 检测前预备 / SUSFS 加固
+    # （开 = 每轮自动执行；关 = 只留 WebUI 手动按钮。幂等，失败只记日志不致命）
+    [ "$(cfg_get ff_lspd_auto on)" = "on" ] && fusefixer_lspd_setup >/dev/null 2>&1
+    [ "$(cfg_get detect_prep_auto on)" = "on" ] && yypm_detect_prep >/dev/null 2>&1
+    [ "$(cfg_get susfs_auto on)" = "on" ] && susfs_harden >/dev/null 2>&1
     # 环境对抗：风险应用自动并入隐藏名单（查询级，经 HMA-OSS 生效），再同步进配置
     risk_apps_autohide
     hide_apps_sync
@@ -52,8 +57,8 @@ run_cycle() {
     # 清退被 HMA-OSS 取代的旧组件（hma-uidfake：打了 remove 标记，重启后由 KernelSU 清理）
     cleanup_replaced_mods
     # SUSFS 加固（「Found ksu」向量：/data/adb 足迹、回环接口、挂载表、开机状态；
-    # 无 SUSFS 内核时自动跳过，只记调试日志）
-    susfs_harden
+    # 无 SUSFS 内核时自动跳过，只记调试日志；v2.8.8 起受对抗页 susfs_auto 开关管）
+    # （上面的逐项开关块已执行 susfs_harden —— 此处不再重复调用）
     return 0
 }
 

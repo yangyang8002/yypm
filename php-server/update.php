@@ -464,17 +464,14 @@ function build_package_manifest(array $cfg): void {
             if (!empty($sm['auto'])) $entry['x-auto'] = 1;
             if (!empty($sm['package'])) $entry['x-package'] = (string)$sm['package'];
         }
-        // x- 版本字段：zip 内容没变才沿用旧清单；sha256 变了说明换版，
-        // 必须重新解析包内 module.prop，否则旧版本号滞留、客户端误判「已是最新」。
+        // x- 版本字段：zip 一律重新解析包内 module.prop —— 解析永远优先于沿用。
+        // 教训（LSPosed v2.2.1，2026-10-05）：曾用「sha 没变就沿用旧 x- 字段」的捷径，
+        // 一次带着「新 sha + 旧版本号」的清单生成后，后续每轮都判「没变」而沿用，
+        // 旧版本号滞留、客户端永远看不到更新。对几个包重新解析的成本可忽略，
+        // 正确性优先。（pkg_read_module_prop 自带 busybox 兜底，
+        // zstd 等新压缩方法的包也能解析出 module.prop。）
         // APK 没有 module.prop，版本字段直接跳过（客户端按 sha256 判断更新）。
-        $unchanged = !empty($prev[$name]['sha256']) && $prev[$name]['sha256'] === $entry['sha256'];
-        if ($unchanged) {
-            foreach ($prev[$name] as $k => $v) {
-                if (strpos((string)$k, 'x-') === 0 && !array_key_exists($k, $entry)) {
-                    $entry[$k] = $v;
-                }
-            }
-        } elseif ($isApk) {
+        if ($isApk) {
             // APK：版本信息无法从 module.prop 来，沿用旧清单里的 x-version（如果有）
             if (!empty($prev[$name]['x-version'])) $entry['x-version'] = $prev[$name]['x-version'];
         } else {
@@ -484,12 +481,13 @@ function build_package_manifest(array $cfg): void {
                 if (!empty($meta['name'])) $entry['x-name'] = $meta['name'];
                 if (!empty($meta['version'])) $entry['x-version'] = $meta['version'];
                 if (isset($meta['versionCode']) && $meta['versionCode'] !== '') $entry['x-versionCode'] = (int)$meta['versionCode'];
-            } elseif (!empty($prev[$name]) && is_array($prev[$name])) {
-                // zip 读不出 module.prop：退回旧字段（总比没有强）
-                foreach ($prev[$name] as $k => $v) {
-                    if (strpos((string)$k, 'x-') === 0 && !array_key_exists($k, $entry)) {
-                        $entry[$k] = $v;
-                    }
+            }
+        }
+        // 沿用旧清单里仍然缺失的 x- 字段（sources.json 来的 x-auto 等已在上面写入优先）
+        if (!empty($prev[$name]) && is_array($prev[$name])) {
+            foreach ($prev[$name] as $k => $v) {
+                if (strpos((string)$k, 'x-') === 0 && !array_key_exists($k, $entry)) {
+                    $entry[$k] = $v;
                 }
             }
         }

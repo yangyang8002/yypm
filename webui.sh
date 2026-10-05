@@ -430,8 +430,9 @@ case "${1:-status}" in
         echo "HIDE_APPS_ENABLE=$2"
         ;;
     hma-cfg)
-        # 手动触发：HMA-OSS 自动配置 + 旧组件清退 + SUSFS 加固，并回报最新状态
-        hma_oss_autocfg
+        # 手动触发：HMA-OSS 自动配置 + 旧组件清退 + SUSFS 加固，并回报最新状态。
+        # v2.8.8：手动按钮走 force —— 不受 hma_auto 开关拦截（开关只管自动路径）。
+        hma_oss_autocfg force
         cleanup_replaced_mods >/dev/null 2>&1
         susfs_harden >/dev/null 2>&1
         echo "HMA_CFG=$(hma_cfg_state)"
@@ -451,13 +452,12 @@ case "${1:-status}" in
         ;;
     fusefixer-setup)
         # P1-⑨：直写 LSPosed modules_config.db —— 启用 FuseFixer 并把系统框架加入作用域。
-        # dex 只 UPDATE enabled / INSERT OR IGNORE scope，写不进去就如实报错，绝不清库。
-        local db=/data/adb/lspd/config/modules_config.db
-        if [ ! -f "$db" ]; then
-            echo "LSPD=FAIL(未检测到 LSPosed：没有 modules_config.db)"
-            exit 1
+        # v2.8.8：逻辑收进 common.sh 的 fusefixer_lspd_setup（开机自动 ff_lspd_auto 与此共用）。
+        if fusefixer_lspd_setup; then
+            echo "LSPD=OK"
+        else
+            echo "LSPD=FAIL(未检测到 LSPosed 或写入失败：先在「附属模块」装 LSPosed 再试)"
         fi
-        appinfo_run lspd-enable "$db" io.github.a13e300.fusefixer android
         ;;
 
     deep-bl)
@@ -469,6 +469,53 @@ case "${1:-status}" in
         case "${2:-}" in on|off) cfg_set deep_bl "$2" ;; *) echo "用法: deep-bl-auto on|off"; exit 1 ;; esac
         log "[·] 自动深度伪装已设为 ${2}"
         echo "DEEP_BL=$2"
+        ;;
+    # ---- v2.8.8 对抗自动化逐项开关：开 = 开机/巡检自动执行 + 切换即生效；关 = 只留手动按钮 ----
+    sp-auto)
+        case "${2:-}" in on|off) cfg_set security_patch "$2" ;; *) echo "用法: sp-auto on|off"; exit 1 ;; esac
+        log "[·] 安全补丁自动对齐已设为 ${2}"
+        [ "${2:-}" = "on" ] && ensure_security_patch >/dev/null 2>&1
+        echo "SECURITY_PATCH=$2"
+        ;;
+    risk-auto)
+        case "${2:-}" in on|off) cfg_set risk_autohide "$2" ;; *) echo "用法: risk-auto on|off"; exit 1 ;; esac
+        log "[·] 风险应用自动隐藏已设为 ${2}"
+        [ "${2:-}" = "on" ] && { risk_apps_autohide; hide_apps_sync; }
+        echo "RISK_AUTOHIDE=$2"
+        ;;
+    abnormal-auto)
+        case "${2:-}" in on|off) cfg_set abnormal_auto "$2" ;; *) echo "用法: abnormal-auto on|off"; exit 1 ;; esac
+        log "[·] 异常痕迹自动清理已设为 ${2}"
+        [ "${2:-}" = "on" ] && clean_abnormal >/dev/null 2>&1
+        echo "ABNORMAL_AUTO=$2"
+        ;;
+    hma-auto)
+        case "${2:-}" in on|off) cfg_set hma_auto "$2" ;; *) echo "用法: hma-auto on|off"; exit 1 ;; esac
+        log "[·] HMA 查询级隐藏自动配置已设为 ${2}"
+        [ "${2:-}" = "on" ] && hma_oss_autocfg force
+        echo "HMA_AUTO=$2"
+        ;;
+    ff-lspd-auto)
+        case "${2:-}" in on|off) cfg_set ff_lspd_auto "$2" ;; *) echo "用法: ff-lspd-auto on|off"; exit 1 ;; esac
+        log "[·] FuseFixer 自动配置已设为 ${2}"
+        [ "${2:-}" = "on" ] && fusefixer_lspd_setup >/dev/null 2>&1
+        echo "FF_LSPD_AUTO=$2"
+        ;;
+    detect-prep-auto)
+        case "${2:-}" in on|off) cfg_set detect_prep_auto "$2" ;; *) echo "用法: detect-prep-auto on|off"; exit 1 ;; esac
+        log "[·] 检测前预备开机执行已设为 ${2}"
+        [ "${2:-}" = "on" ] && yypm_detect_prep >/dev/null 2>&1
+        echo "DETECT_PREP_AUTO=$2"
+        ;;
+    susfs-auto)
+        case "${2:-}" in on|off) cfg_set susfs_auto "$2" ;; *) echo "用法: susfs-auto on|off"; exit 1 ;; esac
+        log "[·] SUSFS 自动加固已设为 ${2}"
+        [ "${2:-}" = "on" ] && susfs_harden >/dev/null 2>&1
+        echo "SUSFS_AUTO=$2"
+        ;;
+    latency-check)
+        # v2.8.8 侧信道延迟自检：stat() 耗时计时（只读测量，不动任何东西）
+        latency_check
         ;;
     keybox-audit)
         # 密钥自检：本地 keybox 的 sha256/DeviceID/证书数 + 服务端算好的证书链与

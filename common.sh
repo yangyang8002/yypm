@@ -684,7 +684,12 @@ hma_build_config() {
 }
 
 hma_oss_autocfg() {
-    [ "$(cfg_get hma_auto on)" = "off" ] && { dbg "HMA-OSS: hma_auto=off，跳过"; return 0; }
+    # v2.8.8：$1=force 绕过 hma_auto 开关 —— 开关只管开机/巡检的自动路径；
+    # 用户在 WebUI 点「自动配置」按钮是手动动作，不该被自己的关开关拦死（实测翻车点）。
+    if [ "$1" != "force" ] && [ "$(cfg_get hma_auto on)" = "off" ]; then
+        dbg "HMA-OSS: hma_auto=off，跳过（手动按钮走 force 不受此限）"
+        return 0
+    fi
     # 装了（生效区或待生效区）才有配置的意义
     [ -d "$HMA_MODULES_DIR/$HMA_MOD_ID" ] || [ -d "$HMA_STAGED_DIR/$HMA_MOD_ID" ] \
         || { dbg "HMA-OSS: 未安装，跳过"; return 0; }
@@ -904,6 +909,50 @@ clean_abnormal() {
     [ "$n" = "0" ] && [ "$r" = "0" ] && log "[·] 没有需要清理的痕迹"
     echo "CLEAN_ABNORMAL=$n"
     echo "CLEAN_ABNORMAL_KEPT=$r"
+    return 0
+}
+
+# ---- 2.15 FuseFixer LSPosed 自动配置（v2.8.8）----
+# 幂等直写 LSPosed modules_config.db：启用 FuseFixer + 把系统框架加入作用域。
+# dex 只 UPDATE enabled / INSERT OR IGNORE scope，写不进去就如实报错，绝不清库。
+# 没装 LSPosed（无配置库）时跳过。开机自动跑（ff_lspd_auto）与 WebUI 手动按钮共用。
+fusefixer_lspd_setup() {
+    local db=/data/adb/lspd/config/modules_config.db
+    [ -f "$db" ] || { dbg "fusefixer_lspd_setup: 未检测到 LSPosed，跳过"; return 1; }
+    appinfo_run lspd-enable "$db" io.github.a13e300.fusefixer android \
+        || { dbg "fusefixer_lspd_setup: LSPosed 配置库写入失败"; return 1; }
+    return 0
+}
+
+# ---- 2.16 侧信道延迟自检（v2.8.8）----
+# 检测器可经 stat() 耗时差分辨叠层处理的路径（时间侧信道）。这里 in-process
+# 逐路径计时（appinfo.dex statbench：android.system.Os.stat 直映射 syscall，
+# 预热后 3 批 × 2000 次取最优均值），输出基线与叠层路径的增量，只读不写。
+# 数值参考：同类工具宣称把侧信道压到 ~20µs 级；本自检给出本机实测数。
+latency_check() {
+    local out p ns extra base delta worst
+    out=$(appinfo_run statbench /data/local/tmp /data/adb /data/adb/modules \
+        /data/adb/modules/yypm /data/adb/ksu /data/adb/lspd 2>/dev/null) || return 1
+    base=""; worst=0
+    while IFS='|' read -r tag p ns extra; do
+        [ "$tag" = "BENCH" ] || continue
+        case "$ns" in
+            ''|*[!0-9]*) log "[·] 侧信道自检：$p 读取失败（$ns）"; continue ;;
+        esac
+        if [ -z "$base" ]; then
+            base=$ns
+            echo "LAT|$p|基线 $((ns/1000))µs"
+            continue
+        fi
+        delta=$((ns - base))
+        [ "$delta" -gt "$worst" ] && worst=$delta
+        echo "LAT|$p|$((ns/1000))µs（增量 $((delta/1000))µs）"
+    done <<EOF
+$out
+EOF
+    [ -n "$base" ] || { echo "LATENCY=FAIL(appinfo statbench 无输出)"; return 1; }
+    echo "LATENCY_BASE=$((base/1000))µs"
+    echo "LATENCY_DELTA=$((worst/1000))µs"
     return 0
 }
 
@@ -1879,6 +1928,12 @@ echo_status() {
     echo "ABNORMAL_AUTO=$(cfg_get abnormal_auto on)"
     # 检测类应用自动并入 TrickyStore 目标清单的开关状态（春秋检测项 26 整改）
     echo "AUTO_TARGET=$(cfg_get auto_target on)"
+    # v2.8.8：对抗自动化逐项开关（对抗页每项独立开关，开机自动执行；开关即状态源）
+    echo "SECURITY_PATCH=$(cfg_get security_patch auto)"
+    echo "HMA_AUTO=$(cfg_get hma_auto on)"
+    echo "FF_LSPD_AUTO=$(cfg_get ff_lspd_auto on)"
+    echo "DETECT_PREP_AUTO=$(cfg_get detect_prep_auto on)"
+    echo "SUSFS_AUTO=$(cfg_get susfs_auto on)"
     # 隐藏 BL 状态
     echo "AUTO_BL=$(cfg_get auto_bl off)"
     [ "$(getprop ro.boot.verifiedbootstate 2>/dev/null)" = "green" ] && echo "BL_HIDDEN=1" || echo "BL_HIDDEN=0"

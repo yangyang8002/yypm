@@ -508,21 +508,80 @@ html[data-lockdown="1"] #acBanner{
   <button class="btn ghost" id="btnDebug"><svg class="i" aria-hidden="true"><use href="#i-lock"/></svg> 手动关闭调试</button>
 </div>
 
-<div class="card">
-  <h2>HMA-OSS 隐藏配置</h2>
-  <div class="row"><span class="k"><span id="hmaDot" class="dot off"></span>配置状态</span><span class="v" id="hmaState">-</span></div>
+<div class="card wide">
+  <h2>春秋检测对抗</h2>
+  <p class="note">每项独立开关：<b>开 = 开机与巡检自动执行、切换立即生效</b>；关 = 只留手动按钮。
+  全部为查询级隐藏与非破坏清理，不卸载任何应用、不删任何有内容的文件。</p>
+  <div class="switch-row">
+    <div><div class="lab">风险应用自动隐藏</div><div class="hint">查询级（HMA-OSS）：检测器查不到、你照常用</div></div>
+    <div class="switch" id="riskAutoSwitch"></div>
+  </div>
+  <div class="switch-row">
+    <div><div class="lab">异常痕迹自动清理</div><div class="hint">只清落地空目录，有内容的一律不动</div></div>
+    <div class="switch" id="abnormalAutoSwitch"></div>
+  </div>
+  <div class="switch-row">
+    <div><div class="lab">安全补丁自动对齐</div><div class="hint">security_patch.txt · prop 模式，永不错位</div></div>
+    <div class="switch" id="spAutoSwitch"></div>
+  </div>
+  <div class="switch-row">
+    <div><div class="lab">HMA 隐藏自动配置</div><div class="hint">名单自动写入 HMA-OSS 配置（含管理器家族）</div></div>
+    <div class="switch" id="hmaAutoSwitch"></div>
+  </div>
+  <div class="switch-row">
+    <div><div class="lab">FuseFixer 自动配置</div><div class="hint">LSPosed 启用 + 勾选系统框架（幂等直写）</div></div>
+    <div class="switch" id="ffLspdAutoSwitch"></div>
+  </div>
+  <div class="switch-row">
+    <div><div class="lab">检测前预备开机执行</div><div class="hint">停隐藏应用 + 清目录缓存 + 痕迹报告</div></div>
+    <div class="switch" id="prepAutoSwitch"></div>
+  </div>
+  <div class="switch-row">
+    <div><div class="lab">SUSFS 自动加固</div><div class="hint">/data/adb 足迹 + 挂载表 + 开机状态伪装</div></div>
+    <div class="switch" id="susfsAutoSwitch"></div>
+  </div>
+  <div class="row"><span class="k"><span id="hmaDot" class="dot off"></span>HMA 配置</span><span class="v" id="hmaState">-</span></div>
   <div class="row"><span class="k">对检测应用隐藏</span><span class="v" id="hmaApps">-</span></div>
-  <div class="row"><span class="k">拦截对象</span><span class="v" id="hmaScope">-</span></div>
-  <div class="row"><span class="k">KSU 管理器包名</span><span class="v" id="hmaKsu">-</span></div>
+  <div class="row"><span class="k">安全补丁级别</span><span class="v" id="spState">-</span></div>
   <div class="row"><span class="k">SUSFS 加固</span><span class="v" id="hmaSusfs">-</span></div>
+  <div class="row2">
+    <button class="btn ghost" id="btnCqCheck"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg> 按春秋项自检</button>
+    <button class="btn ghost" id="btnCqFix"><svg class="i" aria-hidden="true"><use href="#i-build"/></svg> 一键检测前预备</button>
+  </div>
   <div class="row2">
     <button class="btn" id="btnHmaCfg"><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg> 自动配置 HMA</button>
     <button class="btn ghost" id="btnHmaMgr"><svg class="i" aria-hidden="true"><use href="#i-pageview"/></svg> 打开 HMA 管理器</button>
   </div>
-  <p class="note">自动写好 HMA-OSS 的默认隐藏配置：对春秋等检测应用隐藏风险应用清单
-  （MT/Scene/NP/Shizuku/各管理器/反挂作弊包；KSU 管理器按实际包名动态并入，改了随机包名也跟着换）。
-  有 SUSFS 内核时同步加固 /data/adb 足迹、挂载表与开机状态伪装。你在 HMA 管理器里
-  自己配过不会被覆盖；改动名单后点一次按钮即可跟进。配置重启后生效。</p>
+  <div class="row2">
+    <button class="btn ghost" id="btnFuseSetup"><svg class="i" aria-hidden="true"><use href="#i-settings"/></svg> FuseFixer 配置</button>
+    <button class="btn ghost" id="btnSpFix"><svg class="i" aria-hidden="true"><use href="#i-tune"/></svg> 立即对齐补丁</button>
+  </div>
+  <div class="row2">
+    <button class="btn ghost" id="btnLatency"><svg class="i" aria-hidden="true"><use href="#i-health"/></svg> 侧信道延迟自检</button>
+  </div>
+  <div id="latReport" style="display:none"></div>
+  <div class="row"><span class="k">Found ksu/免解设备</span><span class="v" id="cqKsu">本机即 KernelSU（模块自身运行环境）；检测器的 stat 计时类向量天然不命中，无需自隐藏</span></div>
+  <div class="row"><span class="k">异常进程</span><span class="v" id="cqProc">未检测</span></div>
+  <div class="row"><span class="k">MT2/异常文件</span><span class="v" id="cqMt">未检测</span></div>
+  <div class="row"><span class="k">KSU 管理器家族</span><span class="v" id="cqKsuApp">未检测</span></div>
+  <div class="row"><span class="k">Tampered Attestation Key(26)</span><span class="v" id="cqKey">未检测</span></div>
+  <div class="row"><span class="k">System compromised</span><span class="v" id="cqSys">上面各项全过即为通过（26 为系统级公钥黑名单项，属已知接受项）</span></div>
+  <details class="fold"><summary><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg>各项说明（①-④ / 26 / 侧信道延迟）</summary>
+  <div class="fd">
+  <p class="note">① <b>Tampered Attestation Key(26)</b> —— prop 与应答日期对不上。yypm 自动维护 security_patch.txt
+  （TrickyStore 正常配置项，prop 模式：应答实时跟随系统属性，永不错位、永不过时），即时生效无需重启，旧文件先备份 .bak。</p>
+  <p class="note">② <b>风险应用</b>（Scene / NP / Shizuku / GG / 各管理器等）—— 巡检自动并入 HMA-OSS 隐藏名单（查询级：
+  检测器查不到，你从桌面照常打开、数据不受影响；v2.8.7 起不再用 pm hide）。由「风险应用自动隐藏」开关控制。</p>
+  <p class="note">③ <b>MT2 / 异常文件</b> —— 巡检自动清理落地空目录（有内容的一律保留、绝不自动删）。
+  MT 主目录位置的根治：去 MT 管理器「设置 → 主目录」改掉，旧目录再自行删除。</p>
+  <p class="note">④ <b>FuseFixer / HMA-OSS</b> —— 服务器自动从上游抓取验签安装（HMA-OSS 需 Zygisk，Zygisk-Next 一并自动装）。
+  FuseFixer 装好后由「FuseFixer 自动配置」开关/按钮直写 LSPosed 配置库（启用 + 勾选系统框架），重启生效。</p>
+  <p class="note"><b>侧信道延迟</b> —— 检测器可经 stat() 耗时差分辨叠层处理的路径。「侧信道延迟自检」在本机
+  in-process 实测（每路径 2000 次取最优均值）：基线 vs /data/adb 系列的增量越小越平（同类工具宣称 ~20µs 级）。
+  压低手段：SUSFS 内核级路径隐藏（本模块已自动加 sus_path /data/adb）+ 保持内核 SUSFS 为新版。</p>
+  <p class="note">「隐藏应用列表生效」—— 先用「一键检测前预备」再测；仍命中看日志里的痕迹报告定位。
+  管理器家族只报状态不自动处理：v2.8.7 起已并入查询级隐藏，桌面照常打开、WebUI 不受影响。</p>
+  </div></details>
 </div>
 
 <div class="card wide">
@@ -606,59 +665,10 @@ html[data-lockdown="1"] #acBanner{
   （模块不再加载），但误判能一键还原。「删除」是 rm -rf，不可恢复。</p>
 </div>
 
-<div class="card wide">
-  <h2>春秋检测整改指引</h2>
-  <p class="note">春秋 Native check 报 <b>System compromised</b> 一般是下面几项。逐项对照处理，
-  处理后重新检测确认。</p>
-  <div class="row"><span class="k">安全补丁级别对齐</span><span class="v" id="spState">-</span></div>
-  <details class="fold"><summary><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg>查看逐项说明（①-④）</summary>
-  <div class="fd">
-  <p class="note">① <b>Tampered Attestation Key(26)</b> —— 检测方拿 getprop 读到的补丁日期和 attestation
-  应答里的日期对不上。yypm 自动维护 <code>security_patch.txt</code>（与 keybox 同目录，TrickyStore 的正常配置项），
-  采用 <b>prop 模式</b>：应答实时跟随系统属性，永不错位、永不过时；TEESimulator 即时生效，无需重启。
-  已存在的旧文件（固定日期等）会先备份为 .bak 再替换。</p>
-  <p class="note">② <b>风险应用</b>（Scene / NP管理器 / Shizuku / GG / 各 root 管理器等）—— <b>全自动</b>：
-  每轮巡检发现这些应用已安装，就自动并入 HMA-OSS 隐藏名单（<b>查询级隐藏</b>：春秋等作用域
-  检测器查不到它们；你自己从桌面照常打开、数据不受影响。v2.8.7 起不再用 pm hide）。
-  设 <code>risk_autohide=off</code> 可关闭。</p>
-  <p class="note">③ <b>MT管理器 / MT2 文件夹 / 异常文件</b> —— 巡检每轮自动清理 MT2 等落地<b>空</b>目录
-  （有内容的一律保留、绝不自动删）。MT 目录位置的根治办法：去 MT 管理器「设置 → 主目录」
-  改掉主目录位置，改完后旧目录即可自行删除。</p>
-  <p class="note">④ <b>FuseFixer / HMA-OSS</b> —— <b>全自动</b>：yypm 的服务器会从上游 release 抓取这两个组件，
-  验签后自动安装（HMA-OSS 是 Zygisk 模块，需要 Zygisk（Zygisk-Next 会一并自动装），重启后生效，
-  自带管理 App，装好打开勾选要隐藏的应用）。FuseFixer 是 LSPosed 模块，装完点下面按钮一键配置
-  （启用模块 + 作用域勾选系统框架），重启后即对 Android/data 探测生效。</p>
-  <p class="note">「隐藏应用列表生效」—— 先用「一键检测前预备」再测。预备会停掉隐藏名单里在跑的应用、
-  清目录缓存并收敛痕迹；之后再测仍命中，说明有新的残留视图，看日志里的痕迹报告定位。</p>
-  </div></details>
-  <div class="row2">
-    <button class="btn ghost" id="btnSpFix"><svg class="i" aria-hidden="true"><use href="#i-tune"/></svg> 立即对齐</button>
-  </div>
-  <button class="btn ghost" id="btnFuseSetup"><svg class="i" aria-hidden="true"><use href="#i-settings"/></svg> 一键配置 FuseFixer（LSPosed 启用 + 勾选系统框架）</button>
-</div>
+<!-- v2.8.8：本卡已并入上方「春秋检测对抗」卡 -->
+<!-- 旧卡残体（折叠说明与按钮）已并入「春秋检测对抗」卡，v2.8.8 删除 -->
 
-<div class="card wide">
-  <h2>春秋检测对照与预备（v2.8.7）</h2>
-  <p class="note">对照春秋 Native check-Eros 的报告项逐项排查与预备。
-  「按春秋项自检」只读不改；「一键检测前预备」跑春秋前用：同步隐藏名单进 HMA-OSS 配置（查询级）、
-  对齐安全补丁级别、把检测应用加入 TrickyStore 目标清单、停掉隐藏名单里在跑的应用并清目录缓存
-  （收敛「隐藏应用列表生效」类残留）、非破坏式清空目录痕迹并报告文件痕迹。
-  不卸载任何应用、不删任何有内容的文件。</p>
-  <div class="row"><span class="k">Found ksu/免解设备</span><span class="v" id="cqKsu">本机即 KernelSU（模块自身运行环境）；检测器的 stat 计时类向量天然不命中，无需自隐藏</span></div>
-  <div class="row"><span class="k">异常进程</span><span class="v" id="cqProc">未检测</span></div>
-  <div class="row"><span class="k">MT2/异常文件</span><span class="v" id="cqMt">未检测</span></div>
-  <div class="row"><span class="k">KSU 管理器家族</span><span class="v" id="cqKsuApp">未检测</span></div>
-  <div class="row"><span class="k">Tampered Attestation Key(26)</span><span class="v" id="cqKey">未检测</span></div>
-  <div class="row"><span class="k">System compromised</span><span class="v" id="cqSys">上面各项全过即为通过（26 为系统级公钥黑名单项，属已知接受项）</span></div>
-  <div class="row2">
-    <button class="btn ghost" id="btnCqCheck"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg> 按春秋项自检</button>
-    <button class="btn ghost" id="btnCqFix"><svg class="i" aria-hidden="true"><use href="#i-build"/></svg> 一键检测前预备</button>
-  </div>
-  <details class="fold"><summary><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg>为什么管理器（KernelSU / SukiSU 等）只显示不自动处理</summary>
-  <div class="fd"><p class="note">管理器是用户必需品，只报状态、不自动处理。v2.8.7 起 root 管理器家族
-  （KernelSU / SukiSU Ultra / KSU Next / APatch 等）已并入 HMA-OSS 查询级隐藏名单：春秋等作用域检测器
-  查不到它们，而你自己从桌面照常打开、WebUI 不受影响 —— 不存在旧方案 pm hide 的自锁问题。</p></div></details>
-</div>
+<!-- 「春秋检测对照与预备」卡已并入「春秋检测对抗」卡，v2.8.8 删除 -->
 
 <div class="card">
   <h2>深度伪装与异常清理</h2>
@@ -978,9 +988,15 @@ async function refresh(useCache){
   document.getElementById('hmaDot').className='dot '+(hcs==='ours'?'on':(hcs==='user'?'warn':'off'));
   document.getElementById('hmaState').textContent=hsMap[hcs]||'-';
   document.getElementById('hmaApps').textContent=(s.HMA_APPS&&s.HMA_APPS!=='0')?(s.HMA_APPS+' 个应用'):'-';
-  document.getElementById('hmaScope').textContent=s.HMA_SCOPE||'-';
-  document.getElementById('hmaKsu').textContent=(s.KSU_PKG&&s.KSU_PKG!=='none')?s.KSU_PKG:'未识别';
   document.getElementById('hmaSusfs').textContent=(s.SUSFS_TOOL==='ready')?'就绪（/data/adb 隐藏 + 挂载表 + 开机状态伪装）':'无（换个带 SUSFS 的内核可再藏一层）';
+  // v2.8.8 对抗自动化逐项开关（对抗页每项独立开关，开机/巡检自动执行）
+  document.getElementById('riskAutoSwitch').classList.toggle('on',s.RISK_AUTOHIDE==='on');
+  document.getElementById('abnormalAutoSwitch').classList.toggle('on',s.ABNORMAL_AUTO==='on');
+  document.getElementById('spAutoSwitch').classList.toggle('on',s.SECURITY_PATCH==='on'||s.SECURITY_PATCH==='auto');
+  document.getElementById('hmaAutoSwitch').classList.toggle('on',s.HMA_AUTO==='on');
+  document.getElementById('ffLspdAutoSwitch').classList.toggle('on',s.FF_LSPD_AUTO==='on');
+  document.getElementById('prepAutoSwitch').classList.toggle('on',s.DETECT_PREP_AUTO==='on');
+  document.getElementById('susfsAutoSwitch').classList.toggle('on',s.SUSFS_AUTO==='on');
   var dbOn=(s.DEEP_BL==='on');
   document.getElementById('dbDot').className='dot '+(dbOn?'on':'off');
   document.getElementById('deepBlState').textContent=dbOn?'已开启':'未开启';
@@ -2248,19 +2264,56 @@ document.getElementById('btnHmaCfg').onclick=hmaCfg;
 document.getElementById('btnHmaMgr').onclick=hmaMgr;
 document.getElementById('btnDeepBl').onclick=deepBlNow;
 document.getElementById('deepBlSwitch').onclick=toggleDeepBl;
-// 一键配置 FuseFixer：直写 LSPosed 配置库（启用模块 + scope 加系统框架），结果按行 toast
-async function fuseSetup(){
-  var btn=document.getElementById('btnFuseSetup');
+// ---- v2.8.8 对抗自动化逐项开关：开 = 开机/巡检自动执行 + 切换即生效；关 = 只留手动按钮 ----
+function envAutoToggle(id,action,label){
+  var el=document.getElementById(id);
+  el.onclick=async function(){
+    var next=el.classList.contains('on')?'off':'on';
+    try{ await exec(MODDIR+'/webui.sh '+action+' '+next); }catch(e){}
+    log(label+(next==='on'?'：已开启（开机自动执行，已立即生效）':'：已关闭（仅保留手动按钮）'),'info');
+    await refresh();
+  };
+}
+envAutoToggle('riskAutoSwitch','risk-auto','风险应用自动隐藏');
+envAutoToggle('abnormalAutoSwitch','abnormal-auto','异常痕迹自动清理');
+envAutoToggle('spAutoSwitch','sp-auto','安全补丁自动对齐');
+envAutoToggle('hmaAutoSwitch','hma-auto','HMA 隐藏自动配置');
+envAutoToggle('ffLspdAutoSwitch','ff-lspd-auto','FuseFixer 自动配置');
+envAutoToggle('prepAutoSwitch','detect-prep-auto','检测前预备开机执行');
+envAutoToggle('susfsAutoSwitch','susfs-auto','SUSFS 自动加固');
+// ---- v2.8.8 侧信道延迟自检（只读测量）：appinfo.dex statbench in-process stat() 计时 ----
+async function latencyCheck(){
+  busy('btnLatency',true,'测量中...');
   try{
-    setBusy(btn,true);
-    var out=await run('webui.sh fusefixer-setup',30000);
-    if(/LSPD=OK/.test(out)){ showToast('已配置：重启后生效','ok'); }
+    var r=await execT(MODDIR+'/webui.sh latency-check',60000);
+    var html='';
+    (r.stdout||'').split('\n').forEach(function(l){
+      var p=l.split('|');
+      if(p[0]==='LAT'&&p.length>=3){ html+='<div class="row"><span class="k">'+esc(p[1])+'</span><span class="v">'+esc(p[2])+'</span></div>'; }
+      else if(l.indexOf('LATENCY_BASE=')===0){ html+='<div class="row"><span class="k">基线（/data/local/tmp）</span><span class="v">'+esc(l.slice(13))+'</span></div>'; }
+      else if(l.indexOf('LATENCY_DELTA=')===0){ html+='<div class="row"><span class="k">最大增量（叠层路径 vs 基线）</span><span class="v">'+esc(l.slice(14))+'</span></div>'; }
+    });
+    var box=document.getElementById('latReport');
+    if(html){ box.innerHTML=html; box.style.display='block'; log('侧信道延迟自检完成','info'); }
+    else{ toast('侧信道自检失败（appinfo statbench 无输出，见日志）'); }
+  }catch(e){ toast('侧信道自检失败'); }
+  busy('btnLatency',false);
+}
+document.getElementById('btnLatency').onclick=latencyCheck;
+// 一键配置 FuseFixer：直写 LSPosed 配置库（启用模块 + scope 加系统框架），结果按行 toast
+// v2.8.8 修复：旧版引用了未定义的 run/setBusy/showToast，按钮一点就抛错（静默死按钮）。
+// 改用页面里真实存在的 busy/execT/toast。
+async function fuseSetup(){
+  busy('btnFuseSetup',true,'配置中...');
+  try{
+    var r=await execT(MODDIR+'/webui.sh fusefixer-setup',30000);
+    if(/LSPD=OK/.test(r.stdout||'')){ toast('FuseFixer 已配置：重启后生效'); }
     else{
-      var m=out.match(/LSPD=FAIL\(([^)]*)\)/);
-      showToast(m?('失败：'+m[1]):'失败（输出过长，见日志）','err');
+      var m=(r.stdout||'').match(/LSPD=FAIL\(([^)]*)\)/);
+      toast(m?('失败：'+m[1]):'失败（详见日志）');
     }
-  }catch(e){ showToast('执行失败','err'); }
-  setBusy(btn,false);
+  }catch(e){ toast('执行失败'); }
+  busy('btnFuseSetup',false);
 }
 document.getElementById('btnFuseSetup').onclick=function(){ ask('配置 FuseFixer','将向 LSPosed 配置库写入：启用 io.github.a13e300.fusefixer，并把「系统框架」加入其作用域。重启后生效。',{ok:'写入'}).then(function(v){ if(v) fuseSetup(); }); };
 document.getElementById('btnAppsLoad').onclick=appsLoad;

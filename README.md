@@ -50,6 +50,13 @@ keybox 不随模块分发，而是由服务端从多个公开上游源拉取、�
 - 注入用「原子替换 + 权限修正」，不触发 TEESimulator 的异常文件监控
 
 #### 2. 环境检测整改（春秋/牛牛等检测器的逐项自动处理）
+- **对抗逐项开关（v2.8.8）**：对抗页每个可自动化功能都有独立开关 —— **开 = 开机与巡检
+  自动执行、切换立即生效；关 = 只留手动按钮**。覆盖：风险应用隐藏 / 异常痕迹清理 /
+  安全补丁对齐 / HMA 隐藏配置 / FuseFixer 配置 / 检测前预备 / SUSFS 加固。
+  手动按钮不受开关拦截（如「自动配置 HMA」走 force，关了自动照样能手动跑）
+- **侧信道延迟自检（v2.8.8）**：in-process 对 `stat()` 系统调用计时（每路径 2000 次
+  取最优均值），给出基线 vs `/data/adb` 叠层路径的延迟增量 —— 只读测量不写任何东西，
+  帮你判断本机侧信道信号强度（同类工具宣称 ~20µs 级）
 - **安全补丁级别**：自动写入 `security_patch.txt`（`system=prop` 模式），attestation
   始终回答系统当前属性值，OTA 后不再出现跨组件日期错位；他人的固定日期文件会被
   备份（`.bak`）后替换，`security_patch=off` 可整体关闭
@@ -60,10 +67,12 @@ keybox 不随模块分发，而是由服务端从多个公开上游源拉取、�
   绝不自动删除 —— MT 管理器目录的根治办法是去 MT「设置 → 主目录」自行改位置
   （`abnormal_auto=off` 可关）
 - **FuseFixer / HMA-OSS**：服务器自动跟踪上游 release，验签后**自动安装**（APK 已装
-  判定三级：pm path → pm list → cmd package path）；WebUI 一键把 FuseFixer 写进
-  LSPosed 配置库（启用模块 + 勾选系统框架）
-- **检测前预备（v2.8.7）**：跑检测器前一键收敛到「检测视图干净」状态 —— 结束隐藏
-  名单内应用进程 + drop_caches + 非破坏清目录 + 报告已知文件痕迹（只报告，绝不删）
+  判定三级：pm path → pm list → cmd package path）；FuseFixer 的 LSPosed 启用 +
+  勾选系统框架由「FuseFixer 自动配置」开关开机自动直写（幂等：只 UPDATE enabled /
+  INSERT OR IGNORE scope，写不进如实报错，绝不清库），WebUI 也有手动按钮
+- **检测前预备（v2.8.7，v2.8.8 起可开机自动执行）**：跑检测器前一键收敛到「检测视图
+  干净」状态 —— 结束隐藏名单内应用进程 + drop_caches + 非破坏清目录 + 报告已知
+  文件痕迹（只报告，绝不删）
 
 #### 3. 组件包分发（带签名的应用商店）
 - 服务端维护组件清单（LSPosed / Zygisk-Next / PlayIntegrityFix / TEESimulator 等）
@@ -128,9 +137,13 @@ keybox 不随模块分发，而是由服务端从多个公开上游源拉取、�
 | `check_interval` | 3600 | 巡检周期（秒） |
 | `net_retry` | 3 | 网络失败重试次数 |
 | `anti_cheat` | on | 反挂检查开关 |
-| `security_patch` | on | 安全补丁 prop 对齐 |
-| `risk_autohide` | on | 风险应用自动隐藏 |
-| `abnormal_auto` | on | 异常环境自动清理 |
+| `security_patch` | on | 安全补丁 prop 对齐（对抗页开关） |
+| `risk_autohide` | on | 风险应用自动隐藏（对抗页开关） |
+| `abnormal_auto` | on | 异常环境自动清理（对抗页开关） |
+| `hma_auto` | on | HMA 隐藏自动配置（对抗页开关；手动按钮走 force 不受限） |
+| `ff_lspd_auto` | on | FuseFixer LSPosed 自动配置（v2.8.8） |
+| `detect_prep_auto` | on | 检测前预备开机执行（v2.8.8） |
+| `susfs_auto` | on | SUSFS 自动加固（v2.8.8） |
 | `mirror_urls` | on | 去中心化镜像开关 |
 | `mirror_url_list` | 内置 | 自定义镜像列表（空格分隔） |
 
@@ -161,8 +174,16 @@ Highlights:
   and automatic rollback
 - automatic rectification for common integrity-check findings (security-patch prop mode,
   query-level risk-app hiding, FuseFixer/HMA-OSS auto-install with 3-tier installed
-  detection, one-tap LSPosed scoping, pre-check prep that stops/frops/report —
-  never deletes content; cleanup is non-destructive by design)
+  detection, pre-check prep that stops/frops/report — never deletes content; cleanup is
+  non-destructive by design)
+- per-item automation toggles (v2.8.8): every automatable countermeasure has its own
+  switch — on = runs at boot + applies immediately on toggle, off = manual buttons only
+  (manual actions bypass the auto gate via `force`, so a switch never bricks a button);
+  covers risk-app hiding, trace cleanup, security-patch, HMA config, FuseFixer LSPosed
+  scoping, pre-check prep and SUSFS hardening
+- side-channel latency self-check (v2.8.8): in-process `stat()` timing (best-of-3 batches
+  × 2000 calls per path) reporting the baseline vs `/data/adb` overlay delta — read-only
+  measurement (similar tools advertise ~20µs)
 - signed component distribution channel (KSU modules + APKs) with upstream release
   tracking
 - decentralized mirrors via GitHub Actions (jsDelivr / raw / release assets) — the

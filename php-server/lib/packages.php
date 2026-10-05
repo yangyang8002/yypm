@@ -6,23 +6,52 @@
 
 require_once __DIR__ . '/sources.php';
 
-/** 从模块 zip 里读 module.prop（多层路径取最短，兼容嵌套一层目录的打包方式） */
-function pkg_read_module_prop(string $zipPath): ?array {
-    if (!class_exists('ZipArchive')) return null;
-    $zip = new ZipArchive();
-    if ($zip->open($zipPath) !== true) return null;
-    $best = null;
-    for ($i = 0; $i < $zip->numFiles; $i++) {
-        $st = $zip->statIndex($i);
-        $p = str_replace('\\', '/', (string)($st['name'] ?? ''));
-        if (basename($p) === 'module.prop' && ($best === null || strlen($p) < strlen($best['path']))) {
-            $best = ['path' => $p, 'body' => $zip->getFromIndex($i)];
+/** busybox unzip 兜底：读 zip 内单个文本条目。
+ *  上游开始出现 PHP ZipArchive（libzip）解不出的压缩方法（如 LSPosed v2.2.1 起
+ *  的 zstd 条目）—— 列目录没问题，取内容是空。服务器放一份静态 busybox 到
+ *  /usr/local/bin/busybox 兜底，读不出返回 null。 */
+function pkg_busybox_entry(string $zipPath, string $entry): ?string {
+    static $bb = null;
+    if ($bb === null) {
+        $bb = '';
+        foreach (['/usr/local/bin/busybox', '/root/bin/busybox', '/usr/bin/busybox'] as $c) {
+            if (is_executable($c)) { $bb = $c; break; }
         }
     }
-    $zip->close();
-    if ($best === null || !is_string($best['body'])) return null;
+    if ($bb === '') return null;
+    $cmd = $bb . ' unzip -p ' . escapeshellarg($zipPath) . ' ' . escapeshellarg($entry) . ' 2>/dev/null';
+    $txt = @shell_exec($cmd);
+    return (is_string($txt) && $txt !== '') ? $txt : null;
+}
+
+/** 从模块 zip 里读 module.prop（多层路径取最短，兼容嵌套一层目录的打包方式） */
+function pkg_read_module_prop(string $zipPath): ?array {
+    $body = null;
+    if (class_exists('ZipArchive')) {
+        $zip = new ZipArchive();
+        if ($zip->open($zipPath) === true) {
+            $best = null;
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $st = $zip->statIndex($i);
+                $p = str_replace('\\', '/', (string)($st['name'] ?? ''));
+                if (basename($p) === 'module.prop' && ($best === null || strlen($p) < strlen($best['path']))) {
+                    $best = ['path' => $p, 'body' => $zip->getFromIndex($i)];
+                }
+            }
+            $zip->close();
+            // 列得出条目但内容取空（zstd 等新压缩方法）→ busybox 兜底取同一路径
+            if ($best !== null && (!is_string($best['body']) || $best['body'] === '')) {
+                $best['body'] = pkg_busybox_entry($zipPath, $best['path']);
+            }
+            if ($best !== null && is_string($best['body']) && $best['body'] !== '') {
+                $body = $best['body'];
+            }
+        }
+    }
+    if ($body === null) $body = pkg_busybox_entry($zipPath, 'module.prop');
+    if (!is_string($body)) return null;
     $out = [];
-    foreach (preg_split('/\r?\n/', $best['body']) as $line) {
+    foreach (preg_split('/\r?\n/', $body) as $line) {
         if (preg_match('/^(id|name|version|versionCode)=(.*)$/', trim($line), $m)) {
             $out[$m[1]] = trim($m[2]);
         }
