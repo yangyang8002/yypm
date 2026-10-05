@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-10-05 08:30:14",
+  "updated_at": "2026-10-05 10:59:17",
   "count": 6,
   "modules": {
     "HMA-OSS.zip": {
@@ -15,14 +15,14 @@
       "x-versionCode": 7304656
     },
     "LSPosed.zip": {
-      "sha256": "725915707f88a4f5ebecddab908cb217aa0a6d98955db5885bc9fadda81e75b8",
-      "size": 5986702,
+      "sha256": "ed37de2d2097aa6ba871377e7bf4ac719b708484f9468928e6abae10ab311e74",
+      "size": 6431714,
       "url": "https://github.com/yangyang8002/yypm/releases/download/mirror/LSPosed.zip",
-      "signature": "E9NySF+K/vydppwa0Pr9xONfWmcZHvUlqJeKkfR7S+lVEQqX8m/aqwQtp0/g6mUbTbWE4c4fFtC1F10pzZOUBA==",
+      "signature": "bNXbllAn1TjZqNryrNi6G4Q2/VcZwsFJ0lcXanHlCXWvUcdY2UQBL7kYvywzhpuHXfFnM2Q520W+51XtdOUHDg==",
       "x-id": "zygisk_lsposed",
       "x-name": "LSPosed",
-      "x-version": "v2.2.0 (7854)",
-      "x-versionCode": 7854
+      "x-version": "v2.2.1 (7912)",
+      "x-versionCode": 7912
     },
     "PlayIntegrityFix.zip": {
       "sha256": "10eec591735cafee437332871443a2fadf6632b1a58abb16fe2461d9df100ab1",
