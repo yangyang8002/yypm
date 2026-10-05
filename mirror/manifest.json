@@ -3,7 +3,7 @@
   "version_code": 287,
   "base_url": "https://yangyang8002.xin/api/kernelsu/module",
   "keybox": {
-    "updated_at": "2026-10-05 05:30:19",
+    "updated_at": "2026-10-05 08:30:13",
     "source": "pinned",
     "size": 12713,
     "sha256": "bb72001d8161618aeb0ceeca8d9f8965d15fa70c8c44b47e2c7e450a40e77353",
@@ -13,7 +13,7 @@
       "ok": true,
       "reasons": [],
       "warnings": [],
-      "checked_at": "2026-10-05 05:30:19",
+      "checked_at": "2026-10-05 08:30:13",
       "min_not_after": "2040-04-08",
       "days_remaining": 4933,
       "cert_count": 6,
@@ -117,7 +117,7 @@
         "source": "megatron",
         "sha256": "f9c3b27b8668ba812a0ff2a4966ed08cabcd35cfd523d8f0759943f2b9717eaa",
         "size": 12546,
-        "days_remaining": 1937,
+        "days_remaining": 1936,
         "min_not_after": "2032-01-24"
       },
       {
@@ -145,7 +145,7 @@
         "source": "keyboxhub/keybox_7af67d9884",
         "sha256": "25f73d0c11ce6999f82ac0486444b1a6f4576e5e8f4d5153d5aff0a9331fd074",
         "size": 12750,
-        "days_remaining": 2836,
+        "days_remaining": 2835,
         "min_not_after": "2034-07-11"
       }
     ],
@@ -167,7 +167,7 @@
     "signature": "UV1ooy0Pait4o/bhNjZ0+odyOSiwOSUyBCzxCeKIa8wkaeYfxGH1GEQU2LUMRI1gd/AUQKx8d6RVDfYxhPHhBA=="
   },
   "server": {
-    "updated_at": "2026-10-05 05:30:19",
+    "updated_at": "2026-10-05 08:30:13",
     "revoked_count": 517,
     "sources": [
       {
