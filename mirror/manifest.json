@@ -3,7 +3,7 @@
   "version_code": 289,
   "base_url": "https://yangyang8002.xin/api/kernelsu/module",
   "keybox": {
-    "updated_at": "2026-10-14 01:30:12",
+    "updated_at": "2026-10-14 06:30:15",
     "source": "pinned",
     "size": 12713,
     "sha256": "bb72001d8161618aeb0ceeca8d9f8965d15fa70c8c44b47e2c7e450a40e77353",
@@ -13,9 +13,9 @@
       "ok": true,
       "reasons": [],
       "warnings": [],
-      "checked_at": "2026-10-14 01:30:12",
+      "checked_at": "2026-10-14 06:30:15",
       "min_not_after": "2040-04-08",
-      "days_remaining": 4925,
+      "days_remaining": 4924,
       "cert_count": 6,
       "serial_count": 5,
       "serials": [
@@ -131,21 +131,21 @@
         "source": "integritybox",
         "sha256": "855a786ce84b8a14953b08ff24320bde228a94657c7a465b2e71ca1a46d5ccb3",
         "size": 13109,
-        "days_remaining": 1291,
+        "days_remaining": 1290,
         "min_not_after": "2030-04-27"
       },
       {
         "source": "keyboxstatus/1120",
         "sha256": "3a6da8f88f878df87b0803a8b39dec5265e7efc6e2f9bb0bd64d029883f2f3bb",
         "size": 12712,
-        "days_remaining": 4925,
+        "days_remaining": 4924,
         "min_not_after": "2040-04-08"
       },
       {
         "source": "keyboxhub/keybox_7daca5df01",
         "sha256": "ebca815824e276b71e7fc4eb0aaf26895ae8a111272f93295ed8068cd4a5fbd4",
         "size": 12750,
-        "days_remaining": 1982,
+        "days_remaining": 1981,
         "min_not_after": "2032-03-18"
       }
     ],
@@ -167,7 +167,7 @@
     "signature": "0t9tb2E5aALvXLQM3aFlUSNu9jhp/adsDGk2QMmHw3iw0vJ63wy7mDBayRVliigydou916hgq9n1qv7bwVhLAg=="
   },
   "server": {
-    "updated_at": "2026-10-14 01:30:12",
+    "updated_at": "2026-10-14 06:30:15",
     "revoked_count": 517,
     "sources": [
       {
