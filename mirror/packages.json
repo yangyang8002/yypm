@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-10-13 17:30:15",
+  "updated_at": "2026-10-14 01:30:12",
   "count": 6,
   "modules": {
     "HMA-OSS.zip": {
@@ -45,16 +45,16 @@
       "x-versionCode": 307
     },
     "Zygisk-Next.zip": {
-      "sha256": "17c506ffea119f03e5e9d9c70acd400efdd804f35d8968d0d56a5d66fea9f3ab",
-      "size": 6682412,
+      "sha256": "ce50b13fecb9e4456db69ef17b715f7cfbc094004dd9f30f7d6348dfab619a96",
+      "size": 6714344,
       "url": "https://github.com/yangyang8002/yypm/releases/download/mirror/Zygisk-Next.zip",
-      "signature": "dq1R1kwdCJEOcd/uy0ku8Oe9GaRJqobwnooAxR05GTF1MxWBUON1jMoAeubT6zTb4h6ZD3u+dxiAQTSJEbjCCQ==",
+      "signature": "9JYAZmIUtiHeUNMQiioLXAMt680i2XllbKMZ5KJ/cXpGnUWfha3xPZlhqCc1VBBN/SjVXi9E0K3vDDbuGwnFCg==",
       "x-type": "ksu-module",
       "x-auto": 1,
       "x-id": "zygisksu",
       "x-name": "Zygisk Next",
-      "x-version": "1.5.1 (862-56ae062-release)",
-      "x-versionCode": 862
+      "x-version": "1.5.2 (864-a4a72ce-release)",
+      "x-versionCode": 864
     },
     "FuseFixer.apk": {
       "sha256": "572ebe7705706b9807271f60b3daf89046712ec102e79d0ac09713b5be7dcb40",
