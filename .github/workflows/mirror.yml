@@ -43,9 +43,21 @@ jobs:
           fi
           SRC="${SRC%/}"
           mkdir -p dl mirror
-          curl -fsSL "$SRC/?action=manifest" -o dl/manifest.json
-          curl -fsSL "$SRC/?action=keybox"   -o dl/keybox.xml
-          curl -fsSL "$SRC/?action=packages" -o dl/packages.json
+
+          # 主源偶发 nginx 504（上游 PHP 瞬时过载，实测 30s 超时）——
+          # 2026-10-23 的两次 run（02:08、05:52）就是被一次 504 打断，整批镜像停摆。
+          # 所有拉取统一带退避重试，抖动一次不该让 mirror 落后。
+          fetch_to() { # $1=url  $2=输出文件
+            echo "[·] 拉取 $1"
+            curl -fsSL --connect-timeout 15 --max-time 180 \
+                 --retry 6 --retry-delay 5 --retry-max-time 420 \
+                 --retry-all-errors --retry-connrefused \
+                 "$1" -o "$2"
+          }
+
+          fetch_to "$SRC/?action=manifest" dl/manifest.json
+          fetch_to "$SRC/?action=keybox"   dl/keybox.xml
+          fetch_to "$SRC/?action=packages" dl/packages.json
 
           # Ed25519 公钥（raw32 base64）-> PEM（前缀是固定的 DER 头，12 字节整除 3 可直接拼）
           { echo "-----BEGIN PUBLIC KEY-----"; echo "MCowBQYDK2VwAyEA${PUB}"; echo "-----END PUBLIC KEY-----"; } > pub.pem
@@ -58,14 +70,14 @@ jobs:
           echo "[✓] keybox 验签通过"
 
           MURL="$(jq -r '.module.url' dl/manifest.json)"
-          curl -fsSL "$MURL" -o dl/module.zip
+          fetch_to "$MURL" dl/module.zip
           verify dl/module.zip "$(jq -r '.module.signature' dl/manifest.json)"
           echo "[✓] module.zip 验签通过"
 
           jq -r '.modules | to_entries[] | "\(.key)\t\(.value.url)\t\(.value.signature)"' dl/packages.json |
           while IFS=$'\t' read -r name url sig; do
             [ -n "$name" ] || continue
-            curl -fsSL "$url" -o "dl/$name"
+            fetch_to "$url" "dl/$name"
             verify "dl/$name" "$sig"
             echo "[✓] $name 验签通过"
           done
