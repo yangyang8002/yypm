@@ -21,5 +21,11 @@
     "type": "ksu-module",
     "auto": true,
     "note": "KernelSU 环境提供 Zygisk（HMA-OSS 等模块的运行前提）；上游 LSPosed/ZygiskNext"
+  },
+  "PlayIntegrityFix.zip": {
+    "github_release": "KOWX712/PlayIntegrityFix",
+    "asset_match": "PlayIntegrityFix_.*inject.*\\.zip$",
+    "type": "ksu-module",
+    "note": "Play Integrity Fix（INJECT 分支；上游 KOWX712 接管的 chiteroman 项目）。默认不自动装：它改 prop/注入 zygisk，属于用户显式选择的伪装模块"
   }
 }
