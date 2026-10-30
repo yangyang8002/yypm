@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-10-30 23:00:37",
+  "updated_at": "2026-10-30 23:34:57",
   "count": 6,
   "modules": {
     "HMA-OSS.zip": {
@@ -25,14 +25,15 @@
       "x-versionCode": 7912
     },
     "PlayIntegrityFix.zip": {
-      "sha256": "10eec591735cafee437332871443a2fadf6632b1a58abb16fe2461d9df100ab1",
-      "size": 660329,
+      "sha256": "bc7a9d92638a6bd90a41b70d3aaf86bc549dd8d3a1e5e901b315a6c425852697",
+      "size": 692511,
       "url": "https://github.com/yangyang8002/yypm/releases/download/mirror/PlayIntegrityFix.zip",
-      "signature": "9Mt8HOY4PtGcGVW8nLO4HGpr4m+K0umfHVwE8FP+Mw+gA1OAtG1rwXX/6Al4O9GD775U4udd4kcSF/bCUN2CCQ==",
+      "signature": "cTZb8ixzBearo3mmuSXMHkKsOpSxf8noQOaIGhqUt0Aeeh9ahrYPUtyI6zd4MD7O3p4kQgTF+wklKs/tXALZCQ==",
+      "x-type": "ksu-module",
       "x-id": "playintegrityfix",
       "x-name": "Play Integrity Fix [INJECT]",
-      "x-version": "v4.7-1-inject-s",
-      "x-versionCode": 471
+      "x-version": "v4.9-inject-s",
+      "x-versionCode": 490
     },
     "TEESimulator.zip": {
       "sha256": "ea4cfad7312834b4843e1fe2d7107e4d587e8c988eca558e0656985043928051",
