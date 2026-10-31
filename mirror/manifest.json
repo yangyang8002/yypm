@@ -1,9 +1,9 @@
 {
-  "version": "v2.8.9",
-  "version_code": 289,
+  "version": "v2.8.10",
+  "version_code": 290,
   "base_url": "https://yangyang8002.xin/api/kernelsu/module",
   "keybox": {
-    "updated_at": "2026-10-31 19:00:44",
+    "updated_at": "2026-10-31 22:01:21",
     "source": "pinned",
     "size": 12713,
     "sha256": "bb72001d8161618aeb0ceeca8d9f8965d15fa70c8c44b47e2c7e450a40e77353",
@@ -13,7 +13,7 @@
       "ok": true,
       "reasons": [],
       "warnings": [],
-      "checked_at": "2026-10-31 19:00:44",
+      "checked_at": "2026-10-31 22:01:21",
       "min_not_after": "2040-04-08",
       "days_remaining": 4907,
       "cert_count": 6,
@@ -140,13 +140,13 @@
     "sign_public": "4+b3y4zvxtwJrNYDvD/1sCOy+rABnw5AbD3ivXpSg+E="
   },
   "module": {
-    "sha256": "f6e10251058c8b876fcfcbbd66c5f84df9e14cbf80fc931a5919a995ef786641",
-    "size": 907016,
+    "sha256": "9b0002ea4a0751ec30c7ba457e282442c7cb3be4d2b6296a1e40e8f393263618",
+    "size": 907172,
     "url": "https://github.com/yangyang8002/yypm/releases/download/mirror/module.zip",
-    "signature": "0t9tb2E5aALvXLQM3aFlUSNu9jhp/adsDGk2QMmHw3iw0vJ63wy7mDBayRVliigydou916hgq9n1qv7bwVhLAg=="
+    "signature": "kzJVCLFahV9LnN9AvL1/V6nCYBzJtJDf2mrakJvrRb+B9/kwTj41lPkAfoV7j0KF+opwFUBIh7rm4OwmxMLhBw=="
   },
   "server": {
-    "updated_at": "2026-10-31 19:00:44",
+    "updated_at": "2026-10-31 22:01:21",
     "revoked_count": 517,
     "sources": [
       {
