@@ -63,7 +63,7 @@ keybox 不随模块分发，而是由服务端从多个公开上游源拉取、�
 - **安全补丁级别**：自动写入 `security_patch.txt`（`system=prop` 模式），attestation
   始终回答系统当前属性值，OTA 后不再出现跨组件日期错位；他人的固定日期文件会被
   备份（`.bak`）后替换，`security_patch=off` 可整体关闭
-- **风险应用自动隐藏**：检测到 Scene/Shizuku/NP 管理器等风险应用已安装时，自动并入
+- **风险应用自动隐藏**：检测到 Scene/Shizuku/NP 管理器以及 ReSukiSU（v2.8.10 补）等风险应用已安装时，自动并入
   HMA-OSS 查询级隐藏名单（只对检测器隐藏查询结果，应用本体照常可用；
   `risk_autohide=off` 可关）
 - **异常痕迹清理（非破坏式）**：只清理空的残留目录；有内容的一律保留并报告，
