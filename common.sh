@@ -579,7 +579,7 @@ hide_apps_sync() {
 # 检测到已安装就并入上面的隐藏名单（v2.8.7 起只喂 HMA-OSS 查询级隐藏：
 # 作用域检测器查不到它们，用户照常从桌面打开），WebUI 卡片可见可管理。
 # 关闭：risk_autohide=off；自定义名单：risk_apps="包名1 包名2"。
-RISK_APPS_DEFAULT="com.omarea.vtools com.wn.app.np moe.shizuku.privileged.api com.sukisu.ultra"
+RISK_APPS_DEFAULT="com.omarea.vtools com.wn.app.np moe.shizuku.privileged.api com.sukisu.ultra com.resukisu.resukisu"
 
 risk_apps_autohide() {
     if [ "$(cfg_get risk_autohide on)" = "off" ]; then
@@ -648,6 +648,7 @@ hma_hidden_apps() {
         echo org.frknkrc44.hma_oss       # HMA-OSS 管理器（藏好藏人的工具本身）
         echo me.weishu.kernelsu          # KernelSU 管理器（默认包名）
         echo com.sukisu.ultra            # SukiSU Ultra（不注册 ksu:// 深链，反查漏它 —— v2.8.7 修）
+        echo com.resukisu.resukisu       # ReSukiSU（同样不注册深链；4.6.2 实测漏网 —— v2.8.10）
         echo com.rifsxd.ksunext          # KSU Next（管理器家族）
         echo me.bmax.apatch              # APatch（管理器家族）
         echo me.yuki.folk                # Yuki（管理器家族）
@@ -712,6 +713,9 @@ hma_oss_autocfg() {
     [ -s "$cfg" ] && [ "$(cat "$cfg" 2>/dev/null)" = "$(printf '%s' "$want")" ] \
         && { dbg "HMA-OSS: 配置已是最新"; return 0; }
     printf '%s' "$want" > "$cfg" 2>/dev/null || return 0
+    # 属主给 system(1000)：HMA 服务跑在 system_server 里，用户从管理 App 改配置时要能回写
+    # （4.6.2 排障实证：root:root 644 时服务报 “config.json is not accessible by the current UID”）
+    chown 1000:1000 "$cfg" 2>/dev/null
     chmod 644 "$cfg" 2>/dev/null
     log "[✓] HMA-OSS 已自动配置：对春秋等检测应用隐藏 $(hma_hidden_apps | grep -c . | tr -d ' ') 个风险应用（管理 App 里可查看修改，重启后生效）"
     # 配置刚写入：顺手清掉预装组件进程里「列表已生效」的残留视图（春秋检测项：隐藏应用列表生效(2)）
@@ -793,7 +797,7 @@ cleanup_replaced_mods() {
 # 包名后深链注册仍跟着走）。
 ksu_manager_pkg() {
     local p out
-    for p in me.weishu.kernelsu com.sukisu.ultra com.rifsxd.ksunext me.bmax.apatch me.yuki.folk; do
+    for p in me.weishu.kernelsu com.sukisu.ultra com.resukisu.resukisu com.rifsxd.ksunext me.bmax.apatch me.yuki.folk; do
         pm path "$p" </dev/null >/dev/null 2>&1 && { echo "$p"; return 0; }
     done
     # pm/cmd 调用统一 </dev/null：标准 fd 搭在 /data/adb 文件上时 binder 事务会失败（见 apk_installed 注释）
