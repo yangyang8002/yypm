@@ -3,7 +3,7 @@
   "version_code": 290,
   "base_url": "https://yangyang8002.xin/api/kernelsu/module",
   "keybox": {
-    "updated_at": "2026-11-06 06:31:22",
+    "updated_at": "2026-11-06 11:07:12",
     "source": "pinned",
     "size": 12713,
     "sha256": "bb72001d8161618aeb0ceeca8d9f8965d15fa70c8c44b47e2c7e450a40e77353",
@@ -13,7 +13,7 @@
       "ok": true,
       "reasons": [],
       "warnings": [],
-      "checked_at": "2026-11-06 06:31:22",
+      "checked_at": "2026-11-06 11:07:12",
       "min_not_after": "2040-04-08",
       "days_remaining": 4901,
       "cert_count": 6,
@@ -119,24 +119,10 @@
         "size": 12604,
         "days_remaining": 2387,
         "min_not_after": "2033-05-21"
-      },
-      {
-        "source": "keyboxstatus/1120",
-        "sha256": "3a6da8f88f878df87b0803a8b39dec5265e7efc6e2f9bb0bd64d029883f2f3bb",
-        "size": 12712,
-        "days_remaining": 4901,
-        "min_not_after": "2040-04-08"
-      },
-      {
-        "source": "keyboxhub/keybox_8abd78284f",
-        "sha256": "1b21dd895a522904d99a88126bfd543dff1be21d7d7528836436101ce35f4392",
-        "size": 12972,
-        "days_remaining": 2803,
-        "min_not_after": "2034-07-11"
       }
     ],
     "revocation": {
-      "source": "purainity",
+      "source": "purainity(缓存)",
       "count": 517,
       "fresh": true,
       "fetched_at": 1793917806,
@@ -153,7 +139,7 @@
     "signature": "kzJVCLFahV9LnN9AvL1/V6nCYBzJtJDf2mrakJvrRb+B9/kwTj41lPkAfoV7j0KF+opwFUBIh7rm4OwmxMLhBw=="
   },
   "server": {
-    "updated_at": "2026-11-06 06:31:22",
+    "updated_at": "2026-11-06 11:07:12",
     "revoked_count": 517,
     "sources": [
       {
@@ -172,17 +158,17 @@
         "why": "下载失败"
       },
       {
-        "source": "keyboxhub/keybox_8abd78284f",
-        "ok": true,
-        "why": ""
+        "source": "keyboxhub",
+        "ok": false,
+        "why": "目录取样失败"
       },
       {
-        "source": "keyboxstatus/1120",
-        "ok": true,
-        "why": ""
+        "source": "keyboxstatus",
+        "ok": false,
+        "why": "目录取样失败"
       }
     ],
     "candidate_count": 5,
-    "valid_count": 3
+    "valid_count": 1
   }
 }
