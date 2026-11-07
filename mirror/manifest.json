@@ -3,7 +3,7 @@
   "version_code": 290,
   "base_url": "https://yangyang8002.xin/api/kernelsu/module",
   "keybox": {
-    "updated_at": "2026-11-08 00:31:33",
+    "updated_at": "2026-11-08 04:30:20",
     "source": "pinned",
     "size": 12713,
     "sha256": "bb72001d8161618aeb0ceeca8d9f8965d15fa70c8c44b47e2c7e450a40e77353",
@@ -13,9 +13,9 @@
       "ok": true,
       "reasons": [],
       "warnings": [],
-      "checked_at": "2026-11-08 00:31:33",
+      "checked_at": "2026-11-08 04:30:20",
       "min_not_after": "2040-04-08",
-      "days_remaining": 4900,
+      "days_remaining": 4899,
       "cert_count": 6,
       "serial_count": 5,
       "serials": [
@@ -117,14 +117,14 @@
         "source": "keyboxstatus/1120",
         "sha256": "3a6da8f88f878df87b0803a8b39dec5265e7efc6e2f9bb0bd64d029883f2f3bb",
         "size": 12712,
-        "days_remaining": 4900,
+        "days_remaining": 4899,
         "min_not_after": "2040-04-08"
       },
       {
         "source": "keyboxhub/keybox_8b94fb786f",
         "sha256": "a086644e7ab7a86bf58fa6df8f37bcd962967421f7219a31163538f2e7b00f33",
         "size": 12750,
-        "days_remaining": 1419,
+        "days_remaining": 1418,
         "min_not_after": "2030-09-27"
       }
     ],
@@ -146,7 +146,7 @@
     "signature": "kzJVCLFahV9LnN9AvL1/V6nCYBzJtJDf2mrakJvrRb+B9/kwTj41lPkAfoV7j0KF+opwFUBIh7rm4OwmxMLhBw=="
   },
   "server": {
-    "updated_at": "2026-11-08 00:31:33",
+    "updated_at": "2026-11-08 04:30:20",
     "revoked_count": 517,
     "sources": [
       {
