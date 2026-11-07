@@ -3,7 +3,7 @@
   "version_code": 290,
   "base_url": "https://yangyang8002.xin/api/kernelsu/module",
   "keybox": {
-    "updated_at": "2026-11-07 18:31:24",
+    "updated_at": "2026-11-08 00:31:33",
     "source": "pinned",
     "size": 12713,
     "sha256": "bb72001d8161618aeb0ceeca8d9f8965d15fa70c8c44b47e2c7e450a40e77353",
@@ -13,7 +13,7 @@
       "ok": true,
       "reasons": [],
       "warnings": [],
-      "checked_at": "2026-11-07 18:31:24",
+      "checked_at": "2026-11-08 00:31:33",
       "min_not_after": "2040-04-08",
       "days_remaining": 4900,
       "cert_count": 6,
@@ -121,11 +121,11 @@
         "min_not_after": "2040-04-08"
       },
       {
-        "source": "keyboxhub/keybox_8abd78284f",
-        "sha256": "1b21dd895a522904d99a88126bfd543dff1be21d7d7528836436101ce35f4392",
-        "size": 12972,
-        "days_remaining": 2802,
-        "min_not_after": "2034-07-11"
+        "source": "keyboxhub/keybox_8b94fb786f",
+        "sha256": "a086644e7ab7a86bf58fa6df8f37bcd962967421f7219a31163538f2e7b00f33",
+        "size": 12750,
+        "days_remaining": 1419,
+        "min_not_after": "2030-09-27"
       }
     ],
     "revocation": {
@@ -146,7 +146,7 @@
     "signature": "kzJVCLFahV9LnN9AvL1/V6nCYBzJtJDf2mrakJvrRb+B9/kwTj41lPkAfoV7j0KF+opwFUBIh7rm4OwmxMLhBw=="
   },
   "server": {
-    "updated_at": "2026-11-07 18:31:24",
+    "updated_at": "2026-11-08 00:31:33",
     "revoked_count": 517,
     "sources": [
       {
@@ -165,7 +165,7 @@
         "why": "下载失败"
       },
       {
-        "source": "keyboxhub/keybox_8abd78284f",
+        "source": "keyboxhub/keybox_8b94fb786f",
         "ok": true,
         "why": ""
       },
