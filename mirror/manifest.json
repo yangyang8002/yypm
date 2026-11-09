@@ -3,7 +3,7 @@
   "version_code": 290,
   "base_url": "https://yangyang8002.xin/api/kernelsu/module",
   "keybox": {
-    "updated_at": "2026-11-09 19:00:42",
+    "updated_at": "2026-11-10 05:31:27",
     "source": "pinned",
     "size": 12713,
     "sha256": "bb72001d8161618aeb0ceeca8d9f8965d15fa70c8c44b47e2c7e450a40e77353",
@@ -13,9 +13,9 @@
       "ok": true,
       "reasons": [],
       "warnings": [],
-      "checked_at": "2026-11-09 19:00:42",
+      "checked_at": "2026-11-10 05:31:27",
       "min_not_after": "2040-04-08",
-      "days_remaining": 4898,
+      "days_remaining": 4897,
       "cert_count": 6,
       "serial_count": 5,
       "serials": [
@@ -117,22 +117,22 @@
         "source": "yurikey",
         "sha256": "db96c8c9a4f4458b0f2587b546f0c01c82df2f57be539187af08976434e65834",
         "size": 5574,
-        "days_remaining": 4,
+        "days_remaining": 3,
         "min_not_after": "2026-11-14"
       },
       {
         "source": "keyboxstatus/1120",
         "sha256": "3a6da8f88f878df87b0803a8b39dec5265e7efc6e2f9bb0bd64d029883f2f3bb",
         "size": 12712,
-        "days_remaining": 4898,
+        "days_remaining": 4897,
         "min_not_after": "2040-04-08"
       },
       {
-        "source": "keyboxhub/keybox_8b94fb786f",
-        "sha256": "a086644e7ab7a86bf58fa6df8f37bcd962967421f7219a31163538f2e7b00f33",
+        "source": "keyboxhub/keybox_8d074310a7",
+        "sha256": "383a9c496c99cefce85048a76970fc7e90e5896d6ec0646744d8cc6320491f4f",
         "size": 12750,
-        "days_remaining": 1417,
-        "min_not_after": "2030-09-27"
+        "days_remaining": 1954,
+        "min_not_after": "2032-03-18"
       }
     ],
     "revocation": {
@@ -153,7 +153,7 @@
     "signature": "kzJVCLFahV9LnN9AvL1/V6nCYBzJtJDf2mrakJvrRb+B9/kwTj41lPkAfoV7j0KF+opwFUBIh7rm4OwmxMLhBw=="
   },
   "server": {
-    "updated_at": "2026-11-09 19:00:42",
+    "updated_at": "2026-11-10 05:31:27",
     "revoked_count": 517,
     "sources": [
       {
@@ -172,7 +172,7 @@
         "why": "下载失败"
       },
       {
-        "source": "keyboxhub/keybox_8b94fb786f",
+        "source": "keyboxhub/keybox_8d074310a7",
         "ok": true,
         "why": ""
       },
