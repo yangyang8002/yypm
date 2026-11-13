@@ -3,7 +3,7 @@
   "version_code": 290,
   "base_url": "https://yangyang8002.xin/api/kernelsu/module",
   "keybox": {
-    "updated_at": "2026-11-13 17:00:17",
+    "updated_at": "2026-11-14 01:02:40",
     "source": "pinned",
     "size": 12713,
     "sha256": "bb72001d8161618aeb0ceeca8d9f8965d15fa70c8c44b47e2c7e450a40e77353",
@@ -13,7 +13,7 @@
       "ok": true,
       "reasons": [],
       "warnings": [],
-      "checked_at": "2026-11-13 17:00:17",
+      "checked_at": "2026-11-14 01:02:40",
       "min_not_after": "2040-04-08",
       "days_remaining": 4894,
       "cert_count": 6,
@@ -114,13 +114,6 @@
     },
     "fallbacks": [
       {
-        "source": "yurikey",
-        "sha256": "db96c8c9a4f4458b0f2587b546f0c01c82df2f57be539187af08976434e65834",
-        "size": 5574,
-        "days_remaining": 0,
-        "min_not_after": "2026-11-14"
-      },
-      {
         "source": "keyboxstatus/1120",
         "sha256": "3a6da8f88f878df87b0803a8b39dec5265e7efc6e2f9bb0bd64d029883f2f3bb",
         "size": 12712,
@@ -153,13 +146,13 @@
     "signature": "kzJVCLFahV9LnN9AvL1/V6nCYBzJtJDf2mrakJvrRb+B9/kwTj41lPkAfoV7j0KF+opwFUBIh7rm4OwmxMLhBw=="
   },
   "server": {
-    "updated_at": "2026-11-13 17:00:17",
+    "updated_at": "2026-11-14 01:02:40",
     "revoked_count": 517,
     "sources": [
       {
         "source": "yurikey",
-        "ok": true,
-        "why": ""
+        "ok": false,
+        "why": "没有一条完整的有效证书链"
       },
       {
         "source": "integritybox",
@@ -183,6 +176,6 @@
       }
     ],
     "candidate_count": 5,
-    "valid_count": 3
+    "valid_count": 2
   }
 }
