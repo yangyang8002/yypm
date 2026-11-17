@@ -3,7 +3,7 @@
   "version_code": 290,
   "base_url": "https://yangyang8002.xin/api/kernelsu/module",
   "keybox": {
-    "updated_at": "2026-11-17 09:31:19",
+    "updated_at": "2026-11-17 18:30:33",
     "source": "pinned",
     "size": 12713,
     "sha256": "bb72001d8161618aeb0ceeca8d9f8965d15fa70c8c44b47e2c7e450a40e77353",
@@ -13,7 +13,7 @@
       "ok": true,
       "reasons": [],
       "warnings": [],
-      "checked_at": "2026-11-17 09:31:19",
+      "checked_at": "2026-11-17 18:30:33",
       "min_not_after": "2040-04-08",
       "days_remaining": 4890,
       "cert_count": 6,
@@ -117,7 +117,7 @@
         "source": "yurikey",
         "sha256": "f3be1c71c4f456fdad79063b7105800c6117c9734762335c7d265e421897450c",
         "size": 5589,
-        "days_remaining": 8,
+        "days_remaining": 7,
         "min_not_after": "2026-11-25"
       },
       {
@@ -139,7 +139,7 @@
       "source": "purainity(缓存)",
       "count": 517,
       "fresh": true,
-      "fetched_at": 1794794406,
+      "fetched_at": 1794880810,
       "checked": 517,
       "tried": []
     },
@@ -153,7 +153,7 @@
     "signature": "kzJVCLFahV9LnN9AvL1/V6nCYBzJtJDf2mrakJvrRb+B9/kwTj41lPkAfoV7j0KF+opwFUBIh7rm4OwmxMLhBw=="
   },
   "server": {
-    "updated_at": "2026-11-17 09:31:19",
+    "updated_at": "2026-11-17 18:30:33",
     "revoked_count": 517,
     "sources": [
       {
