@@ -122,10 +122,94 @@ install_self() {
     return 0
 }
 
+# ---- 异步任务（v2.8.12）----
+# 为什么需要：WebUI 的 ksu.exec 有 20 秒硬超时，而「检查附属模块」「一键安装」「一键更新」
+# 要下几 MB 包、跑 ksud 安装，动辄几十秒到几分钟 —— 期间页面点不动、按钮永远停在
+# 「检查中」，用户只能杀进程重开。改成：发起动作立刻返回（真正干活的是后台进程），
+# 前端每秒轮询进度，页面全程可操作。
+# 状态文件：$DATA_DIR/jobs/<name>.{log,rc,pid}
+#   log = 动作完整输出；rc = 退出码（存在即已结束）；pid = 后台进程号
+job_name_ok() { case "${1:-}" in ''|*[!A-Za-z0-9_.-]*) return 1 ;; esac; return 0; }
+
+job_start() { # $1=任务名  $2..=要执行的 webui.sh 动作（如 check-packages）
+    local name="${1:-}"; shift 2>/dev/null || true
+    # $0 必须在此时取：runner 里的 $0 是 runner 自己，不是 webui.sh
+    local self="$0"
+    job_name_ok "$name" || { echo "JOB=FAIL(bad name)"; return 1; }
+    [ "$#" -ge 1 ] || { echo "JOB=FAIL(no action)"; return 1; }
+    local d="$DATA_DIR/jobs"
+    mkdir -p "$d" 2>/dev/null || { echo "JOB=FAIL(no dir)"; return 1; }
+    rm -f "$d/$name.rc" "$d/$name.pid" 2>/dev/null
+    : > "$d/$name.log" 2>/dev/null
+    # 生成 runner：参数逐个单引号包裹（单引号串能挡住 $ 与反引号的二次展开，
+    # 所以唯一要拒的就是参数里本身带单引号；动作名/URL/base64 都不会有）
+    local runner="$d/$name.runner.sh" a bad=0
+    {
+        echo '#!/system/bin/sh'
+        printf 'exec '
+        printf "'%s' " "$self"
+        for a in "$@"; do
+            case "$a" in
+                *"'"*) bad=1; break ;;
+            esac
+            printf "'%s' " "$a"
+        done
+        printf '>> %s 2>&1\n' "'$d/$name.log'"
+    } > "$runner" 2>/dev/null
+    if [ "$bad" = "1" ]; then echo "JOB=FAIL(unsafe arg)"; return 1; fi
+    chmod 755 "$runner" 2>/dev/null
+    # nohup：忽略 SIGHUP，su -c 退出后后台进程继续跑（不放进子壳，$! 才是真正的进程号）
+    # 外层子壳负责写 rc：runner 里是 exec，进程退出后不会再执行下面的命令
+    nohup sh -c "sh '$runner'; echo \$? > '$d/$name.rc'" >/dev/null 2>&1 &
+    echo $! > "$d/$name.pid" 2>/dev/null
+    echo "JOB=$name"
+    echo "STATE=started"
+    return 0
+}
+
+job_poll() { # $1=任务名  $2=前端已读行数
+    local name="${1:-}" from="${2:-0}"
+    job_name_ok "$name" || { echo "STATE=bad"; return 1; }
+    case "$from" in ''|*[!0-9]*) from=0 ;; esac
+    # 注意：local 同一条语句里后面的变量取不到前面刚赋的值（$d 会是空），必须分开写
+    local d="$DATA_DIR/jobs"
+    local log="$d/$name.log" rc="$d/$name.rc" pid=""
+    [ -f "$d/$name.pid" ] && pid=$(cat "$d/$name.pid" 2>/dev/null)
+    local total=0
+    [ -f "$log" ] && total=$(wc -l < "$log" 2>/dev/null | tr -d ' ')
+    total=${total:-0}
+    if [ -f "$rc" ]; then
+        local code
+        code=$(cat "$rc" 2>/dev/null)
+        case "$code" in ''|*[!0-9]*) code="?" ;; esac
+        if [ "$code" = "0" ]; then echo "STATE=done"; else echo "STATE=failed"; fi
+        echo "RC=$code"
+    elif [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        echo "STATE=running"
+    else
+        # 进程没了又没写 rc：被系统杀了或异常退出
+        echo "STATE=failed"
+        echo "RC=?"
+    fi
+    echo "TOTAL=$total"
+    if [ "$total" -gt "$from" ] 2>/dev/null; then
+        tail -n "+$((from + 1))" "$log" 2>/dev/null | sed 's/^/L|/'
+    fi
+    return 0
+}
+
+job_clean() { # 清掉某任务的文件（防 jobs 目录无限长）
+    local name="${1:-}"
+    job_name_ok "$name" || return 1
+    local d="$DATA_DIR/jobs"
+    rm -f "$d/$name.log" "$d/$name.rc" "$d/$name.pid" "$d/$name.runner.sh" 2>/dev/null
+    return 0
+}
+
 # 反挂锁定闸门：除反挂自身的动作外，一律拒绝执行。
 # 白名单里这几个是排查/解锁必需的，锁定后必须仍然可用，否则没法恢复。
 case "${1:-status}" in
-    anti-cheat-*|log|log-clear|cfg-export) ;;
+    anti-cheat-*|log|log-clear|cfg-export|job-start|job-poll|job-clean) ;;
     *)
         if ac_guard; then :; else
             echo "AC_LOCKED=1"
@@ -137,6 +221,16 @@ case "${1:-status}" in
 esac
 
 case "${1:-status}" in
+    job-start)
+        job_start "${2:-}" "${@:3}"
+        ;;
+    job-poll)
+        job_poll "${2:-}" "${3:-0}"
+        ;;
+    job-clean)
+        job_clean "${2:-}"
+        echo "JOB_CLEAN=OK"
+        ;;
     fetch)
         echo "正在获取 keybox ..."
         # 走带有效性判断与回滚的安全流程（手动操作，不受"仅 WiFi"约束）

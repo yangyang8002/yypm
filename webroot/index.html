@@ -933,6 +933,47 @@ function execT(cmd,ms){
   ]);
 }
 
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
+
+// 异步执行（v2.8.12）：把重活交给后台进程，前端轮询进度。
+// 起因：ksu.exec 有 20 秒硬超时，而「检查附属模块」「一键安装」「一键更新」要下几 MB
+// 的包、跑 ksud 安装，动辄几十秒到几分钟 —— 旧实现里超时后取消回调，页面卡在
+// 「检查中」且点不动任何东西，只能杀进程重开。现在：发起即返回，每秒问一次进度，
+// 期间页面全程可操作，动作跑完再把完整输出交回给调用方解析（接口与 exec 一致）。
+var _jobSeq=0;
+async function jobExec(action,args,opts){
+  opts=opts||{};
+  var name='j'+(++_jobSeq)+'-'+Date.now();
+  var st=await exec(MODDIR+'/webui.sh job-start '+name+' '+action+(args?(' '+args):''));
+  var stOut=st.stdout||'';
+  if(stOut.indexOf('JOB=FAIL')>=0){return {errno:-1,stdout:stOut,stderr:'job-start 失败'};}
+  var seen=0, acc=[];
+  for(var i=0;i<900;i++){                    // 上限约 15 分钟
+    await sleep(opts.every||900);
+    var p=await exec(MODDIR+'/webui.sh job-poll '+name+' '+seen);
+    var out=p.stdout||'';
+    var state='', rc='', lines=[];
+    out.split('\n').forEach(function(l){
+      if(l.indexOf('L|')===0){lines.push(l.slice(2));return;}
+      var k=l.split('=');
+      if(k[0]==='STATE')state=k[1];
+      else if(k[0]==='RC')rc=k[1];
+      else if(k[0]==='TOTAL')seen=parseInt(k[1],10)||seen;
+    });
+    if(lines.length){
+      acc=acc.concat(lines);
+      if(opts.stream)lines.forEach(function(l){if(l.trim())log(l,opts.cls||'');});
+    }
+    if(state==='done'){try{await exec(MODDIR+'/webui.sh job-clean '+name);}catch(e){}return {errno:0,stdout:acc.join('\n'),stderr:''};}
+    if(state==='failed'){
+      try{await exec(MODDIR+'/webui.sh job-clean '+name);}catch(e){}
+      return {errno:(parseInt(rc,10)||1),stdout:acc.join('\n'),stderr:''};
+    }
+    if(state==='bad')break;
+  }
+  return {errno:-2,stdout:acc.join('\n'),stderr:'timeout'};
+}
+
 function parseKv(t){var m={};(t||'').split('\n').forEach(function(l){var i=l.indexOf('=');if(i>0)m[l.slice(0,i).trim()]=l.slice(i+1).trim();});return m;}
 
 // 版本号可能已经自带 v（module.prop 里就是 v2.1.4），避免显示成 vv2.1.4
@@ -944,6 +985,21 @@ function busy(id,on,text){
   var b=document.getElementById(id);if(!b)return;
   if(on){if(!b.dataset.html)b.dataset.html=b.innerHTML;b.disabled=true;if(text)b.textContent=text;}
   else{b.disabled=false;if(b.dataset.html)b.innerHTML=b.dataset.html;}
+}
+// 进度反馈（v2.8.12）：异步任务跑着的时候按钮上显示已用时，让人知道还在动
+var _busyTimers={};
+function busyTick(id,label,startAt){
+  busy(id,true,label+' 0 秒');
+  clearInterval(_busyTimers[id]);
+  _busyTimers[id]=setInterval(function(){
+    var sec=Math.floor((Date.now()-startAt)/1000);
+    var b=document.getElementById(id);
+    if(b)b.textContent=label+' '+sec+' 秒';
+  },1000);
+}
+function busyStop(id){
+  clearInterval(_busyTimers[id]);delete _busyTimers[id];
+  busy(id,false);
 }
 
 async function refresh(useCache){
@@ -1200,7 +1256,7 @@ async function doUpdate(){
     var url=s.DOWNLOAD_URL;
     if(!url&&s.UPDATE!=='AVAILABLE'){log('无下载地址或已是最新','info');return;}
     // 一键更新：webui.sh 内部完成 下载 -> 版本防回退 -> ksud 自动安装
-    var up=await exec(MODDIR+'/webui.sh update-self '+(url||''));
+    var up=await jobExec('update-self',(url||''));
     var out=up.stdout||'';
     out.split('\n').forEach(function(l){
       l=l.trim(); if(!l)return;
@@ -1238,7 +1294,7 @@ async function toggleAuto(){
 async function manualFetch(){
   var b=document.getElementById('btnFetch');b.disabled=true;b.innerHTML='<span>◌</span> 获取中...';
   log('开始手动获取 keybox...','info');
-  try{var r=await exec(MODDIR+'/webui.sh fetch');(r.stdout||'').split('\n').forEach(function(l){if(!l.trim())return;if(l.indexOf('FAIL')>=0)log(l,'err');else if(l.indexOf('OK')>=0||l.indexOf('✓')>=0)log(l,'ok');else log(l);});}
+  try{var r=await jobExec('fetch');(r.stdout||'').split('\n').forEach(function(l){if(!l.trim())return;if(l.indexOf('FAIL')>=0)log(l,'err');else if(l.indexOf('OK')>=0||l.indexOf('✓')>=0)log(l,'ok');else log(l);});}
   catch(e){log('异常: '+e.message,'err');}
   b.disabled=false;b.innerHTML='<svg class="i" aria-hidden="true"><use href="#i-download"/></svg> 手动获取并挂载 keybox';
   await refresh();
@@ -1253,9 +1309,9 @@ async function manualMount(){
 
 async function modCheck(){
   log('检查附属模块更新 ...','info');
-  busy('btnCheckMods',true,'检查中...');
+  busyTick('btnCheckMods','检查中',Date.now());
   try{
-    var r=await exec(MODDIR+'/webui.sh check-packages');
+    var r=await jobExec('check-packages');
     var t2=r.stdout||'';
     t2.split('\n').forEach(function(l){
       l=l.trim(); if(!l)return;
@@ -1276,15 +1332,15 @@ async function modCheck(){
     else if(sum)log('附属模块均为最新','ok');
   }catch(e){log('检查异常: '+e.message,'err');}
   await refresh();
-  busy('btnCheckMods',false);
+  busyStop('btnCheckMods');
 }
 
 // ---- 一键安装可更新的附属模块 ----
 async function installAll(){
   log('开始一键安装可更新的附属模块 ...','info');
-  busy('btnInstallAll',true,'安装中...');
+  busyTick('btnInstallAll','安装中',Date.now());
   try{
-    var r=await exec(MODDIR+'/webui.sh install-all');
+    var r=await jobExec('install-all');
     var out=r.stdout||'';
     out.split('\n').forEach(function(l){
       l=l.trim(); if(!l)return;
@@ -1305,7 +1361,7 @@ async function installAll(){
     }
   }catch(e){log('安装异常: '+e.message,'err');}
   await refresh();
-  busy('btnInstallAll',false);
+  busyStop('btnInstallAll');
 }
 
 // ---- 检查间隔 ----
@@ -1322,10 +1378,10 @@ async function setIntervalH(h){
 // ---- 下载源连通性 ----
 async function healthCheck(){
   log('检测下载源连通性 ...','info');
-  busy('btnHealth',true,'检测中...');
+  busyTick('btnHealth','检测中',Date.now());
   var box=document.getElementById('healthBox');
   try{
-    var r=await exec(MODDIR+'/webui.sh health');
+    var r=await jobExec('health');
     var rows=(r.stdout||'').split('\n').filter(function(l){return l.indexOf('HEALTH|')===0;});
     if(!rows.length){box.innerHTML='<div class="note">检测失败</div>';}
     else{
@@ -1350,7 +1406,7 @@ async function healthCheck(){
       log('连通性检测完成','ok');
     }
   }catch(e){box.innerHTML='<div class="note">异常: '+e.message+'</div>';log('检测异常: '+e.message,'err');}
-  busy('btnHealth',false);
+  busyStop('btnHealth');
 }
 
 // ---- 日志查看 ----
@@ -1461,10 +1517,10 @@ async function cfgImport(){
 // ================= 环境对抗 =================
 // ---- HMA-OSS 隐藏配置（自动配置按钮的后端动作在 webui.sh hma-cfg）----
 async function hmaCfg(){
-  busy('btnHmaCfg',true,'配置中...');
+  busyTick('btnHmaCfg','配置中',Date.now());
   log('===== 自动配置 HMA =====','info');
   try{
-    var r=await execT(MODDIR+'/webui.sh hma-cfg',60000);
+    var r=await jobExec('hma-cfg');
     var out=r.stdout||'';
     var ls=out.split('\n');
     for(var i=0;i<ls.length;i++)if(ls[i].trim())log(ls[i],'info');
@@ -1473,7 +1529,7 @@ async function hmaCfg(){
     toast('HMA 配置完成，重启后生效');
     await refresh();
   }catch(e){log('自动配置异常: '+e.message,'err');}
-  busy('btnHmaCfg',false);
+  busyStop('btnHmaCfg');
 }
 async function hmaMgr(){
   try{
@@ -1854,14 +1910,14 @@ function acApply(){
           : m==='warn' ? '当前是「只警告」模式：只会写进运行日志，不会动任何文件。'
           : '当前是「关闭」模式：什么都不会做。';
   ask('按「'+(AC_LABEL[m]||m)+'」模式处理？', txt, async function(){
-    busy('btnAcApply',true,'处理中...');
+    busyTick('btnAcApply','处理中',Date.now());
     try{
-      var r=await execT(MODDIR+'/webui.sh anti-cheat-apply',60000);
+      var r=await jobExec('anti-cheat-apply');
       log('===== 反挂处理开始 =====','info');
       var ls=(r.stdout||'').split('\n');
       for(var i=0;i<ls.length;i++)if(ls[i])log(ls[i],'info');
       log('===== 反挂处理结束 =====','ok');
-      busy('btnAcApply',false);
+      busyStop('btnAcApply');
       await acScan();
       return;
     }catch(e){log('处理异常: '+e.message,'err');}
@@ -1910,16 +1966,16 @@ function cqFailAll(){
   ['cqProc','cqMt','cqKsuApp','cqKey'].forEach(function(id){cqSet(id,'<span class="pill err">自检失败</span>');});
 }
 async function cqCheck(){
-  busy('btnCqCheck',true,'自检中...');
+  busyTick('btnCqCheck','自检中',Date.now());
   try{
-    var r=await execT(MODDIR+'/webui.sh cq-check',30000);
+    var r=await jobExec('cq-check');
     var out=r.stdout||'';
     var m=parseKv(out);
     // 锁定中/无输出时 CQ_* 全缺 —— 无法解析就明示失败，不留旧状态骗人
     if(typeof m.CQ_KEYBOX==='undefined'){
       cqFailAll();
       log('春秋自检失败：'+((out.match(/AC_LOCK_REASON=(.*)/)||[])[1]||r.stderr||'无输出'),'err');
-      busy('btnCqCheck',false);
+      busyStop('btnCqCheck');
       return;
     }
     // ② 异常进程
@@ -1953,10 +2009,10 @@ function detectPrepAsk(){
   ask('一键检测前预备？','将依次执行：同步隐藏名单进 HMA-OSS 配置（查询级隐藏）、安全补丁级别对齐、把检测应用加入 TrickyStore 目标清单、停掉隐藏名单里在跑的应用进程并清目录缓存、非破坏式清空目录痕迹并报告文件痕迹。不卸载任何应用、不删任何有内容的文件。',function(){ detectPrep(); });
 }
 async function detectPrep(){
-  busy('btnCqFix',true,'预备中...');
+  busyTick('btnCqFix','预备中',Date.now());
   log('===== 检测前预备 =====','info');
   try{
-    var r=await execT(MODDIR+'/webui.sh detect-prep',60000);
+    var r=await jobExec('detect-prep');
     var out=r.stdout||'';
     var ls=out.split('\n');
     for(var i=0;i<ls.length;i++){var l=ls[i].trim();if(l)log(l,'info');}
@@ -1968,7 +2024,7 @@ async function detectPrep(){
       toast('预备未完整执行，详见操作记录');
     }
   }catch(e){log('预备异常: '+e.message,'err');}
-  busy('btnCqFix',false);
+  busyStop('btnCqFix');
 }
 // ---- 密钥自检 ----
 // shell 只负责搬运字节（见 common.sh 的 keybox_audit），JSON 解析放在这里。
@@ -2324,9 +2380,9 @@ envAutoToggle('prepAutoSwitch','detect-prep-auto','检测前预备开机执行')
 envAutoToggle('susfsAutoSwitch','susfs-auto','SUSFS 自动加固');
 // ---- v2.8.8 侧信道延迟自检（只读测量）：appinfo.dex statbench in-process stat() 计时 ----
 async function latencyCheck(){
-  busy('btnLatency',true,'测量中...');
+  busyTick('btnLatency','测量中',Date.now());
   try{
-    var r=await execT(MODDIR+'/webui.sh latency-check',60000);
+    var r=await jobExec('latency-check');
     var html='';
     (r.stdout||'').split('\n').forEach(function(l){
       var p=l.split('|');
@@ -2340,7 +2396,7 @@ async function latencyCheck(){
     if(html){ box.innerHTML=html; box.style.display='block'; log('侧信道延迟自检完成','info'); }
     else{ toast('侧信道自检失败（appinfo statbench 无输出，见日志）'); }
   }catch(e){ toast('侧信道自检失败'); }
-  busy('btnLatency',false);
+  busyStop('btnLatency');
 }
 document.getElementById('btnLatency').onclick=latencyCheck;
 // 一键配置 FuseFixer：直写 LSPosed 配置库（启用模块 + scope 加系统框架），结果按行 toast
@@ -2397,9 +2453,9 @@ document.getElementById('appList').addEventListener('change',function(e){
   var b=document.getElementById('btnDaily');
   if(b)b.onclick=async function(){
     log('执行每日更新检查 ...','info');
-    busy('btnDaily',true,'检查中...');
+    busyTick('btnDaily','检查中',Date.now());
     try{
-      var r=await exec(MODDIR+'/webui.sh daily-check');
+      var r=await jobExec('daily-check');
       var out=r.stdout||'';
       out.split('\n').forEach(function(l){
         l=l.trim(); if(!l)return;
@@ -2416,7 +2472,7 @@ document.getElementById('appList').addEventListener('change',function(e){
       }else log('每日检查未全部成功（可能是网络），下次巡检会重试','err');
     }catch(e){log('每日检查异常: '+e.message,'err');}
     await refresh();
-    busy('btnDaily',false);
+    busyStop('btnDaily');
   };
   var sw=document.getElementById('dailySwitch');
   if(sw)sw.onclick=async function(){
