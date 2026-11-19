@@ -1,18 +1,18 @@
 {
-  "updated_at": "2026-11-19 03:00:28",
+  "updated_at": "2026-11-19 09:01:09",
   "count": 6,
   "modules": {
     "HMA-OSS.zip": {
-      "sha256": "772517a459915de1b0c68e23dfb2aeb259c33c02e2fe057875b24aa31ebf66da",
-      "size": 2582384,
+      "sha256": "fad6d3224398f09ad2fbbd52ee5328b9b38fc6ad65d751cb6a8e8acfec1fd770",
+      "size": 2597526,
       "url": "https://github.com/yangyang8002/yypm/releases/download/mirror/HMA-OSS.zip",
-      "signature": "/YQcckLnnFIdaeecUtJ6SMlm1NnBxJPCnioXQrTdjxVhQSD2g3sYLxutWLn7s//D1Td+QKupZMCaru5h/lCyCQ==",
+      "signature": "JIr8MGyZcBEXDtEHjEoOG9VEhCrRhmi1qWNPnsjtFQz5SSSyZGvi1sa23QQB9PBjHJyFmlbUDMytzmfoolN4CA==",
       "x-type": "ksu-module",
       "x-auto": 1,
       "x-id": "hma_oss_zygisk",
       "x-name": "HMA-OSS Zygisk",
-      "x-version": "oss-175",
-      "x-versionCode": 7304658
+      "x-version": "oss-177",
+      "x-versionCode": 7304660
     },
     "LSPosed.zip": {
       "sha256": "ed37de2d2097aa6ba871377e7bf4ac719b708484f9468928e6abae10ab311e74",
