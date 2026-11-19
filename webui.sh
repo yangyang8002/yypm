@@ -188,6 +188,22 @@ case "${1:-status}" in
             echo "MOUNT=FAIL(no keybox cached)"
         fi
         ;;
+    daily-check)
+        # v2.8.11：手动触发每日检查（force 绕过 24h 门闸；只查不装）
+        echo "正在执行每日更新检查 ..."
+        daily_check force
+        echo "DAILY_CHECK_AT=$(sed -n 's/^at=//p' "$DATA_DIR/daily_check.prop" 2>/dev/null | head -1)"
+        echo "DAILY_CHECK_RESULT=$(sed -n 's/^result=//p' "$DATA_DIR/daily_check.prop" 2>/dev/null | head -1)"
+        echo "DAILY_CHECK_PKGS=$(sed -n 's/^pkgs=//p' "$DATA_DIR/daily_check.prop" 2>/dev/null | head -1)"
+        echo "DAILY_CHECK_SELF=$(sed -n 's/^self=//p' "$DATA_DIR/daily_check.prop" 2>/dev/null | head -1)"
+        echo "UPDATE_NEED=$(update_state_field need 0)"
+        echo "UPDATE_SUMMARY=$(update_state_field summary -)"
+        ;;
+    daily-check-auto)
+        case "${2:-}" in on|off) cfg_set daily_check "$2" ;; *) echo "用法: daily-check-auto on|off"; exit 1 ;; esac
+        log "[·] 每日更新检查已设为 ${2}"
+        echo "DAILY_CHECK_ENABLE=$2"
+        ;;
     check-packages)
         echo "正在检查附属模块更新 ..."
         check_updates
@@ -272,7 +288,7 @@ case "${1:-status}" in
         while IFS= read -r line; do
             local k=${line%%=*} v=${line#*=}
             case "$k" in
-                auto_fetch|auto_bl|auto_debug|check_interval|pubkey_use|wifi_only|hide_apps_enable|hide_apps|deep_bl|abnormal_paths|anti_cheat|anti_cheat_ids|security_patch|abnormal_auto|risk_autohide|auto_target|mirror_urls|mirror_url_list|mirror_nodes|mirror_speed_test|mirror_test_ttl|hma_auto|hma_scope|susfs_harden|debug)
+                auto_fetch|auto_bl|auto_debug|check_interval|pubkey_use|wifi_only|hide_apps_enable|hide_apps|deep_bl|abnormal_paths|anti_cheat|anti_cheat_ids|security_patch|abnormal_auto|risk_autohide|auto_target|mirror_urls|mirror_url_list|mirror_nodes|mirror_speed_test|mirror_test_ttl|hma_auto|hma_scope|susfs_harden|daily_check|debug)
                     [ "$line" = "$k" ] && continue      # 没有 = 的裸键跳过
                     printf '%s=%s\n' "$k" "$v" >> "$TMP/cfg_clean.txt"
                     ;;

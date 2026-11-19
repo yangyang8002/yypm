@@ -62,6 +62,10 @@ PUBKEY="$MODDIR/pubkey.b64"
 VERIFY_TOOL="$MODDIR/verify_tool"
 TMP="$DATA_DIR/tmp"
 UPDATE_INTERVAL_DEFAULT=21600
+# 每日检查（v2.8.11）：模块自身 + 附属模块的更新检查，单独一条 24 小时节流线。
+# 与 check_interval（keybox 巡检间隔，1/6/12/24h）解耦 —— 巡检再密也不必每分钟去
+# 打 GitHub API（未认证 60 次/小时，一天 24 次足够，也给同级服务留余量）。
+DAILY_CHECK_INTERVAL=86400
 LOG="$DATA_DIR/yypm.log"
 RETRY_STATE="$DATA_DIR/retry.state"
 # 已验签 keybox 的本地池（用于服务端主用失效时回滚）
@@ -2165,6 +2169,21 @@ echo_status() {
     echo "MOUNT_HIDER=$_mh"
     echo "ABNORMAL_PATHS=$(cfg_get abnormal_paths "$ABNORMAL_DEFAULT")"
 
+    # 每日检查（v2.8.11：24h 节流，只查不装）
+    echo "DAILY_CHECK_ENABLE=$(cfg_get daily_check on)"
+    echo "DAILY_CHECK_AT=$(sed -n 's/^at=//p' "$DATA_DIR/daily_check.prop" 2>/dev/null | head -1)"
+    echo "DAILY_CHECK_RESULT=$(sed -n 's/^result=//p' "$DATA_DIR/daily_check.prop" 2>/dev/null | head -1)"
+    echo "DAILY_CHECK_SELF=$(sed -n 's/^self=//p' "$DATA_DIR/daily_check.prop" 2>/dev/null | head -1)"
+    local dl=$(sed -n 's/^last=//p' "$DATA_DIR/daily_check.prop" 2>/dev/null | head -1)
+    case "$dl" in
+        ''|*[!0-9]*) echo "DAILY_CHECK_COUNTDOWN=" ;;
+        *)
+            local left=$(( "$DAILY_CHECK_INTERVAL" - ( $(date +%s) - dl ) ))
+            [ "$left" -lt 0 ] && left=0
+            echo "DAILY_CHECK_COUNTDOWN=$left"
+            ;;
+    esac
+
     # 附属模块更新检查结果（由 webui.sh check-packages 写入缓存）
     echo "UPDATE_CHECKED=$(update_state_field checked_at 未检查)"
     echo "UPDATE_NEED=$(update_state_field need 0)"
@@ -2970,6 +2989,85 @@ check_github_release() {
         echo "UPDATE=AVAILABLE"
     else
         echo "UPDATE=NONE"
+    fi
+    return 0
+}
+
+# ---- 每日检查（v2.8.11）----
+# 每 24 小时跑一次「附属模块 + 模块自身」的更新检查，不自动安装，只更新状态供 WebUI 显示。
+# 为什么单独一条线：巡检间隔可能设成 1 小时，但更新检查没必要那么勤；
+# 反过来巡检关了（auto_fetch=off）也不该让版本检查一起停摆 —— 这里只看 daily_check 开关。
+daily_check_due() {
+    [ "$(cfg_get daily_check on)" = "off" ] && return 1
+    local last now
+    last=$(sed -n 's/^last=//p' "$DATA_DIR/daily_check.prop" 2>/dev/null | head -1)
+    now=$(date +%s)
+    case "$last" in ''|*[!0-9]*) return 0 ;; esac   # 从没跑过 -> 立即跑
+    [ $((now - last)) -ge "$DAILY_CHECK_INTERVAL" ]
+}
+
+daily_check_set() { # $1=结果  $2=附属模块摘要  $3=模块自身版本状态
+    mkdir -p "$DATA_DIR" 2>/dev/null
+    {
+        echo "last=$(date +%s)"
+        echo "at=$(date '+%m-%d %H:%M')"
+        echo "result=$1"
+        echo "pkgs=$2"
+        echo "self=$3"
+    } > "$DATA_DIR/daily_check.prop.tmp" 2>/dev/null && mv "$DATA_DIR/daily_check.prop.tmp" "$DATA_DIR/daily_check.prop" 2>/dev/null
+}
+
+daily_check_mark_failed() {
+    # 检查失败不推进 last（下次巡检重试），但要留痕给 WebUI
+    local at; at=$(date '+%m-%d %H:%M')
+    mkdir -p "$DATA_DIR" 2>/dev/null
+    # 旧的 result= 也要先剔掉，否则文件里会留两行、tail -1 才取到 FAIL
+    {
+        grep -v -e '^last=' -e '^result=' "$DATA_DIR/daily_check.prop" 2>/dev/null
+        echo "at=$at"
+        echo "result=FAIL"
+    } > "$DATA_DIR/daily_check.prop.tmp" 2>/dev/null && mv "$DATA_DIR/daily_check.prop.tmp" "$DATA_DIR/daily_check.prop" 2>/dev/null
+}
+
+daily_check() { # $1=force 手动触发（绕过开关与 24h 门闸，WebUI 按钮用）
+    local force="${1:-}"
+    if [ "$force" != "force" ]; then
+        daily_check_due || return 0
+    fi
+    # 仅 WiFi 更新：移动数据下不做（不推进时间戳，回 WiFi 再补）
+    if [ "$(cfg_get wifi_only off)" = "on" ] && [ "$(net_is_wifi)" = "no" ]; then
+        dbg "daily_check: 仅 WiFi 更新且当前非 WiFi，跳过"
+        return 0
+    fi
+    # 模块自身更新关掉时，附属模块检查照跑（两者独立）
+    dbg "daily_check: 到期，开始每日更新检查"
+    local pkg_res="" self_res="" rc=0
+
+    # 附属模块：只查不装（结果同时写进 update_check.prop，WebUI 现成卡片直接显示）
+    if check_updates; then
+        pkg_res="need=$(update_state_field need 0)"
+    else
+        pkg_res="need=?"
+        rc=1
+    fi
+
+    # 模块自身：查 GitHub release（不下载不安装）
+    local out; out=$(check_github_release 2>/dev/null)
+    local st=$(echo "$out" | sed -n 's/^UPDATE=//p')
+    local rv=$(echo "$out" | sed -n 's/^REMOTE_VERSION=//p')
+    local lv=$(echo "$out" | sed -n 's/^LOCAL_VERSION=//p')
+    case "$st" in
+        AVAILABLE) self_res="new=$rv"; log "[·] 每日检查：模块有新版本 $rv（当前 $lv），可在 WebUI 一键更新" ;;
+        NONE)      self_res="latest=$lv" ;;
+        *)         self_res="fail"; rc=1 ;;
+    esac
+
+    if [ "$rc" = "1" ]; then
+        daily_check_mark_failed
+        log "[!] 每日检查：部分项失败（网络？），下次巡检重试"
+    else
+        daily_check_set "OK" "$pkg_res" "$self_res"
+        log "[✓] 每日更新检查完成（附属模块 $pkg_res，模块自身 $self_res）"
     fi
     return 0
 }

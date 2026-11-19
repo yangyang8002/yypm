@@ -453,6 +453,15 @@ html[data-lockdown="1"] #acBanner{
     <div><div class="lab">定时自动获取 keybox</div><div class="hint">关闭后仅保留手动获取</div></div>
     <div class="switch" id="autoSwitch"></div>
   </div>
+  <div class="lab mt14">每日更新检查</div>
+  <div class="switch-row">
+    <div><div class="lab">每日检查模块更新</div><div class="hint" id="dailyHint">每 24 小时自动检查一次附属模块与模块自身的更新（只检查，不安装）</div></div>
+    <div class="switch" id="dailySwitch"></div>
+  </div>
+  <div class="row"><span class="k"><span id="dailyDot" class="dot off"></span>上次每日检查</span><span class="v" id="dailyAt">未检查</span></div>
+  <div class="row"><span class="k">检查结论</span><span class="v" id="dailyResult">-</span></div>
+  <div class="row"><span class="k">下次检查</span><span class="v" id="dailyNext">-</span></div>
+  <button class="btn ghost" id="btnDaily"><svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg> 立即执行每日检查</button>
   <div class="lab mt14">检查间隔</div>
   <div class="hint" id="intervalHint">当前每 6 小时检查一次</div>
   <div class="seg" id="intervalSeg">
@@ -1034,6 +1043,31 @@ async function refresh(useCache){
     if(!latest)txt+='（服务端有更新）';
     fresh.innerHTML=(latest&&d<30)?('<span class="pill ok">'+txt+'</span>'):
       ((d>=30||!latest)?('<span class="pill warn2">'+txt+'</span>'):txt);
+  }
+
+  // ---- 每日更新检查 ----
+  var dcOn=(s.DAILY_CHECK_ENABLE||'on')==='on';
+  document.getElementById('dailySwitch').classList.toggle('on',dcOn);
+  var dAt=s.DAILY_CHECK_AT||'', dRes=s.DAILY_CHECK_RESULT||'', dSelf=s.DAILY_CHECK_SELF||'';
+  var dDot=document.getElementById('dailyDot');
+  if(!dAt){dDot.className='dot off';document.getElementById('dailyAt').textContent='未检查';document.getElementById('dailyResult').textContent='-';}
+  else{
+    var bad=(dRes!=='OK');
+    dDot.className='dot '+(bad?'warn':'on');
+    document.getElementById('dailyAt').textContent=dAt;
+    var dtxt=[];
+    if(s.UPDATE_SUMMARY&&s.UPDATE_SUMMARY!=='-')dtxt.push(s.UPDATE_SUMMARY);
+    if(dSelf.indexOf('new=')===0)dtxt.push('模块有新版本 '+ver(dSelf.slice(4)));
+    else if(dSelf.indexOf('latest=')===0)dtxt.push('模块已最新');
+    else if(dSelf==='fail')dtxt.push('模块版本检查失败');
+    document.getElementById('dailyResult').textContent=dtxt.length?dtxt.join('；'):(bad?'检查失败':'完成');
+  }
+  var cd=s.DAILY_CHECK_COUNTDOWN;
+  if(!dcOn)document.getElementById('dailyNext').textContent='已关闭';
+  else if(cd===''||cd===undefined)document.getElementById('dailyNext').textContent='下次巡检';
+  else{
+    var cs=parseInt(cd,10)||0;
+    document.getElementById('dailyNext').textContent=(cs<=0)?'下次巡检':('约 '+(cs>=3600?(Math.round(cs/3600)+' 小时'):(Math.max(1,Math.round(cs/60))+' 分钟'))+'后');
   }
 
   // ---- 检查间隔 ----
@@ -2357,6 +2391,44 @@ document.getElementById('appList').addEventListener('change',function(e){
   for(var i=0;i<APPS.length;i++){if(APPS[i].pkg===p){APPS[i].checked=t.checked;break;}}
   updatePick();
 });
+
+// 每日更新检查：手动执行 + 开关
+(async function(){
+  var b=document.getElementById('btnDaily');
+  if(b)b.onclick=async function(){
+    log('执行每日更新检查 ...','info');
+    busy('btnDaily',true,'检查中...');
+    try{
+      var r=await exec(MODDIR+'/webui.sh daily-check');
+      var out=r.stdout||'';
+      out.split('\n').forEach(function(l){
+        l=l.trim(); if(!l)return;
+        if(/^DAILY_CHECK_|^UPDATE_/.test(l))return;
+        if(l.indexOf('[✓]')>=0)log(l,'ok');
+        else if(l.indexOf('[!]')>=0||l.indexOf('[✗]')>=0)log(l,'err');
+        else log(l,'info');
+      });
+      var kv=parseKv(out);
+      if(kv.DAILY_CHECK_RESULT==='OK'){
+        var need=parseInt(kv.UPDATE_NEED||'0',10)||0;
+        log(need>0?('检查完成：'+need+' 个附属模块可更新'):'检查完成：附属模块均为最新','ok');
+        if(kv.DAILY_CHECK_SELF&&kv.DAILY_CHECK_SELF.indexOf('new=')===0)log('模块自身有新版本 '+ver(kv.DAILY_CHECK_SELF.slice(4)),'info');
+      }else log('每日检查未全部成功（可能是网络），下次巡检会重试','err');
+    }catch(e){log('每日检查异常: '+e.message,'err');}
+    await refresh();
+    busy('btnDaily',false);
+  };
+  var sw=document.getElementById('dailySwitch');
+  if(sw)sw.onclick=async function(){
+    var on=!sw.classList.contains('on');
+    try{
+      var r=await exec(MODDIR+'/webui.sh daily-check-auto '+(on?'on':'off'));
+      if((r.stdout||'').indexOf('DAILY_CHECK_ENABLE=')>=0)log('每日更新检查已'+(on?'开启':'关闭'),'ok');
+      else log('设置失败','err');
+    }catch(e){log('异常: '+e.message,'err');}
+    await refresh();
+  };
+})();
 
 // 检查间隔分段按钮
 (function(){

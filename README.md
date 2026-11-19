@@ -73,6 +73,11 @@ keybox 不随模块分发，而是由服务端从多个公开上游源拉取、�
   判定三级：pm path → pm list → cmd package path）；FuseFixer 的 LSPosed 启用 +
   勾选系统框架由「FuseFixer 自动配置」开关开机自动直写（幂等：只 UPDATE enabled /
   INSERT OR IGNORE scope，写不进如实报错，绝不清库），WebUI 也有手动按钮
+- **每日更新检查（v2.8.11）**：每 24 小时自动查一次「附属模块 + 模块自身」的更新，
+  **只检查不安装**，结论直接显示在 WebUI（可关注到的版本、下次检查倒计时、手动「立即执行」按钮）。
+  与巡检间隔 `check_interval` 解耦 —— 巡检设成 1 小时也不必每小时打 GitHub API；
+  反过来巡检关了（`auto_fetch=off`）每日检查照跑，版本信息不会跟着停摆。
+  仍受「仅 WiFi 自动更新」约束（移动数据下跳过且不推进计时，回 WiFi 补跑）。`daily_check=off` 关闭
 - **检测前预备（v2.8.7，v2.8.8 起可开机自动执行；v2.8.9 手动预备带检测窗口守护）**：
   跑检测器前一键收敛到「检测视图
   干净」状态 —— 结束隐藏名单内应用进程 + drop_caches + 非破坏清目录 + 报告已知
@@ -147,6 +152,7 @@ keybox 不随模块分发，而是由服务端从多个公开上游源拉取、�
 |---|---|---|
 | `auto_fetch` | on | 自动拉取/注入 keybox 总开关 |
 | `check_interval` | 3600 | 巡检周期（秒） |
+| `daily_check` | on | 每日更新检查（24h 节流：附属模块 + 模块自身，只查不装；对抗页开关） |
 | `net_retry` | 3 | 网络失败重试次数 |
 | `anti_cheat` | on | 反挂检查开关 |
 | `security_patch` | on | 安全补丁 prop 对齐（对抗页开关） |

@@ -29,8 +29,11 @@ run_cycle() {
         download_packages
         auto_install_packages
         check_module_update
+        daily_check
     else
         log "本轮跳过拉取（自动获取已关闭，或非 WiFi 且开启了仅 WiFi 更新）"
+        # 自动获取关了也不让版本检查陪葬：每日检查有自己的开关（daily_check）
+        [ "$(cfg_get auto_fetch on)" = "off" ] && daily_check
     fi
     [ "$(cfg_get auto_bl off)" = "on" ] && hide_bl
     # v2.8.9：无障碍守护遗留自愈（上次检测窗口被打断时恢复原状态；守护活着则跳过）
