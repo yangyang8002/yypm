@@ -373,6 +373,23 @@ function write_manifest(array $cfg, string $dataDir, string $manifestFile, strin
     ];
 
     file_put_contents($manifestFile, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+
+    // ---- KSU/Magisk 标准更新描述（updateJson）----
+    // module.prop 里的 updateJson 指向本文件，KernelSU 管理器据此提示更新。
+    // 字段名遵循通用模块更新规范：version / versionCode / zipUrl / changelog。
+    // 注意 zipUrl 指向 ?action=module（模块包里带 Ed25519 签名，管理器装完
+    // 我们的服务端巡检还会再验一次），changelog 指到 GitHub release 页面。
+    $base = rtrim($cfg['base_url'], '/');
+    $updateJson = [
+        'version'     => $modVer,
+        'versionCode' => (int)$modVc,
+        'zipUrl'      => $base . '/?action=module',
+        'changelog'   => 'https://github.com/yangyang8002/yypm/releases/tag/' . $modVer,
+    ];
+    @file_put_contents($dataDir . '/update.json',
+        json_encode($updateJson, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n");
+    // $ts 是脚本级全局，函数里取不到 —— 直接用当前时间（这条只是日志）
+    echo '[' . date('Y-m-d H:i:s') . "] 已生成 update.json（KSU 标准更新源，默认走自建服务器）\n";
 }
 
 /** 候选池快照：记录每个源当时的状态，便于事后排障 */

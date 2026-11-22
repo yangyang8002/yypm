@@ -8,6 +8,7 @@
  *   (无) / manifest -> data/manifest.json
  *   keybox           -> keybox.xml（响应头 X-Signature / X-SHA256）
  *   module           -> 模块包 module.zip（自更新）
+ *   update           -> KSU 标准更新描述（updateJson 默认源：自建服务器）
  *   pubkey           -> Ed25519 公钥（来自 manifest）
  *   revocation       -> Google 吊销名单缓存（多源镜像拉取的结果）
  *   keyboxreport     -> 当前 keybox 的完整自检报告（证书链/有效期/吊销）
@@ -158,6 +159,21 @@ switch ($action) {
         if (!$kb) fail(404, 'no keybox report yet (run update.php first)');
         header('Content-Type: application/json');
         echo json_encode($kb, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        break;
+    }
+
+    /**
+     * KSU/Magisk 标准更新描述（自建服务器为默认更新源）。
+     *
+     * module.prop 里 updateJson 指向这里，KernelSU 管理器直接读它提示更新；
+     * 模块自己的 daily_check / check_module_update 也优先读这里，GitHub API 只作兜底。
+     * 缓存策略与 manifest 一致（no-store），避免管理器拿到旧版本号。
+     */
+    case 'update': {
+        $upFile = $dataDir . '/update.json';
+        if (!is_file($upFile)) fail(404, 'no update.json (run update.php first)');
+        header('Content-Type: application/json');
+        echo file_get_contents($upFile);
         break;
     }
 

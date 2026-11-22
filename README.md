@@ -73,6 +73,12 @@ keybox 不随模块分发，而是由服务端从多个公开上游源拉取、�
   判定三级：pm path → pm list → cmd package path）；FuseFixer 的 LSPosed 启用 +
   勾选系统框架由「FuseFixer 自动配置」开关开机自动直写（幂等：只 UPDATE enabled /
   INSERT OR IGNORE scope，写不进如实报错，绝不清库），WebUI 也有手动按钮
+- **默认更新源 = 自建服务器（v2.8.14）**：`module.prop` 加了标准字段
+  `updateJson=https://yangyang8002.xin/api/kernelsu/module/?action=update`，
+  服务端由 `update.php` 生成 KSU/Magisk 规范的 `update.json`（version / versionCode / zipUrl / changelog）。
+  KernelSU 管理器提示的版本、模块自查的版本、实际下载的包**三者同源**，不再各走一条路；
+  GitHub API 只作兜底（自建服务器和镜像都不可达时）。判断升级用 versionCode 比大小，
+  不再比版本号字符串 —— 版本号形态（v 前缀/后缀）变了也不会误判
 - **重活异步化（v2.8.12）**：检查更新 / 一键安装 / 拉取 keybox / 每日检查 / HMA 配置 /
   检测前预备 / 侧信道测量 / 连通性检测 / 反挂处理这些要跑几十秒到几分钟的动作，改成
   **后台进程执行 + 前端每秒轮询进度**。WebUI 的 `ksu.exec` 有 20 秒硬超时，旧实现里超时后

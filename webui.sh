@@ -8,7 +8,7 @@
 #   webui.sh status      输出状态(key=value)
 #   webui.sh mount       把缓存的 keybox 挂载到 tricky_store
 #   webui.sh check-packages  检查附属模块（TEESimulator / PIF 等）是否有更新
-#   webui.sh update      检查模块自身是否有新版本（GitHub Release）
+#   webui.sh update      检查模块自身是否有新版本（默认自建服务器 update.json，GitHub 兜底）
 #   webui.sh download-self <url>  下载新版模块包到 /data/adb/yypm/update.zip
 #   webui.sh install-self        把已下载的 update.zip 交给 ksud 自动安装
 #   webui.sh update-self <url>   下载 + 校验版本 + 自动安装（WebUI 一键更新用）
@@ -324,7 +324,8 @@ case "${1:-status}" in
         echo "UPDATE_SUMMARY=$(update_state_field summary -)"
         ;;
     update)
-        check_github_release
+        # 默认源 = 自建服务器（update.json）；GitHub API 兜底（v2.8.14）
+        check_module_release
         ;;
     download-self)
         # 供 WebUI 调用：先试自建服务器（实测最稳），再退回传入的 GitHub 地址。

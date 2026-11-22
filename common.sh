@@ -245,6 +245,7 @@ mirror_file_of() { # $1=action
         keybox)     echo "keybox.xml" ;;
         revocation) echo "revocation.json" ;;
         packages)   echo "packages.json" ;;
+        update)     echo "update.json" ;;
         *)          return 1 ;;
     esac
 }
@@ -3051,8 +3052,8 @@ daily_check() { # $1=force 手动触发（绕过开关与 24h 门闸，WebUI 按
         rc=1
     fi
 
-    # 模块自身：查 GitHub release（不下载不安装）
-    local out; out=$(check_github_release 2>/dev/null)
+    # 模块自身：查更新源（默认自建服务器 update.json，GitHub 兜底；不下载不安装）
+    local out; out=$(check_module_release 2>/dev/null)
     local st=$(echo "$out" | sed -n 's/^UPDATE=//p')
     local rv=$(echo "$out" | sed -n 's/^REMOTE_VERSION=//p')
     local lv=$(echo "$out" | sed -n 's/^LOCAL_VERSION=//p')
@@ -3072,18 +3073,82 @@ daily_check() { # $1=force 手动触发（绕过开关与 24h 门闸，WebUI 按
     return 0
 }
 
+# ---- 更新检查：默认源 = 自建服务器（v2.8.14）----
+# 为什么改：模块已符合通用模块更新规范（module.prop 里的 updateJson 指向自建服务器
+# 的 ?action=update，返回 version / versionCode / zipUrl / changelog）。好处有三：
+#   1. 不再依赖 GitHub API —— 未认证限流 60 次/小时，且国内可达性时好时坏；
+#   2. KernelSU 管理器读同一个 update.json，管理器提示的版本和我们自查的永远一致；
+#   3. 服务器挂掉时镜像（jsDelivr/raw）里有同一份 update.json，继续可用。
+# GitHub API 保留为兜底（服务器 + 镜像全挂时）。
+check_server_update() {
+    local f="$TMP/update.json"
+    rm -f "$f"
+    api_fetch_any update "$f" >/dev/null 2>&1 || return 1
+    [ -s "$f" ] || return 1
+    local remote vc
+    remote=$(json_get "$f" version)
+    vc=$(sed -n 's/.*"versionCode"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' "$f" | head -1)
+    [ -n "$remote" ] || return 1
+    local cur_c=$(vc_of "$MODDIR")
+    echo "LOCAL_VERSION=$(sed -n 's/^version=//p' "$MODDIR/module.prop" 2>/dev/null)"
+    echo "REMOTE_VERSION=$remote"
+    echo "REMOTE_VCODE=$vc"
+    echo "DOWNLOAD_URL=$(json_get "$f" zipUrl)"
+    echo "NOTES=$(json_get "$f" changelog)"
+    # 判据用 versionCode 而不是版本号字符串：字符串形态可能变（v 前缀/后缀），
+    # 数字大小才是硬判据；versionCode 缺失时退回字符串比较。
+    if [ -n "$vc" ] && [ -n "$cur_c" ]; then
+        if [ "$vc" -gt "$cur_c" ] 2>/dev/null; then echo "UPDATE=AVAILABLE"; else echo "UPDATE=NONE"; fi
+    else
+        local cur
+        cur=$(sed -n 's/^version=//p' "$MODDIR/module.prop" 2>/dev/null)
+        if [ -n "$remote" ] && [ "$remote" != "$cur" ]; then echo "UPDATE=AVAILABLE"; else echo "UPDATE=NONE"; fi
+    fi
+    return 0
+}
+
+# 统一入口：自建服务器优先，GitHub API 兜底。输出契约与 check_github_release 一致，
+# 额外多一个 SOURCE= 说明这次是谁答的（排障用）。
+check_module_release() {
+    local out
+    if out=$(check_server_update); then
+        printf '%s\n' "$out"
+        echo "SOURCE=server"
+        dbg "check_module_release: 自建服务器应答"
+        return 0
+    fi
+    dbg "check_module_release: 服务器/镜像均不可用，转 GitHub API 兜底"
+    if out=$(check_github_release); then
+        printf '%s\n' "$out"
+        echo "SOURCE=github"
+        return 0
+    fi
+    echo "SOURCE=none"
+    return 1
+}
+
 # ---- 自动更新模块自身 ----
 # 下载源优先自建服务器（实测 3/3 成功），GitHub 直连作为兜底（实测 1/3）。
 # 下载后会解包核对包内 versionCode，避免拿到旧包把模块"更新"回退。
 check_module_update() {
     [ -f "$MODDIR/module.prop" ] || return 0
-    local out; out=$(check_github_release) || return 0
+    # 默认源 = 自建服务器（update.json），GitHub API 兜底
+    local out; out=$(check_module_release) || return 0
     local tag=$(echo "$out" | sed -n 's/^REMOTE_VERSION=//p')
     local cur=$(echo "$out" | sed -n 's/^LOCAL_VERSION=//p')
     local gh_url=$(echo "$out" | sed -n 's/^DOWNLOAD_URL=//p')
-    [ -n "$tag" ] && [ "$tag" != "$cur" ] || return 0
-
+    local src=$(echo "$out" | sed -n 's/^SOURCE=//p')
     local cur_vc=$(vc_of "$MODDIR")
+    local rem_vc=$(echo "$out" | sed -n 's/^REMOTE_VCODE=//p')
+    # 判据：能拿到 versionCode 就用数字比大小（比字符串可靠），否则退回版本号不等
+    local need_upd=0
+    if [ -n "$rem_vc" ] && [ -n "$cur_vc" ]; then
+        [ "$rem_vc" -gt "$cur_vc" ] 2>/dev/null && need_upd=1
+    else
+        [ -n "$tag" ] && [ "$tag" != "$cur" ] && need_upd=1
+    fi
+    [ "$need_upd" = "1" ] || return 0
+    dbg "check_module_update: 源=$src 远端=$tag($rem_vc) 本地=$cur($cur_vc)"
     log "[·] 发现新版本 $tag（当前 $cur）"
 
     # 拉 manifest 拿模块包签名（验签依据；镜像->主源，拉不到就降级为仅 versionCode 校验）

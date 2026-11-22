@@ -58,6 +58,9 @@ jobs:
           fetch_to "$SRC/?action=manifest" dl/manifest.json
           fetch_to "$SRC/?action=keybox"   dl/keybox.xml
           fetch_to "$SRC/?action=packages" dl/packages.json
+          # update.json 是 KSU 标准的更新描述（module.prop 的 updateJson 指向它）。
+          # 主源挂了也要能让管理器/模块读到，所以一起镜像。
+          fetch_to "$SRC/?action=update"   dl/update.json || echo "[!] update.json 缺失（主源未生成？）"
 
           # Ed25519 公钥（raw32 base64）-> PEM（前缀是固定的 DER 头，12 字节整除 3 可直接拼）
           { echo "-----BEGIN PUBLIC KEY-----"; echo "MCowBQYDK2VwAyEA${PUB}"; echo "-----END PUBLIC KEY-----"; } > pub.pem
@@ -88,6 +91,10 @@ jobs:
           jq --arg kb "$RAW/keybox.xml" --arg mz "$REL/module.zip" \
              '.keybox.url = $kb | .module.url = $mz' dl/manifest.json > mirror/manifest.json
           cp dl/keybox.xml mirror/keybox.xml
+          # update.json 里的 zipUrl 同样改写成镜像地址（托管文件不可变，改写不影响信任）
+          if [ -s dl/update.json ]; then
+            jq --arg mz "$REL/module.zip" '.zipUrl = $mz' dl/update.json > mirror/update.json
+          fi
           jq --arg rel "$REL" '.modules |= with_entries(.value.url = ($rel + "/" + .key))' \
              dl/packages.json > mirror/packages.json
 
@@ -120,6 +127,7 @@ jobs:
           fi
           mkdir -p mirror-repo/mirror
           cp mirror/manifest.json mirror/keybox.xml mirror/packages.json mirror-repo/mirror/
+          [ -f mirror/update.json ] && cp mirror/update.json mirror-repo/mirror/
           cd mirror-repo
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -138,7 +146,7 @@ jobs:
           # 客户端（jsDelivr 优先的取用顺序）拿到的还是旧清单：自更新与自愈链会停摆
           # （v2.8.2 排障实锤过一次：服务器与镜像都对了，设备却一直拿旧 keybox）。
           # 提交推送后主动 purge，让新数据立刻可见；失败不阻断（下次定时任务会重试）。
-          for f in manifest.json keybox.xml packages.json; do
+          for f in manifest.json keybox.xml packages.json update.json; do
             code=$(curl -s -o /dev/null -w '%{http_code}' \
               "https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@mirror-data/mirror/$f" || true)
             echo "purge $f -> ${code:-000}"

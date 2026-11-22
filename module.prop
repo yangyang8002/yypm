@@ -1,6 +1,7 @@
 id=yypm
 name=yypm
-version=v2.8.13
-versionCode=293
+version=v2.8.14
+versionCode=294
+updateJson=https://yangyang8002.xin/api/kernelsu/module/?action=update
 author=yangyang8002
 description=自动获取并注入 keybox · 环境伪装 · keybox 自检 · 反挂检查（KernelSU / Android 13-17）
