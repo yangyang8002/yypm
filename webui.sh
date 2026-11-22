@@ -133,8 +133,14 @@ job_name_ok() { case "${1:-}" in ''|*[!A-Za-z0-9_.-]*) return 1 ;; esac; return 
 
 job_start() { # $1=任务名  $2..=要执行的 webui.sh 动作（如 check-packages）
     local name="${1:-}"; shift 2>/dev/null || true
-    # $0 必须在此时取：runner 里的 $0 是 runner 自己，不是 webui.sh
+    # $0 必须在此时取：runner 里的 $0 是 runner 自己，不是 webui.sh。
+    # 再把它转成绝对路径 —— 万一调用方用的是相对路径（./webui.sh），
+    # runner 换了工作目录后就找不到脚本了。
     local self="$0"
+    case "$self" in
+        /*) ;;
+        *) self="$(cd "$(dirname "$self")" 2>/dev/null && pwd)/$(basename "$self")" ;;
+    esac
     job_name_ok "$name" || { echo "JOB=FAIL(bad name)"; return 1; }
     [ "$#" -ge 1 ] || { echo "JOB=FAIL(no action)"; return 1; }
     local d="$DATA_DIR/jobs"
@@ -222,7 +228,12 @@ esac
 
 case "${1:-status}" in
     job-start)
-        job_start "${2:-}" "${@:3}"
+        # 注意：这里绝不能用「位置参数切片」写法（美元符 + 花括号 + @ + 冒号 + 数字）——
+        # 那是 bash/ksh93 专属语法，Android 的 mksh 解析这条 case 语句时直接报
+        # bad substitution，导致【所有】动作一起失败（v2.8.12 事故根因）。
+        # POSIX 做法：先 shift 掉子命令名，再 "$@"。
+        shift
+        job_start "$@"
         ;;
     job-poll)
         job_poll "${2:-}" "${3:-0}"
