@@ -1,9 +1,9 @@
 {
-  "version": "v2.8.12",
-  "version_code": 292,
+  "version": "v2.8.14",
+  "version_code": 294,
   "base_url": "https://yangyang8002.xin/api/kernelsu/module",
   "keybox": {
-    "updated_at": "2026-11-22 09:07:07",
+    "updated_at": "2026-11-22 13:35:10",
     "source": "pinned",
     "size": 12713,
     "sha256": "bb72001d8161618aeb0ceeca8d9f8965d15fa70c8c44b47e2c7e450a40e77353",
@@ -13,7 +13,7 @@
       "ok": true,
       "reasons": [],
       "warnings": [],
-      "checked_at": "2026-11-22 09:07:07",
+      "checked_at": "2026-11-22 13:35:10",
       "min_not_after": "2040-04-08",
       "days_remaining": 4885,
       "cert_count": 6,
@@ -112,12 +112,20 @@
         }
       ]
     },
-    "fallbacks": [],
+    "fallbacks": [
+      {
+        "source": "yurikey",
+        "sha256": "f3be1c71c4f456fdad79063b7105800c6117c9734762335c7d265e421897450c",
+        "size": 5589,
+        "days_remaining": 3,
+        "min_not_after": "2026-11-25"
+      }
+    ],
     "revocation": {
       "source": "purainity(缓存)",
       "count": 517,
       "fresh": true,
-      "fetched_at": 1795230014,
+      "fetched_at": 1795318206,
       "checked": 517,
       "tried": []
     },
@@ -125,19 +133,19 @@
     "sign_public": "4+b3y4zvxtwJrNYDvD/1sCOy+rABnw5AbD3ivXpSg+E="
   },
   "module": {
-    "sha256": "566baf8e6f628eccd8dfb17b9c15a37e3fc10b8528efeac4e1c5d7e833e9a982",
-    "size": 912434,
+    "sha256": "ea8d5575ef0f574c8cd7e418114e6d7a04ee9894072bd62049f5be2daf6c5180",
+    "size": 913827,
     "url": "https://github.com/yangyang8002/yypm/releases/download/mirror/module.zip",
-    "signature": "bT26ZUjSu89LDbUa9y22aRlM2Aqb0E6sa3YcV2QeZY06hPj7BRqUjjAuMrKkbh6MFG2NDw2dVJmlespPffmmCw=="
+    "signature": "GLnk9pWwEPQhixu0y8jnVIS+dOi35yQ1chw9/YXtiJ/AJfDv+juX/YFG1wdpgyMNHmhWIYJamzz8dS0Fi06cCQ=="
   },
   "server": {
-    "updated_at": "2026-11-22 09:07:07",
+    "updated_at": "2026-11-22 13:35:10",
     "revoked_count": 517,
     "sources": [
       {
         "source": "yurikey",
-        "ok": false,
-        "why": "下载失败"
+        "ok": true,
+        "why": ""
       },
       {
         "source": "integritybox",
@@ -161,6 +169,6 @@
       }
     ],
     "candidate_count": 5,
-    "valid_count": 0
+    "valid_count": 1
   }
 }
