@@ -3,7 +3,7 @@
   "version_code": 292,
   "base_url": "https://yangyang8002.xin/api/kernelsu/module",
   "keybox": {
-    "updated_at": "2026-11-22 05:00:36",
+    "updated_at": "2026-11-22 09:07:07",
     "source": "pinned",
     "size": 12713,
     "sha256": "bb72001d8161618aeb0ceeca8d9f8965d15fa70c8c44b47e2c7e450a40e77353",
@@ -13,7 +13,7 @@
       "ok": true,
       "reasons": [],
       "warnings": [],
-      "checked_at": "2026-11-22 05:00:36",
+      "checked_at": "2026-11-22 09:07:07",
       "min_not_after": "2040-04-08",
       "days_remaining": 4885,
       "cert_count": 6,
@@ -112,15 +112,7 @@
         }
       ]
     },
-    "fallbacks": [
-      {
-        "source": "yurikey",
-        "sha256": "f3be1c71c4f456fdad79063b7105800c6117c9734762335c7d265e421897450c",
-        "size": 5589,
-        "days_remaining": 3,
-        "min_not_after": "2026-11-25"
-      }
-    ],
+    "fallbacks": [],
     "revocation": {
       "source": "purainity(缓存)",
       "count": 517,
@@ -139,13 +131,13 @@
     "signature": "bT26ZUjSu89LDbUa9y22aRlM2Aqb0E6sa3YcV2QeZY06hPj7BRqUjjAuMrKkbh6MFG2NDw2dVJmlespPffmmCw=="
   },
   "server": {
-    "updated_at": "2026-11-22 05:00:36",
+    "updated_at": "2026-11-22 09:07:07",
     "revoked_count": 517,
     "sources": [
       {
         "source": "yurikey",
-        "ok": true,
-        "why": ""
+        "ok": false,
+        "why": "下载失败"
       },
       {
         "source": "integritybox",
@@ -169,6 +161,6 @@
       }
     ],
     "candidate_count": 5,
-    "valid_count": 1
+    "valid_count": 0
   }
 }
