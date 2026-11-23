@@ -3,7 +3,7 @@
   "version_code": 294,
   "base_url": "https://yangyang8002.xin/api/kernelsu/module",
   "keybox": {
-    "updated_at": "2026-11-23 15:06:07",
+    "updated_at": "2026-11-24 03:00:28",
     "source": "pinned",
     "size": 12713,
     "sha256": "bb72001d8161618aeb0ceeca8d9f8965d15fa70c8c44b47e2c7e450a40e77353",
@@ -13,7 +13,7 @@
       "ok": true,
       "reasons": [],
       "warnings": [],
-      "checked_at": "2026-11-23 15:06:07",
+      "checked_at": "2026-11-24 03:00:28",
       "min_not_after": "2040-04-08",
       "days_remaining": 4884,
       "cert_count": 6,
@@ -114,6 +114,20 @@
     },
     "fallbacks": [
       {
+        "source": "yurikey",
+        "sha256": "b58403299d6d5d871d84c510970f75feb3eb95bbde0dc5f02987752d2aa38134",
+        "size": 5789,
+        "days_remaining": 7,
+        "min_not_after": "2026-12-01"
+      },
+      {
+        "source": "keyboxhub/keybox_9527178bef",
+        "sha256": "bf1430ad967d34f36bcb278c05b86b09b7dac3f3d32c86fe4994b7be4c9233ac",
+        "size": 12750,
+        "days_remaining": 1941,
+        "min_not_after": "2032-03-18"
+      },
+      {
         "source": "keyboxstatus/KPZ1iysJ",
         "sha256": "5cf01395b84285aeec15e5172b93cae72f56db7bf43daedebc1dfbfb5a09f734",
         "size": 12735,
@@ -139,13 +153,13 @@
     "signature": "GLnk9pWwEPQhixu0y8jnVIS+dOi35yQ1chw9/YXtiJ/AJfDv+juX/YFG1wdpgyMNHmhWIYJamzz8dS0Fi06cCQ=="
   },
   "server": {
-    "updated_at": "2026-11-23 15:06:07",
+    "updated_at": "2026-11-24 03:00:28",
     "revoked_count": 413,
     "sources": [
       {
         "source": "yurikey",
-        "ok": false,
-        "why": "下载失败"
+        "ok": true,
+        "why": ""
       },
       {
         "source": "integritybox",
@@ -158,9 +172,9 @@
         "why": "下载失败"
       },
       {
-        "source": "keyboxhub",
-        "ok": false,
-        "why": "目录取样失败"
+        "source": "keyboxhub/keybox_9527178bef",
+        "ok": true,
+        "why": ""
       },
       {
         "source": "keyboxstatus/KPZ1iysJ",
@@ -169,6 +183,6 @@
       }
     ],
     "candidate_count": 5,
-    "valid_count": 1
+    "valid_count": 3
   }
 }
