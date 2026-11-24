@@ -3,7 +3,7 @@
   "version_code": 294,
   "base_url": "https://yangyang8002.xin/api/kernelsu/module",
   "keybox": {
-    "updated_at": "2026-11-24 03:00:28",
+    "updated_at": "2026-11-24 12:01:21",
     "source": "pinned",
     "size": 12713,
     "sha256": "bb72001d8161618aeb0ceeca8d9f8965d15fa70c8c44b47e2c7e450a40e77353",
@@ -13,9 +13,9 @@
       "ok": true,
       "reasons": [],
       "warnings": [],
-      "checked_at": "2026-11-24 03:00:28",
+      "checked_at": "2026-11-24 12:01:21",
       "min_not_after": "2040-04-08",
-      "days_remaining": 4884,
+      "days_remaining": 4883,
       "cert_count": 6,
       "serial_count": 5,
       "serials": [
@@ -114,25 +114,18 @@
     },
     "fallbacks": [
       {
-        "source": "yurikey",
-        "sha256": "b58403299d6d5d871d84c510970f75feb3eb95bbde0dc5f02987752d2aa38134",
-        "size": 5789,
-        "days_remaining": 7,
-        "min_not_after": "2026-12-01"
+        "source": "keyboxhub/keybox_9650755871",
+        "sha256": "90408422da42cac102f1500d5df83931ae268016d29333ed44a28083f06ff2ee",
+        "size": 12754,
+        "days_remaining": 2624,
+        "min_not_after": "2034-01-31"
       },
       {
-        "source": "keyboxhub/keybox_9527178bef",
-        "sha256": "bf1430ad967d34f36bcb278c05b86b09b7dac3f3d32c86fe4994b7be4c9233ac",
-        "size": 12750,
-        "days_remaining": 1941,
-        "min_not_after": "2032-03-18"
-      },
-      {
-        "source": "keyboxstatus/KPZ1iysJ",
-        "sha256": "5cf01395b84285aeec15e5172b93cae72f56db7bf43daedebc1dfbfb5a09f734",
-        "size": 12735,
-        "days_remaining": 1941,
-        "min_not_after": "2032-03-18"
+        "source": "keyboxstatus/NR65kJaP",
+        "sha256": "6efb821357d7fff440112e16e53d6525a85057638596450bd345994ce4eaacd7",
+        "size": 12970,
+        "days_remaining": -184,
+        "min_not_after": "2026-05-25"
       }
     ],
     "revocation": {
@@ -153,13 +146,13 @@
     "signature": "GLnk9pWwEPQhixu0y8jnVIS+dOi35yQ1chw9/YXtiJ/AJfDv+juX/YFG1wdpgyMNHmhWIYJamzz8dS0Fi06cCQ=="
   },
   "server": {
-    "updated_at": "2026-11-24 03:00:28",
+    "updated_at": "2026-11-24 12:01:21",
     "revoked_count": 413,
     "sources": [
       {
         "source": "yurikey",
-        "ok": true,
-        "why": ""
+        "ok": false,
+        "why": "下载失败"
       },
       {
         "source": "integritybox",
@@ -172,17 +165,17 @@
         "why": "下载失败"
       },
       {
-        "source": "keyboxhub/keybox_9527178bef",
+        "source": "keyboxhub/keybox_9650755871",
         "ok": true,
         "why": ""
       },
       {
-        "source": "keyboxstatus/KPZ1iysJ",
+        "source": "keyboxstatus/NR65kJaP",
         "ok": true,
         "why": ""
       }
     ],
     "candidate_count": 5,
-    "valid_count": 3
+    "valid_count": 2
   }
 }
