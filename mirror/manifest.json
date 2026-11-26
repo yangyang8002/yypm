@@ -3,7 +3,7 @@
   "version_code": 294,
   "base_url": "https://yangyang8002.xin/api/kernelsu/module",
   "keybox": {
-    "updated_at": "2026-11-26 10:30:51",
+    "updated_at": "2026-11-26 20:02:06",
     "source": "pinned",
     "size": 12713,
     "sha256": "bb72001d8161618aeb0ceeca8d9f8965d15fa70c8c44b47e2c7e450a40e77353",
@@ -13,7 +13,7 @@
       "ok": true,
       "reasons": [],
       "warnings": [],
-      "checked_at": "2026-11-26 10:30:51",
+      "checked_at": "2026-11-26 20:02:06",
       "min_not_after": "2040-04-08",
       "days_remaining": 4881,
       "cert_count": 6,
@@ -112,13 +112,28 @@
         }
       ]
     },
-    "fallbacks": [],
+    "fallbacks": [
+      {
+        "source": "keyboxstatus/U319AA-00500015",
+        "sha256": "7b41723658a63ae6b8d97a9790dcf0a92ef0ef2de44411d9464c49262fe7e8e6",
+        "size": 12715,
+        "days_remaining": 1507,
+        "min_not_after": "2031-01-12"
+      },
+      {
+        "source": "keyboxhub/keybox_9e062dc61e",
+        "sha256": "8beafd6ed62d58d924783392fd0aac41f12d0fad01899803555560609597c2a9",
+        "size": 12976,
+        "days_remaining": 1290,
+        "min_not_after": "2030-06-09"
+      }
+    ],
     "revocation": {
-      "source": "purainity(缓存)",
-      "count": 517,
+      "source": "kimmyxyc(缓存)",
+      "count": 413,
       "fresh": true,
-      "fetched_at": 1795595405,
-      "checked": 517,
+      "fetched_at": 1795689007,
+      "checked": 413,
       "tried": []
     },
     "signature": "VecuiNmqbIvInAf+8pM4KF+bHyyL8S4tO82UbODg7cVHJ9ss01NNXh+gL7Jo3x/L8giSv3i1+BvUuOSLfsu7Bw==",
@@ -131,8 +146,8 @@
     "signature": "GLnk9pWwEPQhixu0y8jnVIS+dOi35yQ1chw9/YXtiJ/AJfDv+juX/YFG1wdpgyMNHmhWIYJamzz8dS0Fi06cCQ=="
   },
   "server": {
-    "updated_at": "2026-11-26 10:30:51",
-    "revoked_count": 517,
+    "updated_at": "2026-11-26 20:02:06",
+    "revoked_count": 413,
     "sources": [
       {
         "source": "yurikey",
@@ -150,17 +165,17 @@
         "why": "下载失败"
       },
       {
-        "source": "keyboxhub",
-        "ok": false,
-        "why": "目录取样失败"
+        "source": "keyboxhub/keybox_9e062dc61e",
+        "ok": true,
+        "why": ""
       },
       {
-        "source": "keyboxstatus",
-        "ok": false,
-        "why": "目录取样失败"
+        "source": "keyboxstatus/U319AA-00500015",
+        "ok": true,
+        "why": ""
       }
     ],
     "candidate_count": 5,
-    "valid_count": 0
+    "valid_count": 2
   }
 }
