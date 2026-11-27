@@ -3,7 +3,7 @@
   "version_code": 294,
   "base_url": "https://yangyang8002.xin/api/kernelsu/module",
   "keybox": {
-    "updated_at": "2026-11-27 05:35:12",
+    "updated_at": "2026-11-27 12:00:24",
     "source": "pinned",
     "size": 12713,
     "sha256": "bb72001d8161618aeb0ceeca8d9f8965d15fa70c8c44b47e2c7e450a40e77353",
@@ -13,7 +13,7 @@
       "ok": true,
       "reasons": [],
       "warnings": [],
-      "checked_at": "2026-11-27 05:35:12",
+      "checked_at": "2026-11-27 12:00:24",
       "min_not_after": "2040-04-08",
       "days_remaining": 4880,
       "cert_count": 6,
@@ -114,18 +114,18 @@
     },
     "fallbacks": [
       {
-        "source": "keyboxhub/keybox_9e062dc61e",
-        "sha256": "8beafd6ed62d58d924783392fd0aac41f12d0fad01899803555560609597c2a9",
-        "size": 12976,
-        "days_remaining": 1290,
-        "min_not_after": "2030-06-09"
+        "source": "keyboxhub/keybox_9650755871",
+        "sha256": "90408422da42cac102f1500d5df83931ae268016d29333ed44a28083f06ff2ee",
+        "size": 12754,
+        "days_remaining": 2621,
+        "min_not_after": "2034-01-31"
       },
       {
-        "source": "keyboxstatus/NR65kJaP",
-        "sha256": "6efb821357d7fff440112e16e53d6525a85057638596450bd345994ce4eaacd7",
-        "size": 12970,
-        "days_remaining": -187,
-        "min_not_after": "2026-05-25"
+        "source": "keyboxstatus/e13lwsP4",
+        "sha256": "b6b38efc901ce5b7df1dc63e5669ecc6df3b7deef8b74ae7fcc6f435e31da3b5",
+        "size": 12712,
+        "days_remaining": 1483,
+        "min_not_after": "2030-12-20"
       }
     ],
     "revocation": {
@@ -146,7 +146,7 @@
     "signature": "GLnk9pWwEPQhixu0y8jnVIS+dOi35yQ1chw9/YXtiJ/AJfDv+juX/YFG1wdpgyMNHmhWIYJamzz8dS0Fi06cCQ=="
   },
   "server": {
-    "updated_at": "2026-11-27 05:35:12",
+    "updated_at": "2026-11-27 12:00:24",
     "revoked_count": 413,
     "sources": [
       {
@@ -165,12 +165,12 @@
         "why": "下载失败"
       },
       {
-        "source": "keyboxhub/keybox_9e062dc61e",
+        "source": "keyboxhub/keybox_9650755871",
         "ok": true,
         "why": ""
       },
       {
-        "source": "keyboxstatus/NR65kJaP",
+        "source": "keyboxstatus/e13lwsP4",
         "ok": true,
         "why": ""
       }
