@@ -3,7 +3,7 @@
   "version_code": 294,
   "base_url": "https://yangyang8002.xin/api/kernelsu/module",
   "keybox": {
-    "updated_at": "2026-11-27 12:00:24",
+    "updated_at": "2026-11-27 22:00:47",
     "source": "pinned",
     "size": 12713,
     "sha256": "bb72001d8161618aeb0ceeca8d9f8965d15fa70c8c44b47e2c7e450a40e77353",
@@ -13,7 +13,7 @@
       "ok": true,
       "reasons": [],
       "warnings": [],
-      "checked_at": "2026-11-27 12:00:24",
+      "checked_at": "2026-11-27 22:00:47",
       "min_not_after": "2040-04-08",
       "days_remaining": 4880,
       "cert_count": 6,
@@ -121,18 +121,18 @@
         "min_not_after": "2034-01-31"
       },
       {
-        "source": "keyboxstatus/e13lwsP4",
-        "sha256": "b6b38efc901ce5b7df1dc63e5669ecc6df3b7deef8b74ae7fcc6f435e31da3b5",
-        "size": 12712,
-        "days_remaining": 1483,
-        "min_not_after": "2030-12-20"
+        "source": "keyboxstatus/U319AA-00500015",
+        "sha256": "7b41723658a63ae6b8d97a9790dcf0a92ef0ef2de44411d9464c49262fe7e8e6",
+        "size": 12715,
+        "days_remaining": 1506,
+        "min_not_after": "2031-01-12"
       }
     ],
     "revocation": {
       "source": "kimmyxyc(缓存)",
       "count": 413,
       "fresh": true,
-      "fetched_at": 1795689007,
+      "fetched_at": 1795779007,
       "checked": 413,
       "tried": []
     },
@@ -146,7 +146,7 @@
     "signature": "GLnk9pWwEPQhixu0y8jnVIS+dOi35yQ1chw9/YXtiJ/AJfDv+juX/YFG1wdpgyMNHmhWIYJamzz8dS0Fi06cCQ=="
   },
   "server": {
-    "updated_at": "2026-11-27 12:00:24",
+    "updated_at": "2026-11-27 22:00:47",
     "revoked_count": 413,
     "sources": [
       {
@@ -170,7 +170,7 @@
         "why": ""
       },
       {
-        "source": "keyboxstatus/e13lwsP4",
+        "source": "keyboxstatus/U319AA-00500015",
         "ok": true,
         "why": ""
       }
